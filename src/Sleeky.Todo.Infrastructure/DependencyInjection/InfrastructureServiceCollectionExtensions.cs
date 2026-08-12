@@ -22,6 +22,9 @@ public static class InfrastructureServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
         services
             .AddOptions<MongoDbSettings>()
             .Bind(configuration.GetSection(MongoDbSettings.SectionName))

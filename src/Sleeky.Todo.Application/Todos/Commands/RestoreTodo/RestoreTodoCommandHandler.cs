@@ -15,6 +15,9 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
 
     public RestoreTodoCommandHandler(ITodoRepository todoRepository, IClock clock)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+        ArgumentNullException.ThrowIfNull(clock);
+
         this.todoRepository = todoRepository;
         this.clock = clock;
     }

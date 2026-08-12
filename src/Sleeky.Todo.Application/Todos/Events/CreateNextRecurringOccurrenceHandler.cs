@@ -17,6 +17,9 @@ public sealed class CreateNextRecurringOccurrenceHandler
         ITodoRepository todoRepository,
         IRecurrenceCalculator recurrenceCalculator)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+        ArgumentNullException.ThrowIfNull(recurrenceCalculator);
+
         this.todoRepository = todoRepository;
         this.recurrenceCalculator = recurrenceCalculator;
     }

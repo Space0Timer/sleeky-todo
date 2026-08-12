@@ -2,6 +2,9 @@ using System.Diagnostics;
 
 using Microsoft.AspNetCore.Mvc;
 
+using Serilog;
+using Serilog.Events;
+
 using Sleeky.Todo.Api.ErrorHandling;
 
 namespace Sleeky.Todo.Api.DependencyInjection;
@@ -10,6 +13,8 @@ public static class ApiServiceCollectionExtensions
 {
     public static IServiceCollection AddApi(this IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
+
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
         services
@@ -40,6 +45,34 @@ public static class ApiServiceCollectionExtensions
 
     public static WebApplication UseApi(this WebApplication app)
     {
+        ArgumentNullException.ThrowIfNull(app);
+
+        app.UseSerilogRequestLogging(options =>
+        {
+            options.GetLevel = (httpContext, _, exception) =>
+            {
+                if (httpContext.Request.Path.StartsWithSegments("/health"))
+                {
+                    return LogEventLevel.Debug;
+                }
+
+                if (exception is not null)
+                {
+                    return LogEventLevel.Error;
+                }
+
+                return httpContext.Response.StatusCode
+                    >= StatusCodes.Status500InternalServerError
+                        ? LogEventLevel.Warning
+                        : LogEventLevel.Information;
+            };
+            options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+            {
+                diagnosticContext.Set(
+                    "TraceId",
+                    Activity.Current?.Id ?? httpContext.TraceIdentifier);
+            };
+        });
         app.UseExceptionHandler();
         app.UseHttpsRedirection();
         app.UseSwagger();

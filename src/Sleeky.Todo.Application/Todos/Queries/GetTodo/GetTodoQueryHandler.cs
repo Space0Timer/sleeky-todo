@@ -13,6 +13,8 @@ public sealed class GetTodoQueryHandler : IRequestHandler<GetTodoQuery, TodoDto>
 
     public GetTodoQueryHandler(ITodoRepository todoRepository)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+
         this.todoRepository = todoRepository;
     }
 

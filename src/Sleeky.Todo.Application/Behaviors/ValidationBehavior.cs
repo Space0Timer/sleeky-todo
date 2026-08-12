@@ -13,6 +13,8 @@ public sealed class ValidationBehavior<TRequest, TResponse>
 
     public ValidationBehavior(IEnumerable<IValidator<TRequest>> validators)
     {
+        ArgumentNullException.ThrowIfNull(validators);
+
         this.validators = validators.ToArray();
     }
 
