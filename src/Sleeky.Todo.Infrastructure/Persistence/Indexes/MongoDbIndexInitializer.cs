@@ -9,7 +9,7 @@ using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Indexes;
 
-internal sealed partial class MongoDbIndexInitializer : IHostedService
+internal sealed class MongoDbIndexInitializer : IHostedService
 {
     private readonly IMongoCollection<TodoDocument> collection;
     private readonly ILogger<MongoDbIndexInitializer> logger;
@@ -23,7 +23,7 @@ internal sealed partial class MongoDbIndexInitializer : IHostedService
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
-        collection = database.GetCollection<TodoDocument>(
+        this.collection = database.GetCollection<TodoDocument>(
             options.Value.TodoItemsCollectionName);
         this.logger = logger;
     }
@@ -102,20 +102,17 @@ internal sealed partial class MongoDbIndexInitializer : IHostedService
                 }),
         ];
 
-        _ = await collection.Indexes.CreateManyAsync(
+        _ = await this.collection.Indexes.CreateManyAsync(
             indexes,
             cancellationToken: cancellationToken);
-        LogIndexesInitialized(logger, indexes.Length);
+        this.logger.LogInformation(
+            2001,
+            "Initialized {IndexCount} MongoDB TODO indexes",
+            indexes.Length);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
-
-    [LoggerMessage(
-        EventId = 2001,
-        Level = LogLevel.Information,
-        Message = "Initialized {IndexCount} MongoDB TODO indexes")]
-    private static partial void LogIndexesInitialized(ILogger logger, int indexCount);
 }

@@ -1,5 +1,7 @@
 using FluentAssertions;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using NSubstitute;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
@@ -25,7 +27,7 @@ public sealed class DeleteTodoCommandHandlerTests
             .GetByIdAsync(TodoId, false, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
         DeleteTodoCommand command = new DeleteTodoCommand(TodoId, 1);
-        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+        DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
@@ -54,7 +56,7 @@ public sealed class DeleteTodoCommandHandlerTests
             .SoftDeleteAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version);
-        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+        DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
         TodoDto result = await handler.Handle(command, CancellationToken.None);
 
@@ -77,7 +79,7 @@ public sealed class DeleteTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version + 1);
-        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+        DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
@@ -102,7 +104,7 @@ public sealed class DeleteTodoCommandHandlerTests
             .SoftDeleteAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
         DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version);
-        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+        DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
@@ -122,7 +124,7 @@ public sealed class DeleteTodoCommandHandlerTests
                 todoItem.Id,
                 Arg.Any<CancellationToken>())
             .Returns(true);
-        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+        DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(
             new DeleteTodoCommand(todoItem.Id, todoItem.Version),
@@ -135,5 +137,15 @@ public sealed class DeleteTodoCommandHandlerTests
             default!,
             default,
             default);
+    }
+
+    private static DeleteTodoCommandHandler CreateHandler(
+        ITodoRepository repository,
+        IClock clock)
+    {
+        return new DeleteTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<DeleteTodoCommandHandler>.Instance);
     }
 }

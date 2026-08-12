@@ -1,5 +1,7 @@
 using MediatR;
 
+using Microsoft.Extensions.Logging;
+
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
@@ -15,20 +17,24 @@ public sealed class AddDependencyCommandHandler
 {
     private readonly IClock clock;
     private readonly IDependencyGraphService dependencyGraphService;
+    private readonly ILogger<AddDependencyCommandHandler> logger;
     private readonly ITodoRepository todoRepository;
 
     public AddDependencyCommandHandler(
         ITodoRepository todoRepository,
         IDependencyGraphService dependencyGraphService,
-        IClock clock)
+        IClock clock,
+        ILogger<AddDependencyCommandHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
         ArgumentNullException.ThrowIfNull(dependencyGraphService);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(logger);
 
         this.todoRepository = todoRepository;
         this.dependencyGraphService = dependencyGraphService;
         this.clock = clock;
+        this.logger = logger;
     }
 
     public async Task<TodoDto> Handle(
@@ -66,6 +72,13 @@ public sealed class AddDependencyCommandHandler
             request.Version,
             cancellationToken)
             ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+
+        this.logger.LogInformation(
+            1104,
+            "Added dependency {DependencyTodoId} to TODO {TodoId} at version {Version}",
+            request.DependencyId,
+            updatedTodo.Id,
+            updatedTodo.Version);
 
         return TodoDto.FromEntity(updatedTodo);
     }

@@ -23,7 +23,7 @@ public sealed class MongoTodoRepository : ITodoRepository
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(settings);
 
-        todoItems = database.GetCollection<TodoDocument>(
+        this.todoItems = database.GetCollection<TodoDocument>(
             settings.Value.TodoItemsCollectionName);
         this.transactionContext = transactionContext ?? new MongoTransactionContext();
     }

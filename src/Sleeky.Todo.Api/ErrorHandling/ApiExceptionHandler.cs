@@ -25,11 +25,18 @@ public sealed class ApiExceptionHandler : IExceptionHandler
         Exception exception,
         CancellationToken cancellationToken)
     {
-        ProblemDetails problem = CreateProblemDetails(httpContext, exception);
+        string traceId = Activity.Current?.Id ?? httpContext.TraceIdentifier;
+        ProblemDetails problem = CreateProblemDetails(httpContext, exception, traceId);
 
         if (problem.Status == StatusCodes.Status500InternalServerError)
         {
-            logger.LogError(exception, "An unhandled exception occurred.");
+            this.logger.LogError(
+                3001,
+                exception,
+                "Unhandled exception while processing {RequestMethod} {RequestPath}; trace ID {TraceId}",
+                httpContext.Request.Method,
+                httpContext.Request.Path.Value ?? string.Empty,
+                traceId);
         }
 
         httpContext.Response.StatusCode = problem.Status
@@ -42,7 +49,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
 
     private static ProblemDetails CreateProblemDetails(
         HttpContext httpContext,
-        Exception exception)
+        Exception exception,
+        string traceId)
     {
         ProblemDetails problem = exception switch
         {
@@ -70,7 +78,7 @@ public sealed class ApiExceptionHandler : IExceptionHandler
         };
 
         problem.Instance = httpContext.Request.Path;
-        problem.Extensions["traceId"] = Activity.Current?.Id ?? httpContext.TraceIdentifier;
+        problem.Extensions["traceId"] = traceId;
 
         return problem;
     }

@@ -1,6 +1,6 @@
 # Architecture
 
-The application will use a layered monolith:
+The application uses a layered monolith:
 
 ```text
 React
@@ -10,9 +10,35 @@ React
   -> MongoDB
 ```
 
-Detailed component responsibilities will be recorded as each vertical slice is implemented.
-
 The Application layer owns persistence and time abstractions. Infrastructure supplies their runtime implementations, keeping command handlers testable and independent of MongoDB and the system clock.
+
+## React client and persisted workflow
+
+The React client uses a typed API module for list, detail, create, update,
+status, dependency, delete, and restore requests. It parses Problem Details in
+one place and distinguishes validation, domain-rule, concurrency, not-found,
+network, and unexpected failures. Serilog and backend implementation types do
+not cross the HTTP boundary.
+
+The main screen is backed by `GET /api/todos`; it does not keep a browser-only
+TODO collection. Active, Archived, and Trash tabs select the matching server
+scope. Changing scope, filters, sort field, or direction starts a new first-page
+request without a cursor and replaces the displayed items. Load More sends the
+opaque `nextCursor` and appends the returned page.
+
+List responses remain projections. Full TODO details are loaded only when the
+user opens management controls or when a blocked card needs prerequisite names.
+Each mutation of an existing TODO uses the version from the latest loaded
+representation and then refreshes the persisted list. A concurrency response is
+never overwritten silently: the UI displays the conflict and Reload Latest
+Version replaces stale state from the server.
+
+Dependency selection is deliberately bounded. The client requests one active
+page of at most 100 TODOs sorted by normalized name and searches only within
+that loaded set, excluding the current TODO and already-selected dependencies.
+This avoids loading an unbounded collection, but it also means TODOs beyond the
+first 100 candidates cannot currently be selected. A server-side dependency
+search endpoint is required before removing that limitation.
 
 ## Persistence boundary
 
@@ -133,9 +159,44 @@ The global API exception handler produces RFC Problem Details. It maps
 `errors` dictionary. All problem responses include the request path and a
 `traceId`.
 
+## Logging boundary
+
+Serilog is configured only by the API host. API, Application, and Infrastructure
+classes emit events through Microsoft `ILogger<T>`, which supplies a stable
+source category while keeping those layers independent of the logging provider.
+The host uses a bootstrap logger for startup failures and replaces it with the
+configuration-driven Serilog pipeline after dependency injection is available.
+
+One HTTP completion event records method, path, status, duration, request ID,
+and trace ID. A MediatR behavior records the application request type and
+successful handling duration, and Infrastructure records successful MongoDB
+index initialization. Successful health-check completion events are reduced to
+Debug, while unhealthy health checks remain Warning events. A recurring TODO
+completion records the series, completed TODO, and newly created TODO identifiers
+only after the transaction commits. Successful TODO create, update, status,
+dependency, delete, and restore mutations also emit Information audit events
+containing identifiers, versions, and operation-specific metadata.
+Expected validation, not-found, domain, and concurrency responses are not logged
+as exceptions; the global exception handler emits the single Error event for an
+unexpected exception with its trace ID, method, and path, while its HTTP 500
+completion is a Warning.
+
+Logging excludes request bodies, TODO descriptions, cursor query values, and
+MongoDB connection strings. Structured events use stable event IDs and named
+properties rather than interpolated payloads. Code uses direct typed logger calls
+such as `this.logger.LogInformation(eventId, template, values)` so the emitting
+class and event shape remain explicit without provider-specific APIs.
+
 ## Startup responsibilities
 
 Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
 repository and health check, and initializes MongoDB indexes through a hosted
 service. This keeps `Program.cs` limited to composition and application startup.
+
+Constructors fail fast with `ArgumentNullException` for every required injected
+dependency. This makes direct construction and registration mistakes fail at
+the composition boundary instead of later during a request. The optional
+`MongoTransactionContext` parameter on `MongoTodoRepository` is deliberate:
+normal dependency injection supplies the scoped context, while direct repository
+construction can fall back to a new context when no transaction is required.

@@ -1,5 +1,7 @@
 using FluentAssertions;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using NSubstitute;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
@@ -25,7 +27,10 @@ public sealed class CreateTodoCommandHandlerTests
             "  Monthly report  ",
             TestTodoFactory.DueDate,
             TodoPriority.High);
-        CreateTodoCommandHandler handler = new CreateTodoCommandHandler(repository, clock);
+        CreateTodoCommandHandler handler = new CreateTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<CreateTodoCommandHandler>.Instance);
         CancellationToken cancellationToken = new CancellationTokenSource().Token;
 
         TodoDto result = await handler.Handle(command, cancellationToken);
@@ -53,7 +58,10 @@ public sealed class CreateTodoCommandHandlerTests
             TodoPriority.High,
             RecurrenceType.Monthly,
             1);
-        CreateTodoCommandHandler handler = new CreateTodoCommandHandler(repository, clock);
+        CreateTodoCommandHandler handler = new CreateTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<CreateTodoCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(command, CancellationToken.None);
 

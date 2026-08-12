@@ -1,5 +1,7 @@
 using FluentAssertions;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using NSubstitute;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
@@ -41,7 +43,8 @@ public sealed class DependencyCommandHandlerTests
         AddDependencyCommandHandler handler = new AddDependencyCommandHandler(
             repository,
             graph,
-            clock);
+            clock,
+            NullLogger<AddDependencyCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(
             new AddDependencyCommand(source.Id, dependency.Id, 1),
@@ -78,7 +81,8 @@ public sealed class DependencyCommandHandlerTests
         AddDependencyCommandHandler handler = new AddDependencyCommandHandler(
             repository,
             graph,
-            clock);
+            clock,
+            NullLogger<AddDependencyCommandHandler>.Instance);
 
         Func<Task> missing = async () => await handler.Handle(
             new AddDependencyCommand(source.Id, "missing", 1),
@@ -105,7 +109,8 @@ public sealed class DependencyCommandHandlerTests
         AddDependencyCommandHandler handler = new AddDependencyCommandHandler(
             repository,
             graph,
-            clock);
+            clock,
+            NullLogger<AddDependencyCommandHandler>.Instance);
 
         Func<Task> stale = async () => await handler.Handle(
             new AddDependencyCommand(source.Id, "dependency", 2),
@@ -133,7 +138,8 @@ public sealed class DependencyCommandHandlerTests
             .Returns(_ => TestTodoFactory.WithVersion(source, 2));
         RemoveDependencyCommandHandler handler = new RemoveDependencyCommandHandler(
             repository,
-            clock);
+            clock,
+            NullLogger<RemoveDependencyCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(
             new RemoveDependencyCommand(source.Id, "dependency", 1),

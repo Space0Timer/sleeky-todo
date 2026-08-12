@@ -1,5 +1,7 @@
 using MediatR;
 
+using Microsoft.Extensions.Logging;
+
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
@@ -12,15 +14,21 @@ namespace Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
 public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand, TodoDto>
 {
     private readonly IClock clock;
+    private readonly ILogger<DeleteTodoCommandHandler> logger;
     private readonly ITodoRepository todoRepository;
 
-    public DeleteTodoCommandHandler(ITodoRepository todoRepository, IClock clock)
+    public DeleteTodoCommandHandler(
+        ITodoRepository todoRepository,
+        IClock clock,
+        ILogger<DeleteTodoCommandHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(logger);
 
         this.todoRepository = todoRepository;
         this.clock = clock;
+        this.logger = logger;
     }
 
     public async Task<TodoDto> Handle(
@@ -49,6 +57,13 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
             request.Version,
             cancellationToken)
             ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+
+        this.logger.LogInformation(
+            1106,
+            "Deleted TODO {TodoId} at version {Version}; scheduled purge at {PurgeAt}",
+            deletedTodoItem.Id,
+            deletedTodoItem.Version,
+            deletedTodoItem.PurgeAt);
 
         return TodoDto.FromEntity(deletedTodoItem);
     }
