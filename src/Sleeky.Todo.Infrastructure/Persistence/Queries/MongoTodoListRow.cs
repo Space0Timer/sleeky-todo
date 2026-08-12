@@ -4,18 +4,15 @@ using MongoDB.Bson.Serialization.Attributes;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Infrastructure.Persistence.Serialization;
 
-namespace Sleeky.Todo.Infrastructure.Persistence.Documents;
+namespace Sleeky.Todo.Infrastructure.Persistence.Queries;
 
-internal sealed class TodoDocument
+internal sealed class MongoTodoListRow
 {
     [BsonId]
     public string Id { get; set; } = string.Empty;
 
     [BsonElement(MongoTodoFields.Name)]
     public string Name { get; set; } = string.Empty;
-
-    [BsonElement(MongoTodoFields.NameNormalized)]
-    public string NameNormalized { get; set; } = string.Empty;
 
     [BsonElement(MongoTodoFields.Description)]
     public string? Description { get; set; }
@@ -32,28 +29,17 @@ internal sealed class TodoDocument
     [BsonRepresentation(BsonType.Int32)]
     public TodoPriority Priority { get; set; }
 
-    [BsonElement(MongoTodoFields.DependencyIds)]
-    public List<string> DependencyIds { get; set; } = new List<string>();
+    [BsonElement(MongoTodoFields.IsRecurring)]
+    public bool IsRecurring { get; set; }
 
-    [BsonElement(MongoTodoFields.Recurrence)]
-    public RecurrenceDocument? Recurrence { get; set; }
+    [BsonElement(MongoTodoFields.IsBlocked)]
+    public bool IsBlocked { get; set; }
 
-    [BsonElement(MongoTodoFields.SeriesId)]
-    public string? SeriesId { get; set; }
-
-    [BsonElement(MongoTodoFields.OccurrenceNumber)]
-    public int? OccurrenceNumber { get; set; }
+    [BsonElement(MongoTodoFields.IncompleteDependencyCount)]
+    public int IncompleteDependencyCount { get; set; }
 
     [BsonElement(MongoTodoFields.Version)]
     public long Version { get; set; }
-
-    [BsonElement(MongoTodoFields.CreatedAt)]
-    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
-    public DateTime CreatedAt { get; set; }
-
-    [BsonElement(MongoTodoFields.UpdatedAt)]
-    [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
-    public DateTime UpdatedAt { get; set; }
 
     [BsonElement(MongoTodoFields.DeletedAt)]
     [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]

@@ -25,8 +25,8 @@ public sealed class ConstructorNullGuardTests
 {
     private static readonly Type[] DependencyConstructedTypes =
     [
-        typeof(RequestLoggingBehavior<TestRequest, string>),
-        typeof(ValidationBehavior<TestRequest, string>),
+        typeof(RequestLoggingBehavior<ConstructorGuardTestRequest, string>),
+        typeof(ValidationBehavior<ConstructorGuardTestRequest, string>),
         typeof(DomainEventDispatcher),
         typeof(AddDependencyCommandHandler),
         typeof(ChangeTodoStatusCommandHandler),
@@ -71,9 +71,5 @@ public sealed class ConstructorNullGuardTests
                 exception.ParamName.Should().Be(parameters[nullIndex].Name);
             }
         }
-    }
-
-    public sealed class TestRequest
-    {
     }
 }

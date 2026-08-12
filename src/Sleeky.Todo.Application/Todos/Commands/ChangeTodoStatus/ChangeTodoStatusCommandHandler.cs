@@ -63,46 +63,21 @@ public sealed class ChangeTodoStatusCommandHandler
             return TodoDto.FromEntity(todoItem);
         }
 
-        if (request.Status is TodoStatus.InProgress or TodoStatus.Completed)
-        {
-            TodoDependencyState dependencyState = await dependencyEvaluator.EvaluateAsync(
-                todoItem.DependencyIds,
-                cancellationToken);
-            if (dependencyState.IsBlocked)
-            {
-                throw new DomainException(
-                    $"A blocked TODO cannot move to {request.Status}.");
-            }
-        }
+        await EnsureDependenciesAllowTransitionAsync(
+            todoItem,
+            request.Status,
+            cancellationToken);
 
         TodoStatus previousStatus = todoItem.Status;
         _ = todoItem.ChangeStatus(request.Status, clock.UtcNow);
         TodoCompletedDomainEvent? completionEvent = todoItem.DomainEvents
             .OfType<TodoCompletedDomainEvent>()
             .SingleOrDefault();
-        TodoItem updatedTodo;
-        if (completionEvent is null)
-        {
-            updatedTodo = await PersistAsync(todoItem, request, cancellationToken);
-        }
-        else
-        {
-            updatedTodo = await todoTransaction.ExecuteAsync(
-                request.Id,
-                request.Version,
-                async transactionCancellationToken =>
-                {
-                    TodoItem persistedTodo = await PersistAsync(
-                        todoItem,
-                        request,
-                        transactionCancellationToken);
-                    await domainEventDispatcher.DispatchAsync(
-                        todoItem.DomainEvents,
-                        transactionCancellationToken);
-                    return persistedTodo;
-                },
-                cancellationToken);
-        }
+        TodoItem updatedTodo = await PersistStatusChangeAsync(
+            todoItem,
+            request,
+            completionEvent,
+            cancellationToken);
 
         this.logger.LogInformation(
             1108,
@@ -126,6 +101,55 @@ public sealed class ChangeTodoStatusCommandHandler
         todoItem.ClearDomainEvents();
 
         return TodoDto.FromEntity(updatedTodo, completionEvent?.NextOccurrenceId);
+    }
+
+    private async Task EnsureDependenciesAllowTransitionAsync(
+        TodoItem todoItem,
+        TodoStatus status,
+        CancellationToken cancellationToken)
+    {
+        if (status != TodoStatus.InProgress && status != TodoStatus.Completed)
+        {
+            return;
+        }
+
+        TodoDependencyState dependencyState = await dependencyEvaluator.EvaluateAsync(
+            todoItem.DependencyIds,
+            cancellationToken);
+        if (!dependencyState.IsBlocked)
+        {
+            return;
+        }
+
+        throw new DomainException($"A blocked TODO cannot move to {status}.");
+    }
+
+    private async Task<TodoItem> PersistStatusChangeAsync(
+        TodoItem todoItem,
+        ChangeTodoStatusCommand request,
+        TodoCompletedDomainEvent? completionEvent,
+        CancellationToken cancellationToken)
+    {
+        if (completionEvent is null)
+        {
+            return await PersistAsync(todoItem, request, cancellationToken);
+        }
+
+        return await todoTransaction.ExecuteAsync(
+            request.Id,
+            request.Version,
+            async transactionCancellationToken =>
+            {
+                TodoItem persistedTodo = await PersistAsync(
+                    todoItem,
+                    request,
+                    transactionCancellationToken);
+                await domainEventDispatcher.DispatchAsync(
+                    todoItem.DomainEvents,
+                    transactionCancellationToken);
+                return persistedTodo;
+            },
+            cancellationToken);
     }
 
     private async Task<TodoItem> PersistAsync(

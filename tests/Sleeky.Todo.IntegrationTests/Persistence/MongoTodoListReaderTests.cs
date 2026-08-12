@@ -349,8 +349,8 @@ public sealed class MongoTodoListReaderTests
             { "nameNormalized", name.ToLowerInvariant() },
             { "description", $"Description for {name}" },
             { "dueDate", dueDate.ToString("yyyy-MM-dd") },
-            { "status", status.ToString() },
-            { "priority", priority.ToString() },
+            { "status", (int)status },
+            { "priority", (int)priority },
             { "dependencyIds", new BsonArray(dependencies ?? Array.Empty<string>()) },
             { "recurrence", BsonNull.Value },
             { "seriesId", BsonNull.Value },
@@ -371,10 +371,8 @@ public sealed class MongoTodoListReaderTests
         Func<BsonDocument, IComparable> value = sortField switch
         {
             TodoSortField.DueDate => document => document["dueDate"].AsString,
-            TodoSortField.Priority => document => Enum.Parse<TodoPriority>(
-                document["priority"].AsString),
-            TodoSortField.Status => document => Enum.Parse<TodoStatus>(
-                document["status"].AsString),
+            TodoSortField.Priority => document => document["priority"].AsInt32,
+            TodoSortField.Status => document => document["status"].AsInt32,
             TodoSortField.Name => document => document["nameNormalized"].AsString,
             _ => throw new ArgumentOutOfRangeException(nameof(sortField)),
         };

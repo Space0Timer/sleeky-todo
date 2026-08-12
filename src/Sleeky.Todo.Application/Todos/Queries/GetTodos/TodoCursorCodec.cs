@@ -58,14 +58,17 @@ public static class TodoCursorCodec
         {
             throw;
         }
-        catch (Exception exception) when (
-            exception is FormatException
-            or JsonException
-            or ArgumentException)
+        catch (FormatException exception)
         {
-            throw new InvalidCursorException(
-                "The cursor is malformed or unsupported.",
-                exception);
+            throw InvalidCursor(exception);
+        }
+        catch (JsonException exception)
+        {
+            throw InvalidCursor(exception);
+        }
+        catch (ArgumentException exception)
+        {
+            throw InvalidCursor(exception);
         }
     }
 
@@ -154,13 +157,33 @@ public static class TodoCursorCodec
             TodoSortField.DueDate => item.DueDate.ToString(
                 "yyyy-MM-dd",
                 CultureInfo.InvariantCulture),
-            TodoSortField.Priority => GetPriorityOrder(item.Priority)
+            TodoSortField.Priority => GetNumericPriority(item.Priority)
                 .ToString(CultureInfo.InvariantCulture),
-            TodoSortField.Status => GetStatusOrder(item.Status)
+            TodoSortField.Status => GetNumericStatus(item.Status)
                 .ToString(CultureInfo.InvariantCulture),
             TodoSortField.Name => item.Name.ToLowerInvariant(),
             _ => throw new ArgumentOutOfRangeException(nameof(sortField)),
         };
+    }
+
+    private static int GetNumericPriority(TodoPriority priority)
+    {
+        if (Enum.IsDefined(priority))
+        {
+            return (int)priority;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(priority));
+    }
+
+    private static int GetNumericStatus(TodoStatus status)
+    {
+        if (Enum.IsDefined(status))
+        {
+            return (int)status;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(status));
     }
 
     private static bool IsValidSortValue(string value, TodoSortField sortField)
@@ -187,29 +210,6 @@ public static class TodoCursorCodec
                 && statusOrder is >= 0 and <= 3,
             TodoSortField.Name => !string.IsNullOrEmpty(value),
             _ => false,
-        };
-    }
-
-    private static int GetPriorityOrder(TodoPriority priority)
-    {
-        return priority switch
-        {
-            TodoPriority.Low => 0,
-            TodoPriority.Medium => 1,
-            TodoPriority.High => 2,
-            _ => throw new ArgumentOutOfRangeException(nameof(priority)),
-        };
-    }
-
-    private static int GetStatusOrder(TodoStatus status)
-    {
-        return status switch
-        {
-            TodoStatus.NotStarted => 0,
-            TodoStatus.InProgress => 1,
-            TodoStatus.Completed => 2,
-            TodoStatus.Archived => 3,
-            _ => throw new ArgumentOutOfRangeException(nameof(status)),
         };
     }
 
@@ -244,19 +244,11 @@ public static class TodoCursorCodec
     {
         return new InvalidCursorException("The cursor is malformed or unsupported.");
     }
-}
 
-public sealed class TodoCursorPayload
-{
-    public int Version { get; init; }
-
-    public string SortField { get; init; } = string.Empty;
-
-    public string Direction { get; init; } = string.Empty;
-
-    public string LastSortValue { get; init; } = string.Empty;
-
-    public string LastTodoId { get; init; } = string.Empty;
-
-    public string FilterSignature { get; init; } = string.Empty;
+    private static InvalidCursorException InvalidCursor(Exception exception)
+    {
+        return new InvalidCursorException(
+            "The cursor is malformed or unsupported.",
+            exception);
+    }
 }

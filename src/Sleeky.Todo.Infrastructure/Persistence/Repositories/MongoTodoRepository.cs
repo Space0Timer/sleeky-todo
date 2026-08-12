@@ -38,14 +38,13 @@ public sealed class MongoTodoRepository : ITodoRepository
             await todoItems.InsertOneAsync(
                 document,
                 cancellationToken: cancellationToken);
+            return;
         }
-        else
-        {
-            await todoItems.InsertOneAsync(
-                transactionContext.Session,
-                document,
-                cancellationToken: cancellationToken);
-        }
+
+        await todoItems.InsertOneAsync(
+            transactionContext.Session,
+            document,
+            cancellationToken: cancellationToken);
     }
 
     public async Task<TodoItem?> GetByIdAsync(
