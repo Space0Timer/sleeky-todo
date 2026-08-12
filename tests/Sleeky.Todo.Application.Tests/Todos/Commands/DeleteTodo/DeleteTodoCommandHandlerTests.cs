@@ -8,6 +8,7 @@ using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
 using Sleeky.Todo.Domain.Entities;
+using Sleeky.Todo.Domain.Exceptions;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Commands.DeleteTodo;
 
@@ -106,5 +107,33 @@ public sealed class DeleteTodoCommandHandlerTests
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
         await act.Should().ThrowAsync<ConcurrencyConflictException>();
+    }
+
+    [TestMethod]
+    public async Task HandleRejectsTodoWithActiveDependents()
+    {
+        TodoItem todoItem = TestTodoFactory.Create();
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        repository
+            .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
+            .Returns(todoItem);
+        repository.HasActiveDependentsAsync(
+                todoItem.Id,
+                Arg.Any<CancellationToken>())
+            .Returns(true);
+        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(
+            new DeleteTodoCommand(todoItem.Id, todoItem.Version),
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<DomainException>()
+            .WithMessage("A TODO with active dependents cannot be deleted.");
+        await repository.DidNotReceiveWithAnyArgs().SoftDeleteAsync(
+            default!,
+            default,
+            default);
     }
 }

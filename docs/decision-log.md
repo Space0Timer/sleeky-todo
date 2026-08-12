@@ -64,7 +64,22 @@ This design avoids locks and prevents lost updates. Concurrent integration tests
 
 Restore is allowed strictly before the purge timestamp and requires the latest version. At the purge boundary the record is expired and cannot be restored. A later retention job will physically remove expired records; that cleanup is intentionally separate from request handling.
 
-Deleting a TODO that is still required by active dependents will be rejected once dependency rules are implemented.
+Deleting a TODO that is still required by an active, non-archived dependent is
+rejected. Archived and deleted dependents do not prevent deletion.
+
+## Dependency graph and blocked transitions
+
+Each TODO stores outgoing dependency IDs. Adding an edge requires an active
+target and rejects self-dependencies, duplicates, and direct or transitive
+cycles. Cycle detection traverses the graph breadth-first and batch-loads each
+frontier, avoiding one repository call per node and terminating safely even if
+legacy data already contains a cycle.
+
+Blocked state is evaluated from one batch read of the source TODO's dependency
+IDs. A missing, deleted, archived, or non-completed dependency blocks the
+source. Blocked TODOs cannot enter `InProgress` or `Completed`; other valid
+status transitions remain available. Dependency and status commands use the
+same optimistic version contract as the CRUD commands.
 
 ## API failure contract
 
@@ -114,6 +129,5 @@ schemes, and test isolation by user must be designed together.
 
 ## Deferred decisions
 
-Recurring occurrences, dependency graph mutation and cycle evaluation,
-retention cleanup scheduling, and production authentication remain deferred
-until their corresponding vertical slices.
+Recurring occurrences, retention cleanup scheduling, and production
+authentication remain deferred until their corresponding vertical slices.

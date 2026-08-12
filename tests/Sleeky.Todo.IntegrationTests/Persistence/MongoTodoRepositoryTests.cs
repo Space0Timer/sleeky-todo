@@ -96,6 +96,46 @@ public sealed class MongoTodoRepositoryTests
     }
 
     [TestMethod]
+    public async Task GetByIdsLoadsBatchAndHonorsDeletedFilter()
+    {
+        TodoItem active = CreateTodo("active");
+        TodoItem deleted = CreateTodo("deleted");
+        deleted.SoftDelete(Timestamp.AddDays(1));
+        await repository.AddAsync(active);
+        await repository.AddAsync(deleted);
+
+        IReadOnlyCollection<TodoItem> activeOnly = await repository.GetByIdsAsync(
+            new[] { active.Id, deleted.Id, "missing" });
+        IReadOnlyCollection<TodoItem> includingDeleted = await repository.GetByIdsAsync(
+            new[] { active.Id, deleted.Id },
+            includeDeleted: true);
+
+        activeOnly.Select(todo => todo.Id).Should().Equal(active.Id);
+        includingDeleted.Select(todo => todo.Id)
+            .Should().BeEquivalentTo(active.Id, deleted.Id);
+    }
+
+    [TestMethod]
+    public async Task ActiveDependentPreventsDeletionButArchivedDependentDoesNot()
+    {
+        TodoItem prerequisite = CreateTodo("prerequisite");
+        TodoItem dependent = CreateTodo("dependent");
+        dependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+        await repository.AddAsync(prerequisite);
+        await repository.AddAsync(dependent);
+
+        bool hasActiveDependent = await repository.HasActiveDependentsAsync(
+            prerequisite.Id);
+        _ = dependent.ChangeStatus(TodoStatus.Archived, Timestamp.AddHours(2));
+        _ = await repository.UpdateAsync(dependent, expectedVersion: 1);
+        bool hasActiveDependentAfterArchive = await repository.HasActiveDependentsAsync(
+            prerequisite.Id);
+
+        hasActiveDependent.Should().BeTrue();
+        hasActiveDependentAfterArchive.Should().BeFalse();
+    }
+
+    [TestMethod]
     public async Task DeletedTodoIsOnlyReturnedWhenExplicitlyIncluded()
     {
         TodoItem todoItem = CreateTodo();
@@ -328,10 +368,10 @@ public sealed class MongoTodoRepositoryTests
         storedTodo.Version.Should().Be(1);
     }
 
-    private static TodoItem CreateTodo()
+    private static TodoItem CreateTodo(string id = "todo-1")
     {
         return TodoItem.Create(
-            "todo-1",
+            id,
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),

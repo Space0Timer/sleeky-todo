@@ -39,7 +39,8 @@ exposing BSON types.
 
 ## Optimistic concurrency
 
-Every mutable TODO carries a numeric version. Update, soft-delete, and restore requests include the version last read by the client.
+Every mutable TODO carries a numeric version. Update, soft-delete, restore,
+dependency, and status requests include the version last read by the client.
 
 The repository performs each mutation as one MongoDB `FindOneAndReplace` operation with a filter equivalent to:
 
@@ -69,7 +70,28 @@ Normal reads and existence checks add `deletedAt == null` to their repository fi
 
 Deletion state is valid only when `deletedAt` and `purgeAt` are either both null or both present, with `purgeAt` later than `deletedAt`. Restore cannot use a timestamp before deletion.
 
-The background job that physically removes records after `purgeAt` is separate from this recoverable lifecycle. Dependency-aware deletion checks will be added with dependency rules.
+The background job that physically removes records after `purgeAt` is separate
+from this recoverable lifecycle. Before deletion, the application asks the
+repository whether an active, non-archived TODO depends on the target and
+rejects the transition when one exists.
+
+## Dependency graph and status rules
+
+Dependency mutations are application commands backed by aggregate methods on
+`TodoItem`. The add path verifies an active target, then uses a breadth-first
+graph service to determine whether the proposed target already reaches the
+source. Each frontier is loaded with one `GetByIdsAsync` call, and a visited set
+guarantees termination for malformed legacy graphs.
+
+Status transitions use a dependency evaluator that batch-loads all direct
+dependencies, including deleted documents. Missing, deleted, archived, or
+non-completed dependencies contribute to the incomplete count and block entry
+to `InProgress` or `Completed`. The list reader independently projects the same
+blocked semantics for query responses and filtering.
+
+All dependency and status writes retain the source TODO's expected version in
+the repository filter. A graph check is therefore followed by the same atomic
+optimistic write used by the CRUD commands.
 
 ## HTTP and error boundary
 

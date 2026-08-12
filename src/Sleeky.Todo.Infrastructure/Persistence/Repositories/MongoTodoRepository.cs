@@ -4,6 +4,7 @@ using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Domain.Entities;
+using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
@@ -50,6 +51,53 @@ public sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
+        long count = await todoItems.CountDocumentsAsync(
+            filter,
+            new CountOptions { Limit = 1 },
+            cancellationToken);
+
+        return count > 0;
+    }
+
+    public async Task<IReadOnlyCollection<TodoItem>> GetByIdsAsync(
+        IEnumerable<string> ids,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+
+        string[] distinctIds = ids.Distinct(StringComparer.Ordinal).ToArray();
+        if (distinctIds.Length == 0)
+        {
+            return Array.Empty<TodoItem>();
+        }
+
+        FilterDefinition<TodoDocument> filter =
+            Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
+        if (!includeDeleted)
+        {
+            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
+        }
+
+        List<TodoDocument> documents = await todoItems
+            .Find(filter)
+            .ToListAsync(cancellationToken);
+
+        return documents.Select(TodoDocumentMapper.ToDomain).ToArray();
+    }
+
+    public async Task<bool> HasActiveDependentsAsync(
+        string dependencyId,
+        CancellationToken cancellationToken = default)
+    {
+        FilterDefinition<TodoDocument> filter =
+            Builders<TodoDocument>.Filter.AnyEq(
+                document => document.DependencyIds,
+                dependencyId)
+            & Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null)
+            & Builders<TodoDocument>.Filter.Ne(
+                document => document.Status,
+                TodoStatus.Archived);
         long count = await todoItems.CountDocumentsAsync(
             filter,
             new CountOptions { Limit = 1 },

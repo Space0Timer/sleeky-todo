@@ -252,10 +252,30 @@ public sealed class MongoTodoListReaderTests
                 new DateOnly(2026, 8, 1),
                 TodoStatus.Completed),
             CreateDocument(
+                "dependency-archived",
+                "Archived dependency",
+                new DateOnly(2026, 8, 1),
+                TodoStatus.Archived),
+            CreateDocument(
+                "dependency-deleted",
+                "Deleted dependency",
+                new DateOnly(2026, 8, 1),
+                deleted: true),
+            CreateDocument(
                 "dependent-blocked",
                 "Blocked",
                 new DateOnly(2026, 8, 2),
                 dependencies: new[] { "dependency-open", "dependency-missing" }),
+            CreateDocument(
+                "dependent-archived-dependency",
+                "Blocked by archived",
+                new DateOnly(2026, 8, 2),
+                dependencies: new[] { "dependency-archived" }),
+            CreateDocument(
+                "dependent-deleted-dependency",
+                "Blocked by deleted",
+                new DateOnly(2026, 8, 2),
+                dependencies: new[] { "dependency-deleted" }),
             CreateDocument(
                 "dependent-unblocked",
                 "Unblocked",
@@ -267,12 +287,36 @@ public sealed class MongoTodoListReaderTests
         CursorPage<TodoListItemDto> unblocked = await ListAsync(
             new GetTodosQuery(dependencyStatus: TodoDependencyStatus.Unblocked));
 
-        blocked.Items.Select(item => item.Id).Should().Equal("dependent-blocked");
-        blocked.Items[0].IncompleteDependencyCount.Should().Be(2);
-        blocked.Items[0].IsBlocked.Should().BeTrue();
+        blocked.Items.Select(item => item.Id).Should().BeEquivalentTo(
+            "dependent-blocked",
+            "dependent-archived-dependency",
+            "dependent-deleted-dependency");
+        blocked.Items.Single(item => item.Id == "dependent-blocked")
+            .IncompleteDependencyCount.Should().Be(2);
+        blocked.Items.Should().OnlyContain(item => item.IsBlocked);
         unblocked.Items.Select(item => item.Id).Should().Contain("dependent-unblocked");
         unblocked.Items.Single(item => item.Id == "dependent-unblocked")
             .IncompleteDependencyCount.Should().Be(0);
+
+        List<TodoListItemDto> pagedBlockedItems = new List<TodoListItemDto>();
+        string? cursor = null;
+        do
+        {
+            CursorPage<TodoListItemDto> page = await ListAsync(
+                new GetTodosQuery(
+                    dependencyStatus: TodoDependencyStatus.Blocked,
+                    limit: 1,
+                    cursor: cursor));
+            pagedBlockedItems.AddRange(page.Items);
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null);
+
+        pagedBlockedItems.Select(item => item.Id).Should().BeEquivalentTo(
+            "dependent-blocked",
+            "dependent-archived-dependency",
+            "dependent-deleted-dependency");
+        pagedBlockedItems.Select(item => item.Id).Should().OnlyHaveUniqueItems();
     }
 
     private static bool ShouldRunMongoDbTests()
