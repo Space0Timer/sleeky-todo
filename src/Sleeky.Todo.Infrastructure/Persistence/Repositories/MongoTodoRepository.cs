@@ -76,6 +76,12 @@ public sealed class MongoTodoRepository : ITodoRepository
         long expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        if (todoItem.DeletedAt is null || todoItem.PurgeAt is null)
+        {
+            throw new InvalidOperationException(
+                "A TODO must be soft-deleted before it can be persisted as deleted.");
+        }
+
         FilterDefinition<TodoDocument> filter = BuildMutationFilter(
             todoItem.Id,
             expectedVersion,
@@ -89,6 +95,12 @@ public sealed class MongoTodoRepository : ITodoRepository
         long expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        if (todoItem.DeletedAt is not null || todoItem.PurgeAt is not null)
+        {
+            throw new InvalidOperationException(
+                "A TODO must be restored before it can be persisted as active.");
+        }
+
         FilterDefinition<TodoDocument> filter =
             Builders<TodoDocument>.Filter.Eq(document => document.Id, todoItem.Id)
             & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion)
