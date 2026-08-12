@@ -83,6 +83,21 @@ Application code depends on `ITodoRepository`, while Infrastructure provides `Mo
 
 Integration tests use the public repository contract. Exact storage representations are checked as raw BSON after writing through the repository, avoiding both `InternalsVisibleTo` and a public persistence document type.
 
+## Persisted enum representation and migration
+
+`TodoStatus` and `TodoPriority` are persisted as BSON `int32` values because
+their explicit numeric values represent the required business ordering. This
+lets MongoDB use the existing sort indexes directly and removes the temporary
+rank expressions previously needed by list queries.
+
+The startup migrator accepts known legacy names and already-migrated integers,
+rejects unknown or malformed values before modifying either field, and updates
+known names idempotently. This is an in-place deployment step, not a mixed-
+version rolling migration: old writers must be stopped and a recoverable
+database backup taken first. A rollback to string-enum binaries requires an
+explicit reverse migration; the application does not perform that contraction
+automatically.
+
 ## Optimistic concurrency
 
 The numeric `version` field is the sole concurrency token; `updatedAt` is not used for concurrency. Clients send the version they last read with every mutable request.
@@ -170,6 +185,27 @@ another cursor.
 Priority ordering is Low, Medium, High; status ordering is NotStarted,
 InProgress, Completed, Archived. These are explicit business orders and do not
 depend on the alphabetical BSON representation.
+
+## Fluent list aggregation
+
+The list reader uses typed MongoDB filter, cursor, sort, and limit builders for
+the ordinary query path. Raw BSON is retained only for aggregation expressions
+where it makes the lookup, count, and final computed projection explicit. The
+reader projects into an internal list-row model before mapping to the public
+DTO, keeping persistence details out of Application.
+
+Dependency-state filtering runs before pagination; ordinary requests sort and
+limit before the dependency lookup to bound work. Both paths preserve the same
+deterministic cursor contract and use `_id` as the final tie-breaker.
+
+## Read-time dependency state
+
+`incompleteDependencyCount` and `isBlocked` are calculated during list reads
+rather than persisted. Persisting them would create stale denormalized state
+whenever a dependency is completed, deleted, archived, or removed. The lookup
+counts only active completed dependency IDs, so missing, deleted, archived, and
+unfinished dependencies remain incomplete and the list behavior matches status
+transition rules.
 
 ## Local replica set
 
