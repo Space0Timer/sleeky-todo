@@ -16,13 +16,13 @@ public sealed class TodoDependencyEvaluator : ITodoDependencyEvaluator
     }
 
     public async Task<TodoDependencyState> EvaluateAsync(
-        IEnumerable<string> dependencyIds,
+        IEnumerable<Guid> dependencyIds,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dependencyIds);
 
-        string[] distinctIds = dependencyIds
-            .Distinct(StringComparer.Ordinal)
+        Guid[] distinctIds = dependencyIds
+            .Distinct()
             .ToArray();
         if (distinctIds.Length == 0)
         {

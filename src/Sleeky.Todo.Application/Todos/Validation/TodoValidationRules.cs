@@ -15,18 +15,13 @@ internal static class TodoValidationRules
                 $"Description must not exceed {TodoValidationLimits.DescriptionMaximumLength} characters.");
     }
 
-    public static IRuleBuilderOptions<T, string> ValidTodoIdentifier<T>(
-        this IRuleBuilderInitial<T, string> ruleBuilder)
+    public static IRuleBuilderOptions<T, Guid> ValidTodoIdentifier<T>(
+        this IRuleBuilderInitial<T, Guid> ruleBuilder)
     {
         return ruleBuilder
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
-            .WithMessage("A TODO identifier is required.")
-            .MaximumLength(TodoValidationLimits.IdentifierMaximumLength)
-            .WithMessage(
-                $"TODO identifier must not exceed {TodoValidationLimits.IdentifierMaximumLength} characters.")
-            .Must(identifier => identifier == identifier.Trim())
-            .WithMessage("TODO identifier must not contain leading or trailing whitespace.");
+            .WithMessage("A TODO identifier is required.");
     }
 
     public static IRuleBuilderOptions<T, string> ValidTodoName<T>(

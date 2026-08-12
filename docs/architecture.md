@@ -67,6 +67,13 @@ exposing BSON types.
 
 Every mutable TODO carries a numeric version. Update, soft-delete, restore,
 dependency, and status requests include the version last read by the client.
+Backend-owned TODO, dependency, recurrence-series, and cursor tie-breaker
+identifiers use `Guid` throughout Domain, Application, API, and Infrastructure.
+MongoDB stores them as standard BSON UUIDs (binary subtype 4), including TODO
+IDs, dependency IDs, recurrence-series IDs, and cursor tie-breaker IDs. The
+JSON/React contract remains unchanged because ASP.NET Core represents each
+`Guid` as its canonical UUID string at the HTTP boundary. Persistence document
+models ignore unknown BSON elements to support additive rolling schema changes.
 
 The repository performs each mutation as one MongoDB `FindOneAndReplace` operation with a filter equivalent to:
 

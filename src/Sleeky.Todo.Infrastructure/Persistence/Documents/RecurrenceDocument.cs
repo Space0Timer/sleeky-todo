@@ -5,6 +5,7 @@ using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Documents;
 
+[BsonIgnoreExtraElements]
 internal sealed class RecurrenceDocument
 {
     [BsonElement("type")]

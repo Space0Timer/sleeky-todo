@@ -20,13 +20,13 @@ public sealed class DeleteTodoCommandHandlerTests
     [TestMethod]
     public async Task HandleThrowsNotFoundWhenTodoDoesNotExist()
     {
-        const string TodoId = "missing-todo";
+        Guid todoId = TestTodoFactory.CreateId("missing-todo");
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         IClock clock = Substitute.For<IClock>();
         repository
-            .GetByIdAsync(TodoId, false, Arg.Any<CancellationToken>())
+            .GetByIdAsync(todoId, false, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
-        DeleteTodoCommand command = new DeleteTodoCommand(TodoId, 1);
+        DeleteTodoCommand command = new DeleteTodoCommand(todoId, 1);
         DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
@@ -34,7 +34,7 @@ public sealed class DeleteTodoCommandHandlerTests
         NotFoundException exception = (await act.Should()
             .ThrowAsync<NotFoundException>())
             .Which;
-        exception.ResourceId.Should().Be(TodoId);
+        exception.ResourceId.Should().Be(todoId);
         await repository.DidNotReceiveWithAnyArgs().SoftDeleteAsync(
             default!,
             default,

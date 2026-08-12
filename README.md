@@ -102,6 +102,13 @@ MongoDb__ConnectionString="mongodb://localhost:27017/?replicaSet=rs0" dotnet run
 
 Application handlers depend on `ITodoRepository`. Infrastructure implements that contract with `MongoTodoRepository`, which accesses the configured collection directly through `IMongoDatabase`. The BSON document and mapping types remain internal to Infrastructure.
 
+Backend-owned identifiers are .NET `Guid` values stored as standard BSON UUIDs
+(binary subtype 4). Their JSON representation remains the canonical UUID
+string. Collections created by an older version that stored identifier fields
+as BSON strings are not query-compatible with this representation. Migrate and
+reinsert those documents, or recreate disposable local data with
+`docker compose down --volumes` followed by `docker compose up -d`.
+
 At startup, Infrastructure initializes compound active-record indexes for due
 date, priority, status, and normalized-name sorting, plus the retained
 soft-delete `purgeAt` index and an active-dependency lookup index. `GET /health`

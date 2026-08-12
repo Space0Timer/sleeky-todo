@@ -42,14 +42,14 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
                 request.DueDate)
             : null;
         TodoItem todoItem = TodoItem.Create(
-            Guid.NewGuid().ToString("N"),
+            Guid.NewGuid(),
             request.Name,
             request.Description,
             request.DueDate,
             request.Priority,
             clock.UtcNow,
             recurrence,
-            recurrence is null ? null : Guid.NewGuid().ToString("N"),
+            recurrence is null ? null : Guid.NewGuid(),
             recurrence is null ? null : 1);
 
         await todoRepository.AddAsync(todoItem, cancellationToken);

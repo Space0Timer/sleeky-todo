@@ -24,7 +24,7 @@ public sealed class TodoListCriteria
         SortDirection sortDirection,
         int limit,
         string? lastSortValue,
-        string? lastTodoId)
+        Guid? lastTodoId)
     {
         Status = status;
         Priority = priority;
@@ -59,5 +59,5 @@ public sealed class TodoListCriteria
 
     public string? LastSortValue { get; }
 
-    public string? LastTodoId { get; }
+    public Guid? LastTodoId { get; }
 }

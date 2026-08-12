@@ -27,7 +27,7 @@ public sealed class UpdateTodoCommandValidatorTests
     public void ValidateRejectsEveryInvalidField()
     {
         UpdateTodoCommand command = new UpdateTodoCommand(
-            " todo-1 ",
+            Guid.Empty,
             "   ",
             new string('d', TodoValidationLimits.DescriptionMaximumLength + 1),
             default,
@@ -49,18 +49,6 @@ public sealed class UpdateTodoCommandValidatorTests
     }
 
     [TestMethod]
-    public void ValidateRejectsOversizedIdentifier()
-    {
-        UpdateTodoCommand command = CreateCommand(
-            id: new string('i', TodoValidationLimits.IdentifierMaximumLength + 1));
-
-        ValidationResult result = validator.Validate(command);
-
-        result.Errors.Should().ContainSingle(
-            failure => failure.PropertyName == nameof(UpdateTodoCommand.Id));
-    }
-
-    [TestMethod]
     public void ValidateRejectsNegativeVersion()
     {
         UpdateTodoCommand command = CreateCommand(version: -1);
@@ -72,11 +60,11 @@ public sealed class UpdateTodoCommandValidatorTests
     }
 
     private static UpdateTodoCommand CreateCommand(
-        string id = "todo-1",
+        Guid? id = null,
         long version = 1)
     {
         return new UpdateTodoCommand(
-            id,
+            id ?? TestTodoFactory.CreateId("todo-1"),
             "Submit report",
             "Monthly report",
             TestTodoFactory.DueDate,

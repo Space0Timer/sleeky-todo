@@ -46,7 +46,7 @@ public static class TodoCursorCodec
                 || string.IsNullOrWhiteSpace(payload.SortField)
                 || string.IsNullOrWhiteSpace(payload.Direction)
                 || payload.LastSortValue is null
-                || string.IsNullOrWhiteSpace(payload.LastTodoId)
+                || payload.LastTodoId == Guid.Empty
                 || string.IsNullOrWhiteSpace(payload.FilterSignature))
             {
                 throw InvalidCursor();
@@ -256,7 +256,7 @@ public sealed class TodoCursorPayload
 
     public string LastSortValue { get; init; } = string.Empty;
 
-    public string LastTodoId { get; init; } = string.Empty;
+    public Guid LastTodoId { get; init; }
 
     public string FilterSignature { get; init; } = string.Empty;
 }

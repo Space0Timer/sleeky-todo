@@ -11,6 +11,8 @@ namespace Sleeky.Todo.Domain.Tests.Entities;
 public sealed class TodoCompletionEventTests
 {
     private static readonly DateOnly DueDate = new DateOnly(2026, 8, 31);
+    private static readonly Guid TodoId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid SeriesId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly DateTimeOffset Timestamp = new DateTimeOffset(
         2026,
         8,
@@ -29,14 +31,14 @@ public sealed class TodoCompletionEventTests
             null,
             DueDate);
         TodoItem todo = TodoItem.Create(
-            "todo-1",
+            TodoId,
             "Submit report",
             "Monthly report",
             DueDate,
             TodoPriority.High,
             Timestamp,
             recurrence,
-            "series-1",
+            SeriesId,
             1);
 
         bool changed = todo.ChangeStatus(TodoStatus.Completed, Timestamp.AddDays(20));
@@ -46,9 +48,9 @@ public sealed class TodoCompletionEventTests
             .Should().ContainSingle().Subject
             .Should().BeOfType<TodoCompletedDomainEvent>().Subject;
         domainEvent.TodoId.Should().Be(todo.Id);
-        domainEvent.SeriesId.Should().Be("series-1");
+        domainEvent.SeriesId.Should().Be(SeriesId);
         domainEvent.OccurrenceNumber.Should().Be(1);
-        domainEvent.NextOccurrenceId.Should().HaveLength(32);
+        domainEvent.NextOccurrenceId.Should().NotBeNull().And.NotBe(Guid.Empty);
         domainEvent.CompletionContext.ScheduledDueDate.Should().Be(DueDate);
         domainEvent.CompletionContext.Recurrence.Should().Be(recurrence);
     }
@@ -57,7 +59,7 @@ public sealed class TodoCompletionEventTests
     public void CompletedToCompletedDoesNotRaiseAnotherEvent()
     {
         TodoItem todo = TodoItem.Create(
-            "todo-1",
+            TodoId,
             "Submit report",
             null,
             DueDate,

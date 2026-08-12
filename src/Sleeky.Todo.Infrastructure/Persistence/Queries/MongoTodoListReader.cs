@@ -305,7 +305,11 @@ public sealed class MongoTodoListReader : ITodoListReader
                         new BsonDocument("sortValue", lastSortValue),
                         new BsonDocument(
                             "_id",
-                            new BsonDocument(comparison, criteria.LastTodoId)),
+                            new BsonDocument(
+                                comparison,
+                                new BsonBinaryData(
+                                    criteria.LastTodoId.GetValueOrDefault(),
+                                    GuidRepresentation.Standard))),
                     }),
             });
     }
@@ -337,7 +341,7 @@ public sealed class MongoTodoListReader : ITodoListReader
                 && csharpNull.AsBoolean);
 
         return new TodoListItemDto(
-            document["_id"].AsString,
+            document["_id"].AsBsonBinaryData.ToGuid(),
             document["name"].AsString,
             CreateDescriptionPreview(description),
             DateOnly.ParseExact(

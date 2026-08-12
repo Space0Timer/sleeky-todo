@@ -15,14 +15,12 @@ public sealed class DependencyGraphService : IDependencyGraphService
     }
 
     public async Task<bool> WouldCreateCycleAsync(
-        string sourceTodoId,
-        string dependencyTodoId,
+        Guid sourceTodoId,
+        Guid dependencyTodoId,
         CancellationToken cancellationToken = default)
     {
-        HashSet<string> visited = new HashSet<string>(StringComparer.Ordinal);
-        HashSet<string> frontier = new HashSet<string>(
-            [dependencyTodoId],
-            StringComparer.Ordinal);
+        HashSet<Guid> visited = new HashSet<Guid>();
+        HashSet<Guid> frontier = new HashSet<Guid>([dependencyTodoId]);
 
         while (frontier.Count > 0)
         {
@@ -31,7 +29,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
                 return true;
             }
 
-            string[] batchIds = frontier
+            Guid[] batchIds = frontier
                 .Where(visited.Add)
                 .ToArray();
             if (batchIds.Length == 0)
@@ -45,7 +43,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
             frontier = batch
                 .SelectMany(todo => todo.DependencyIds)
                 .Where(dependencyId => !visited.Contains(dependencyId))
-                .ToHashSet(StringComparer.Ordinal);
+                .ToHashSet();
         }
 
         return false;

@@ -55,6 +55,20 @@ can use MongoDB transactions without changing development topology.
 MongoDB-specific documents, BSON serializers, indexes, and repository behavior
 remain inside Infrastructure.
 
+## Identifier representation
+
+Domain, Application, API, and Infrastructure use `Guid` for backend-owned TODO,
+dependency, recurrence-series, and cursor tie-breaker identifiers. MongoDB
+stores those values as standard BSON UUIDs (binary subtype 4) rather than text,
+which keeps identifier fields and index keys compact and gives them an explicit
+cross-driver representation. ASP.NET Core continues to expose UUIDs as
+canonical strings in JSON, so the React boundary remains transport-friendly.
+
+String and binary UUID values are deliberately not mixed. Existing string-ID
+documents require a collection migration/reinsert because MongoDB `_id` values
+cannot be changed in place. OIDC subject identifiers are provider-owned and
+remain strings rather than being coerced into this backend identifier policy.
+
 ## Date-only due dates
 
 Due dates are calendar dates rather than instants, so Domain and Application use
