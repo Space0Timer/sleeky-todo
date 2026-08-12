@@ -27,7 +27,7 @@ public sealed class RestoreTodoCommandHandlerTests
             .Returns(todoItem);
         repository
             .RestoreAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
-            .Returns(todoItem);
+            .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = new RestoreTodoCommandHandler(repository, clock);
 
@@ -36,6 +36,7 @@ public sealed class RestoreTodoCommandHandlerTests
         result.DeletedAt.Should().BeNull();
         result.PurgeAt.Should().BeNull();
         result.UpdatedAt.Should().Be(restoredAt);
+        result.Version.Should().Be(2);
         await repository.Received(1).GetByIdAsync(
             todoItem.Id,
             true,
@@ -65,5 +66,26 @@ public sealed class RestoreTodoCommandHandlerTests
             default!,
             default,
             default);
+    }
+
+    [TestMethod]
+    public async Task HandleThrowsConcurrencyWhenAtomicRestoreLosesRace()
+    {
+        TodoItem todoItem = TestTodoFactory.CreateDeleted();
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        clock.UtcNow.Returns(TestTodoFactory.Timestamp.AddDays(2));
+        repository
+            .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
+            .Returns(todoItem);
+        repository
+            .RestoreAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
+            .Returns((TodoItem?)null);
+        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommandHandler handler = new RestoreTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TodoConcurrencyException>();
     }
 }

@@ -27,7 +27,7 @@ public sealed class DeleteTodoCommandHandlerTests
             .Returns(todoItem);
         repository
             .SoftDeleteAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
-            .Returns(todoItem);
+            .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version);
         DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
 
@@ -35,6 +35,7 @@ public sealed class DeleteTodoCommandHandlerTests
 
         result.DeletedAt.Should().Be(deletedAt);
         result.PurgeAt.Should().Be(deletedAt.AddDays(90));
+        result.Version.Should().Be(2);
         await repository.Received(1).SoftDeleteAsync(
             todoItem,
             command.Version,
@@ -60,5 +61,26 @@ public sealed class DeleteTodoCommandHandlerTests
             default!,
             default,
             default);
+    }
+
+    [TestMethod]
+    public async Task HandleThrowsConcurrencyWhenAtomicDeleteLosesRace()
+    {
+        TodoItem todoItem = TestTodoFactory.Create();
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        clock.UtcNow.Returns(TestTodoFactory.Timestamp.AddDays(1));
+        repository
+            .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
+            .Returns(todoItem);
+        repository
+            .SoftDeleteAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
+            .Returns((TodoItem?)null);
+        DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version);
+        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        await act.Should().ThrowAsync<TodoConcurrencyException>();
     }
 }

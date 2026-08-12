@@ -28,7 +28,7 @@ public sealed class UpdateTodoCommandHandlerTests
             .Returns(todoItem);
         repository
             .UpdateAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
-            .Returns(todoItem);
+            .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         UpdateTodoCommand command = new UpdateTodoCommand(
             todoItem.Id,
             "Review report",
@@ -43,6 +43,7 @@ public sealed class UpdateTodoCommandHandlerTests
         result.Name.Should().Be("Review report");
         result.Description.Should().Be("Revised report");
         result.UpdatedAt.Should().Be(updatedAt);
+        result.Version.Should().Be(2);
         await repository.Received(1).UpdateAsync(
             todoItem,
             command.Version,

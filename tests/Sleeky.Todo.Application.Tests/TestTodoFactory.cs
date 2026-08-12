@@ -32,4 +32,24 @@ internal static class TestTodoFactory
         todoItem.SoftDelete(Timestamp.AddDays(1));
         return todoItem;
     }
+
+    public static TodoItem WithVersion(TodoItem todoItem, long version)
+    {
+        return TodoItem.Rehydrate(
+            todoItem.Id,
+            todoItem.Name,
+            todoItem.Description,
+            todoItem.DueDate,
+            todoItem.Status,
+            todoItem.Priority,
+            todoItem.DependencyIds,
+            todoItem.Recurrence,
+            todoItem.SeriesId,
+            todoItem.OccurrenceNumber,
+            version,
+            todoItem.CreatedAt,
+            todoItem.UpdatedAt,
+            todoItem.DeletedAt,
+            todoItem.PurgeAt);
+    }
 }
