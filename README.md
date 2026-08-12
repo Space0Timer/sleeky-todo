@@ -14,13 +14,43 @@ A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR, a
 
 ## Current status
 
-The initial domain model, CRUD application handlers, request validation pipeline, MongoDB configuration, and MongoDB repository are implemented. API endpoints are still in progress.
+The first CRUD vertical slice is implemented through the domain, application,
+MongoDB, and HTTP API layers. The API exposes create, retrieve, update,
+soft-delete, and restore operations with validation and optimistic concurrency.
 
 ## Prerequisites
 
 - .NET SDK 10.0.302
 - Node.js 24.19.0
 - MongoDB replica set available on `localhost:27017`
+
+## Local MongoDB replica set
+
+Start MongoDB and run the idempotent replica-set initializer:
+
+```sh
+docker compose up -d
+```
+
+Confirm that both the database and one-time initializer are healthy/completed:
+
+```sh
+docker compose ps
+docker compose exec mongodb mongosh --quiet --eval "rs.status().ok"
+```
+
+The status command should print `1`. The initializer only calls `rs.initiate`
+when the replica set has not been configured, so repeated `docker compose up`
+commands are safe.
+
+Stop the services without deleting local data:
+
+```sh
+docker compose down
+```
+
+To intentionally remove the dedicated MongoDB volume as well, run
+`docker compose down --volumes`.
 
 ## MongoDB configuration
 
@@ -44,13 +74,35 @@ MongoDb__ConnectionString="mongodb://localhost:27017/?replicaSet=rs0" dotnet run
 
 Application handlers depend on `ITodoRepository`. Infrastructure implements that contract with `MongoTodoRepository`, which accesses the configured collection directly through `IMongoDatabase`. The BSON document and mapping types remain internal to Infrastructure.
 
-The live repository integration tests require Docker and are opt-in:
+At startup, Infrastructure initializes the indexes used for active due-date
+queries and retained soft-deleted records. `GET /health` verifies that MongoDB
+can answer a ping.
+
+The live repository and API integration tests require Docker and are opt-in.
+Each API test uses a dedicated database and drops only that database during
+cleanup:
 
 ```sh
 RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTests
 ```
 
 Update, delete, and restore operations use the version last read by the client. MongoDB mutations atomically match both `_id` and `version`, increment the version, and return the persisted document. If another writer has already changed the record, the mutation returns no document and the application raises a concurrency conflict.
+
+## HTTP API
+
+The API routes are:
+
+- `POST /api/todos`
+- `GET /api/todos/{id}`
+- `PUT /api/todos/{id}`
+- `DELETE /api/todos/{id}`
+- `POST /api/todos/{id}/restore`
+
+Swagger UI is available at `/swagger`. Known failures use RFC Problem Details:
+validation returns `400`, missing TODOs return `404`, and stale versions or
+domain-rule conflicts return `409`. Every problem response includes a
+`traceId`; validation responses also contain a stable `errors` object keyed by
+camel-cased request field.
 
 ## Recoverable deletion
 

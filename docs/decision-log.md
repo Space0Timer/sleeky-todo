@@ -23,7 +23,7 @@ Integration tests use the public repository contract. Exact storage representati
 
 The numeric `version` field is the sole concurrency token; `updatedAt` is not used for concurrency. Clients send the version they last read with every mutable request.
 
-MongoDB mutations atomically filter by TODO ID and expected version, write version `N + 1`, and return the persisted document. A missing match indicates a stale write, which the application represents as `TodoConcurrencyException`. The API will map this known exception to HTTP 409 when ProblemDetails middleware is added.
+MongoDB mutations atomically filter by TODO ID and expected version, write version `N + 1`, and return the persisted document. A missing match indicates a stale write, which the application represents as `ConcurrencyConflictException`. The API maps this known exception to HTTP 409 Problem Details.
 
 This design avoids locks and prevents lost updates. Concurrent integration tests verify that exactly one mutation succeeds when two writers submit update, delete, or restore operations using the same version.
 
@@ -34,3 +34,20 @@ This design avoids locks and prevents lost updates. Concurrent integration tests
 Restore is allowed strictly before the purge timestamp and requires the latest version. At the purge boundary the record is expired and cannot be restored. A later retention job will physically remove expired records; that cleanup is intentionally separate from request handling.
 
 Deleting a TODO that is still required by active dependents will be rejected once dependency rules are implemented.
+
+## API failure contract
+
+The API uses one global exception handler rather than controller-level
+try/catch blocks. Application not-found, concurrency, and domain-rule
+exceptions map to stable RFC Problem Details responses. FluentValidation and
+ASP.NET Core model-binding failures share the same 400 title, detail, trace ID,
+and field-error shape.
+
+## Local replica set
+
+Local development uses one MongoDB 7.0 replica-set member. The Compose
+initializer is idempotent: it checks replica-set status and initiates `rs0` only
+for an uninitialized database. The member advertises `localhost:27017` so the
+host-run API can use the committed connection string. This single-member setup
+is sufficient to exercise optimistic writes now and transactions in the later
+recurrence slice.
