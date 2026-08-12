@@ -16,12 +16,7 @@ public partial class Program
 
         WebApplication app = builder.Build();
 
-        app.UseExceptionHandler();
-        app.UseHttpsRedirection();
-        app.UseSwagger();
-        app.UseSwaggerUI();
-        app.MapControllers();
-
+        app.UseApi();
         app.Run();
     }
 }

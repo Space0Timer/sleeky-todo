@@ -6,6 +6,8 @@ using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Health;
+using Sleeky.Todo.Infrastructure.Persistence.Indexes;
 using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 namespace Sleeky.Todo.Infrastructure.DependencyInjection;
@@ -48,6 +50,10 @@ public static class InfrastructureServiceCollectionExtensions
             return mongoClient.GetDatabase(settings.DatabaseName);
         });
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
+        services.AddHostedService<MongoDbIndexInitializer>();
+        services
+            .AddHealthChecks()
+            .AddCheck<MongoDbHealthCheck>("mongodb");
 
         return services;
     }

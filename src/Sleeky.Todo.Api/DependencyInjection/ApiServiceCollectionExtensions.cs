@@ -37,4 +37,16 @@ public static class ApiServiceCollectionExtensions
 
         return services;
     }
+
+    public static WebApplication UseApi(this WebApplication app)
+    {
+        app.UseExceptionHandler();
+        app.UseHttpsRedirection();
+        app.UseSwagger();
+        app.UseSwaggerUI();
+        app.MapControllers();
+        app.MapHealthChecks("/health");
+
+        return app;
+    }
 }
