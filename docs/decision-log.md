@@ -26,6 +26,25 @@ write databases.
 This keeps controllers thin and handlers independently testable while avoiding
 an event bus or messaging infrastructure for an in-process application.
 
+## Persisted React workflow
+
+The React client treats the API as the source of truth rather than maintaining
+a session-only TODO collection. Scope, filter, and sort changes replace the
+current cursor chain; Load More is the only operation that appends a server
+page. Full TODO details are fetched on demand for management, while list cards
+use the smaller projection returned by the list endpoint.
+
+Every update, status, dependency, delete, and restore mutation carries the last
+observed version and refreshes the list after success. A stale-version response
+is shown explicitly and requires a Reload Latest Version action, preserving the
+same no-silent-overwrite rule as the API.
+
+The dependency selector loads at most 100 active TODO projections ordered by
+name and searches within that bounded set. This keeps browser memory and network
+work bounded without adding a new API contract, at the cost of not exposing
+candidates beyond that first page. Server-side dependency search is the chosen
+follow-up if larger datasets must be supported.
+
 ## MongoDB
 
 MongoDB is the persistence store because TODO documents naturally contain
@@ -88,6 +107,32 @@ try/catch blocks. Application not-found, concurrency, and domain-rule
 exceptions map to stable RFC Problem Details responses. FluentValidation and
 ASP.NET Core model-binding failures share the same 400 title, detail, trace ID,
 and field-error shape.
+
+## Provider-neutral structured logging
+
+Serilog is the API host's logging provider, but application and infrastructure
+code depend only on Microsoft `ILogger<T>`. Typed loggers provide automatic
+source categories and allow per-category filtering without coupling use cases
+or persistence code to Serilog. Static Serilog access is restricted to bootstrap,
+fatal startup reporting, and shutdown flushing in `Program.cs`.
+
+The logging pipeline produces a condensed HTTP completion event, trace context,
+MediatR request timing, and index-initialization events. It records identifiers
+and operational metadata, not request bodies, descriptions, cursor values, or
+connection strings. Known 400, 404, and 409 outcomes remain normal request
+events. Unexpected exceptions are logged once at Error by the global exception
+handler; the corresponding HTTP completion remains a Warning to avoid a second
+error event for the same failure.
+
+## Fail-fast injected dependencies
+
+Required constructor-injected services are guarded with
+`ArgumentNullException.ThrowIfNull`. Although the runtime container normally
+guarantees required registrations, explicit guards provide deterministic
+failures for direct construction, tests, factories, and future registration
+changes. Optional parameters are not converted into required dependencies; the
+repository's optional transaction context remains an intentional fallback for
+non-transactional direct construction.
 
 ## Deterministic TODO list pagination
 
