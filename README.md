@@ -1,6 +1,27 @@
 # Sleeky To-Do
 
-A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR, and React.
+A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR,
+React, and TypeScript. The current vertical slice supports creating, retrieving,
+updating, soft-deleting, and restoring TODOs with validation and optimistic
+concurrency.
+
+## Architecture
+
+Requests flow through a small set of explicit layer boundaries:
+
+```text
+React client
+  -> ASP.NET Core controllers
+  -> MediatR commands and queries
+  -> domain model and repository abstraction
+  -> MongoDB repository
+```
+
+Domain contains business state and rules. Application owns use cases and public
+abstractions. Infrastructure implements MongoDB and clock services. API owns
+HTTP contracts and error mapping. See [docs/architecture.md](docs/architecture.md)
+and [docs/decision-log.md](docs/decision-log.md) for the detailed boundaries
+and trade-offs.
 
 ## Repository layout
 
@@ -22,7 +43,8 @@ soft-delete, and restore operations with validation and optimistic concurrency.
 
 - .NET SDK 10.0.302
 - Node.js 24.19.0
-- MongoDB replica set available on `localhost:27017`
+- Corepack with Yarn 4.18.0
+- Docker with Docker Compose
 
 ## Local MongoDB replica set
 
@@ -104,6 +126,62 @@ domain-rule conflicts return `409`. Every problem response includes a
 `traceId`; validation responses also contain a stable `errors` object keyed by
 camel-cased request field.
 
+## Run the API
+
+Start the local replica set first, then run the HTTPS launch profile:
+
+```sh
+docker compose up -d
+dotnet run --project src/Sleeky.Todo.Api --launch-profile https
+```
+
+Useful local URLs:
+
+- API: `https://localhost:7238`
+- Swagger UI: `https://localhost:7238/swagger`
+- OpenAPI document: `https://localhost:7238/swagger/v1/swagger.json`
+- Health check: `https://localhost:7238/health`
+
+The development certificate may need to be trusted once with
+`dotnet dev-certs https --trust`.
+
+## Run the React client
+
+In a second terminal:
+
+```sh
+cd src/sleeky-todo-web
+corepack yarn install
+corepack yarn dev
+```
+
+Open `http://localhost:5173`. Vite proxies `/api` and `/health` requests to the
+local HTTPS API, so no browser-specific CORS configuration is required.
+
+## Tests
+
+Run the fast domain and application suites:
+
+```sh
+dotnet test
+```
+
+Run the MongoDB repository and complete API integration suite with Docker:
+
+```sh
+RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTests
+```
+
+Run frontend checks and browser tests:
+
+```sh
+cd src/sleeky-todo-web
+corepack yarn lint
+corepack yarn build
+corepack yarn playwright install chromium
+corepack yarn test:e2e
+```
+
 ## Recoverable deletion
 
 Deleting a TODO is recoverable rather than physical. The operation sets `deletedAt`, sets `purgeAt` to exactly 90 days later, updates `updatedAt`, and increments the version. Normal repository reads and existence checks exclude deleted records.
@@ -112,7 +190,7 @@ A deleted TODO can be restored before `purgeAt` by supplying its latest version.
 
 Permanent cleanup after `purgeAt` and deletion checks for active dependents remain later steps.
 
-## Build the scaffold
+## Build everything
 
 ```sh
 dotnet restore

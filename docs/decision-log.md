@@ -1,17 +1,48 @@
 # Decision Log
 
-This document will record the final architecture decisions, requirement interpretations, trade-offs, known limitations, and intentionally omitted features.
+This document records architecture decisions, requirement interpretations,
+trade-offs, known limitations, and intentionally omitted features.
 
-## Decisions to document
+## Layered monolith
 
-- Layered monolith
-- MongoDB and local replica-set development
-- CQRS with MediatR
-- Date-only due dates
-- Optimistic concurrency using a numeric version
-- Cursor pagination
-- Recurring occurrences as separate records
-- Ninety-day recoverable deletion
+The backend is a layered monolith split into Domain, Application,
+Infrastructure, and API projects. This keeps business rules independent of HTTP
+and MongoDB without introducing distributed-system overhead. Dependencies point
+inward: API composes Application and Infrastructure, Infrastructure implements
+Application abstractions, and Domain has no outward dependencies.
+
+The React client is a separate build artifact but consumes the same HTTP API.
+Additional deployable backend services should only be introduced when an
+independent scaling or ownership requirement justifies them.
+
+## CQRS with MediatR
+
+HTTP controllers send commands and queries through MediatR. Each request has a
+single handler, and cross-cutting validation and domain-exception translation
+run as pipeline behaviors. Commands and queries share one MongoDB data model;
+CQRS here separates use-case code rather than introducing separate read and
+write databases.
+
+This keeps controllers thin and handlers independently testable while avoiding
+an event bus or messaging infrastructure for an in-process application.
+
+## MongoDB
+
+MongoDB is the persistence store because TODO documents naturally contain
+embedded and evolving fields such as dependencies and recurrence metadata. The
+application uses a single-member replica set locally so later recurrence work
+can use MongoDB transactions without changing development topology.
+
+MongoDB-specific documents, BSON serializers, indexes, and repository behavior
+remain inside Infrastructure.
+
+## Date-only due dates
+
+Due dates are calendar dates rather than instants, so Domain and Application use
+`DateOnly`. MongoDB stores each due date as an ISO `yyyy-MM-dd` string through an
+explicit BSON serializer, and the API uses the matching JSON date format. This
+avoids timezone conversion changing the day while retaining lexicographic date
+ordering.
 
 ## MongoDB repository boundary
 
@@ -51,3 +82,19 @@ for an uninitialized database. The member advertises `localhost:27017` so the
 host-run API can use the committed connection string. This single-member setup
 is sufficient to exercise optimistic writes now and transactions in the later
 recurrence slice.
+
+## Authentication outside the current scope
+
+The first vertical slice has no authentication or authorization. Adding a
+partial identity model before user ownership and access requirements are known
+would create misleading security boundaries. Until authentication is designed,
+the API is intended for local development only and must not be exposed publicly.
+
+When authentication is added, TODO ownership, authorization rules, API security
+schemes, and test isolation by user must be designed together.
+
+## Deferred decisions
+
+Cursor pagination, recurring occurrences, dependency graph evaluation,
+retention cleanup scheduling, and production authentication remain deferred
+until their corresponding vertical slices.
