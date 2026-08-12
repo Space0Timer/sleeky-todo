@@ -61,6 +61,15 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                     Name = "active_name_normalized_id",
                 }),
             new CreateIndexModel<TodoDocument>(
+                Builders<TodoDocument>.IndexKeys
+                    .Ascending(todo => todo.DependencyIds)
+                    .Ascending(todo => todo.DeletedAt)
+                    .Ascending(todo => todo.Status),
+                new CreateIndexOptions<TodoDocument>
+                {
+                    Name = "active_dependency_ids",
+                }),
+            new CreateIndexModel<TodoDocument>(
                 Builders<TodoDocument>.IndexKeys.Ascending(todo => todo.PurgeAt),
                 new CreateIndexOptions<TodoDocument>
                 {

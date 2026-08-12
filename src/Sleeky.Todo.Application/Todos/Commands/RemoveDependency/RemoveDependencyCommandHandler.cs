@@ -5,48 +5,38 @@ using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
-using Sleeky.Todo.Domain.Exceptions;
 
-namespace Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
+namespace Sleeky.Todo.Application.Todos.Commands.RemoveDependency;
 
-public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand, TodoDto>
+public sealed class RemoveDependencyCommandHandler
+    : IRequestHandler<RemoveDependencyCommand, TodoDto>
 {
     private readonly IClock clock;
     private readonly ITodoRepository todoRepository;
 
-    public DeleteTodoCommandHandler(ITodoRepository todoRepository, IClock clock)
+    public RemoveDependencyCommandHandler(ITodoRepository todoRepository, IClock clock)
     {
         this.todoRepository = todoRepository;
         this.clock = clock;
     }
 
     public async Task<TodoDto> Handle(
-        DeleteTodoCommand request,
+        RemoveDependencyCommand request,
         CancellationToken cancellationToken)
     {
         TodoItem todoItem = await todoRepository.GetByIdAsync(
             request.Id,
             cancellationToken: cancellationToken)
             ?? throw new NotFoundException("TODO", request.Id);
-
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
-        bool hasActiveDependents = await todoRepository.HasActiveDependentsAsync(
-            todoItem.Id,
-            cancellationToken);
-        if (hasActiveDependents)
-        {
-            throw new DomainException(
-                "A TODO with active dependents cannot be deleted.");
-        }
+        todoItem.RemoveDependency(request.DependencyId, clock.UtcNow);
 
-        todoItem.SoftDelete(clock.UtcNow);
-
-        TodoItem deletedTodoItem = await todoRepository.SoftDeleteAsync(
+        TodoItem updatedTodo = await todoRepository.UpdateAsync(
             todoItem,
             request.Version,
             cancellationToken)
             ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
 
-        return TodoDto.FromEntity(deletedTodoItem);
+        return TodoDto.FromEntity(updatedTodo);
     }
 }

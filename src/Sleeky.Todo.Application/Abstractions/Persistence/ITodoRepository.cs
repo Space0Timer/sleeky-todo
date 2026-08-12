@@ -18,6 +18,15 @@ public interface ITodoRepository
         bool includeDeleted = false,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<TodoItem>> GetByIdsAsync(
+        IEnumerable<string> ids,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> HasActiveDependentsAsync(
+        string dependencyId,
+        CancellationToken cancellationToken = default);
+
     Task<TodoItem?> UpdateAsync(
         TodoItem todoItem,
         long expectedVersion,

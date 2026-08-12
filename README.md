@@ -4,7 +4,8 @@ A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR,
 React, and TypeScript. The current vertical slice supports creating, retrieving,
 updating, soft-deleting, and restoring TODOs with validation and optimistic
 concurrency. The list API supports filters, scopes, deterministic cursor
-pagination, and blocked-state projection.
+pagination, and blocked-state projection. Dependency mutations enforce graph
+integrity, blocked status transitions, and dependency-aware deletion.
 
 ## Architecture
 
@@ -36,9 +37,10 @@ and trade-offs.
 
 ## Current status
 
-The first CRUD vertical slice is implemented through the domain, application,
-MongoDB, and HTTP API layers. The API exposes create, retrieve, update,
-soft-delete, and restore operations with validation and optimistic concurrency.
+The CRUD, list-query, and dependency-rule slices are implemented through the
+domain, application, MongoDB, and HTTP API layers. Dependency edges can be
+added and removed, cycles are rejected, and blocked TODOs cannot enter
+`InProgress` or `Completed`.
 
 ## Prerequisites
 
@@ -99,8 +101,8 @@ Application handlers depend on `ITodoRepository`. Infrastructure implements that
 
 At startup, Infrastructure initializes compound active-record indexes for due
 date, priority, status, and normalized-name sorting, plus the retained
-soft-delete `purgeAt` index. `GET /health` verifies that MongoDB can answer a
-ping.
+soft-delete `purgeAt` index and an active-dependency lookup index. `GET /health`
+verifies that MongoDB can answer a ping.
 
 The live repository and API integration tests require Docker and are opt-in.
 Each API test uses a dedicated database and drops only that database during
@@ -122,6 +124,9 @@ The API routes are:
 - `PUT /api/todos/{id}`
 - `DELETE /api/todos/{id}`
 - `POST /api/todos/{id}/restore`
+- `POST /api/todos/{id}/dependencies`
+- `DELETE /api/todos/{id}/dependencies/{dependencyId}`
+- `PUT /api/todos/{id}/status`
 
 Swagger UI is available at `/swagger`. Known failures use RFC Problem Details:
 validation returns `400`, missing TODOs return `404`, and stale versions or
@@ -135,6 +140,13 @@ camel-cased request field.
 are `DueDate`, `Priority`, `Status`, and `Name`. The default page size is 50 and
 the maximum is 100. Each response contains `items` and a `nextCursor`; changing
 filters, scope, or sorting requires starting again without the old cursor.
+
+Dependency and status mutations require the TODO version last read by the
+client. A dependency target must be active, distinct from the source, and not
+already linked. Direct and transitive cycles are rejected. A TODO is blocked
+when any dependency is missing, deleted, archived, or incomplete; blocked TODOs
+cannot move to `InProgress` or `Completed`. A TODO required by an active,
+non-archived dependent cannot be deleted.
 
 ## Run the API
 
@@ -198,7 +210,8 @@ Deleting a TODO is recoverable rather than physical. The operation sets `deleted
 
 A deleted TODO can be restored before `purgeAt` by supplying its latest version. Restore clears both retention timestamps and increments the version again. Restore is rejected for active TODOs and when the 90-day boundary has been reached.
 
-Permanent cleanup after `purgeAt` and deletion checks for active dependents remain later steps.
+Permanent cleanup after `purgeAt` remains a later step. Deletion is rejected
+while an active, non-archived TODO depends on the target.
 
 ## Build everything
 

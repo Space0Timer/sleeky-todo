@@ -107,6 +107,74 @@ public sealed class TodoItemTests
     }
 
     [TestMethod]
+    public void AddAndRemoveDependencyUseControlledCollection()
+    {
+        TodoItem item = CreateTodo();
+        DateTimeOffset addedAt = InitialTimestamp.AddHours(1);
+        DateTimeOffset removedAt = InitialTimestamp.AddHours(2);
+
+        item.AddDependency("dependency-1", addedAt);
+
+        item.DependencyIds.Should().Equal("dependency-1");
+        item.UpdatedAt.Should().Be(addedAt.ToUniversalTime());
+        ICollection<string> exposedCollection = (ICollection<string>)item.DependencyIds;
+        Action mutateDirectly = () => exposedCollection.Add("dependency-2");
+        mutateDirectly.Should().Throw<NotSupportedException>();
+
+        item.RemoveDependency("dependency-1", removedAt);
+        item.DependencyIds.Should().BeEmpty();
+        item.UpdatedAt.Should().Be(removedAt.ToUniversalTime());
+    }
+
+    [TestMethod]
+    public void AddDependencyRejectsSelfAndDuplicate()
+    {
+        TodoItem item = CreateTodo();
+        Action addSelf = () => item.AddDependency(item.Id, InitialTimestamp);
+
+        addSelf.Should()
+            .Throw<DomainException>()
+            .WithMessage("A TODO cannot depend on itself.");
+
+        item.AddDependency("dependency-1", InitialTimestamp);
+        Action addDuplicate = () => item.AddDependency(
+            "dependency-1",
+            InitialTimestamp.AddHours(1));
+        addDuplicate.Should()
+            .Throw<DomainException>()
+            .WithMessage("The TODO dependency already exists.");
+    }
+
+    [TestMethod]
+    public void RemoveDependencyRejectsMissingDependency()
+    {
+        TodoItem item = CreateTodo();
+
+        Action act = () => item.RemoveDependency("missing", InitialTimestamp);
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage("The TODO dependency does not exist.");
+    }
+
+    [TestMethod]
+    public void ChangeStatusUpdatesOnlyForARealTransition()
+    {
+        TodoItem item = CreateTodo();
+        DateTimeOffset changedAt = InitialTimestamp.AddHours(1);
+
+        bool changed = item.ChangeStatus(TodoStatus.InProgress, changedAt);
+        bool changedAgain = item.ChangeStatus(
+            TodoStatus.InProgress,
+            InitialTimestamp.AddHours(2));
+
+        changed.Should().BeTrue();
+        changedAgain.Should().BeFalse();
+        item.Status.Should().Be(TodoStatus.InProgress);
+        item.UpdatedAt.Should().Be(changedAt.ToUniversalTime());
+    }
+
+    [TestMethod]
     public void SoftDeleteSetsRetentionTimestamps()
     {
         TodoItem item = CreateTodo();

@@ -182,6 +182,181 @@ public sealed class TodoApiTests
     }
 
     [TestMethod]
+    public async Task DependencyCanBeAddedAndRemoved()
+    {
+        (_, JsonElement source) = await CreateTodoAsync();
+        (_, JsonElement dependency) = await CreateTodoAsync();
+        string sourceId = GetTodoId(source);
+        string dependencyId = GetTodoId(dependency);
+
+        HttpResponseMessage addResponse = await AddDependencyAsync(
+            sourceId,
+            dependencyId,
+            version: 1);
+        JsonElement withDependency = await ReadJsonAsync(addResponse);
+        HttpResponseMessage removeResponse = await RemoveDependencyAsync(
+            sourceId,
+            dependencyId,
+            version: 2);
+        JsonElement withoutDependency = await ReadJsonAsync(removeResponse);
+
+        addResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        withDependency.GetProperty("dependencyIds")[0].GetString()
+            .Should().Be(dependencyId);
+        withDependency.GetProperty("version").GetInt64().Should().Be(2);
+        removeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        withoutDependency.GetProperty("dependencyIds").GetArrayLength().Should().Be(0);
+        withoutDependency.GetProperty("version").GetInt64().Should().Be(3);
+    }
+
+    [TestMethod]
+    public async Task SelfDuplicateMissingAndDeletedDependenciesAreRejected()
+    {
+        (_, JsonElement source) = await CreateTodoAsync();
+        (_, JsonElement dependency) = await CreateTodoAsync();
+        string sourceId = GetTodoId(source);
+        string dependencyId = GetTodoId(dependency);
+
+        HttpResponseMessage selfResponse = await AddDependencyAsync(
+            sourceId,
+            sourceId,
+            version: 1);
+        _ = await AddDependencyAsync(sourceId, dependencyId, version: 1);
+        HttpResponseMessage duplicateResponse = await AddDependencyAsync(
+            sourceId,
+            dependencyId,
+            version: 2);
+        HttpResponseMessage missingResponse = await AddDependencyAsync(
+            sourceId,
+            "missing-dependency",
+            version: 2);
+        (_, JsonElement deletedDependency) = await CreateTodoAsync();
+        string deletedDependencyId = GetTodoId(deletedDependency);
+        _ = await DeleteTodoAsync(deletedDependencyId, version: 1);
+        HttpResponseMessage deletedResponse = await AddDependencyAsync(
+            sourceId,
+            deletedDependencyId,
+            version: 2);
+
+        selfResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        missingResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        deletedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [TestMethod]
+    public async Task DirectAndMultiLevelDependencyCyclesAreRejected()
+    {
+        (_, JsonElement first) = await CreateTodoAsync();
+        (_, JsonElement second) = await CreateTodoAsync();
+        (_, JsonElement third) = await CreateTodoAsync();
+        string firstId = GetTodoId(first);
+        string secondId = GetTodoId(second);
+        string thirdId = GetTodoId(third);
+
+        _ = await AddDependencyAsync(firstId, secondId, version: 1);
+        HttpResponseMessage directCycle = await AddDependencyAsync(
+            secondId,
+            firstId,
+            version: 1);
+        _ = await AddDependencyAsync(secondId, thirdId, version: 1);
+        HttpResponseMessage multiLevelCycle = await AddDependencyAsync(
+            thirdId,
+            firstId,
+            version: 1);
+        JsonElement directProblem = await ReadJsonAsync(directCycle);
+        JsonElement multiLevelProblem = await ReadJsonAsync(multiLevelCycle);
+
+        directCycle.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        multiLevelCycle.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        directProblem.GetProperty("detail").GetString()
+            .Should().Be("Adding this dependency would create a cycle.");
+        multiLevelProblem.GetProperty("detail").GetString()
+            .Should().Be("Adding this dependency would create a cycle.");
+    }
+
+    [TestMethod]
+    public async Task BlockedStatusTransitionsSucceedAfterPrerequisiteCompletes()
+    {
+        (_, JsonElement prerequisite) = await CreateTodoAsync();
+        (_, JsonElement dependent) = await CreateTodoAsync();
+        string prerequisiteId = GetTodoId(prerequisite);
+        string dependentId = GetTodoId(dependent);
+        _ = await AddDependencyAsync(dependentId, prerequisiteId, version: 1);
+
+        HttpResponseMessage blockedListResponse = await client.GetAsync(
+            "/api/todos?dependencyStatus=Blocked");
+        JsonElement blockedList = await ReadJsonAsync(blockedListResponse);
+
+        HttpResponseMessage blockedInProgress = await ChangeStatusAsync(
+            dependentId,
+            TodoStatus.InProgress,
+            version: 2);
+        HttpResponseMessage blockedCompleted = await ChangeStatusAsync(
+            dependentId,
+            TodoStatus.Completed,
+            version: 2);
+        HttpResponseMessage completePrerequisite = await ChangeStatusAsync(
+            prerequisiteId,
+            TodoStatus.Completed,
+            version: 1);
+        HttpResponseMessage unblocked = await ChangeStatusAsync(
+            dependentId,
+            TodoStatus.InProgress,
+            version: 2);
+        JsonElement unblockedTodo = await ReadJsonAsync(unblocked);
+        HttpResponseMessage unblockedListResponse = await client.GetAsync(
+            "/api/todos?dependencyStatus=Unblocked");
+        JsonElement unblockedList = await ReadJsonAsync(unblockedListResponse);
+
+        blockedListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        blockedList.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString())
+            .Should().Contain(dependentId);
+        blockedInProgress.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        blockedCompleted.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        completePrerequisite.StatusCode.Should().Be(HttpStatusCode.OK);
+        unblocked.StatusCode.Should().Be(HttpStatusCode.OK);
+        unblockedTodo.GetProperty("status").GetInt32()
+            .Should().Be((int)TodoStatus.InProgress);
+        unblockedTodo.GetProperty("version").GetInt64().Should().Be(3);
+        unblockedListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        unblockedList.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString())
+            .Should().Contain(dependentId);
+    }
+
+    [TestMethod]
+    public async Task ActivePrerequisiteCannotBeDeletedAndMutationsRejectStaleVersions()
+    {
+        (_, JsonElement prerequisite) = await CreateTodoAsync();
+        (_, JsonElement dependent) = await CreateTodoAsync();
+        string prerequisiteId = GetTodoId(prerequisite);
+        string dependentId = GetTodoId(dependent);
+        _ = await AddDependencyAsync(dependentId, prerequisiteId, version: 1);
+
+        HttpResponseMessage deleteResponse = await DeleteTodoAsync(
+            prerequisiteId,
+            version: 1);
+        HttpResponseMessage staleRemove = await RemoveDependencyAsync(
+            dependentId,
+            prerequisiteId,
+            version: 1);
+        _ = await ChangeStatusAsync(
+            prerequisiteId,
+            TodoStatus.Archived,
+            version: 1);
+        HttpResponseMessage staleStatus = await ChangeStatusAsync(
+            prerequisiteId,
+            TodoStatus.NotStarted,
+            version: 1);
+
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        staleRemove.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        staleStatus.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [TestMethod]
     public async Task InvalidRequestReturnsPredictableProblemDetails()
     {
         CreateTodoRequest request = new CreateTodoRequest
@@ -300,6 +475,30 @@ public sealed class TodoApiTests
         AssertResponses(paths, "/api/todos/{id}", "get", "200", "400", "404");
         AssertResponses(paths, "/api/todos/{id}", "put", "200", "400", "404", "409");
         AssertResponses(paths, "/api/todos/{id}", "delete", "204", "400", "404", "409");
+        AssertResponses(
+            paths,
+            "/api/todos/{id}/dependencies",
+            "post",
+            "200",
+            "400",
+            "404",
+            "409");
+        AssertResponses(
+            paths,
+            "/api/todos/{id}/dependencies/{dependencyId}",
+            "delete",
+            "200",
+            "400",
+            "404",
+            "409");
+        AssertResponses(
+            paths,
+            "/api/todos/{id}/status",
+            "put",
+            "200",
+            "400",
+            "404",
+            "409");
         AssertResponses(paths, "/api/todos/{id}/restore", "post", "200", "400", "404", "409");
     }
 
@@ -331,6 +530,7 @@ public sealed class TodoApiTests
         indexNames.Should().Contain("active_priority_id");
         indexNames.Should().Contain("active_status_id");
         indexNames.Should().Contain("active_name_normalized_id");
+        indexNames.Should().Contain("active_dependency_ids");
         indexNames.Should().Contain("purge_at");
     }
 
@@ -412,5 +612,48 @@ public sealed class TodoApiTests
         };
 
         return await client.SendAsync(request);
+    }
+
+    private async Task<HttpResponseMessage> AddDependencyAsync(
+        string id,
+        string dependencyId,
+        long version)
+    {
+        return await client.PostAsJsonAsync(
+            $"/api/todos/{id}/dependencies",
+            new AddDependencyRequest
+            {
+                DependencyId = dependencyId,
+                Version = version,
+            });
+    }
+
+    private async Task<HttpResponseMessage> RemoveDependencyAsync(
+        string id,
+        string dependencyId,
+        long version)
+    {
+        using HttpRequestMessage request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"/api/todos/{id}/dependencies/{dependencyId}")
+        {
+            Content = JsonContent.Create(new RemoveDependencyRequest { Version = version }),
+        };
+
+        return await client.SendAsync(request);
+    }
+
+    private async Task<HttpResponseMessage> ChangeStatusAsync(
+        string id,
+        TodoStatus status,
+        long version)
+    {
+        return await client.PutAsJsonAsync(
+            $"/api/todos/{id}/status",
+            new ChangeTodoStatusRequest
+            {
+                Status = status,
+                Version = version,
+            });
     }
 }

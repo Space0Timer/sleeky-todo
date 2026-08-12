@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 
 using Sleeky.Todo.Api.Contracts.Todos;
 using Sleeky.Todo.Application.DTOs;
+using Sleeky.Todo.Application.Todos.Commands.AddDependency;
+using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
+using Sleeky.Todo.Application.Todos.Commands.RemoveDependency;
 using Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
 using Sleeky.Todo.Application.Todos.Commands.UpdateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodo;
@@ -95,6 +98,58 @@ public sealed class TodosController : ControllerBase
             request.Priority,
             request.Version);
         TodoDto todo = await sender.Send(command, cancellationToken);
+
+        return Ok(todo);
+    }
+
+    [HttpPost("{id}/dependencies")]
+    [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<TodoDto>> AddDependency(
+        string id,
+        AddDependencyRequest request,
+        CancellationToken cancellationToken)
+    {
+        TodoDto todo = await sender.Send(
+            new AddDependencyCommand(id, request.DependencyId, request.Version),
+            cancellationToken);
+
+        return Ok(todo);
+    }
+
+    [HttpDelete("{id}/dependencies/{dependencyId}")]
+    [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<TodoDto>> RemoveDependency(
+        string id,
+        string dependencyId,
+        RemoveDependencyRequest request,
+        CancellationToken cancellationToken)
+    {
+        TodoDto todo = await sender.Send(
+            new RemoveDependencyCommand(id, dependencyId, request.Version),
+            cancellationToken);
+
+        return Ok(todo);
+    }
+
+    [HttpPut("{id}/status")]
+    [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<TodoDto>> ChangeStatus(
+        string id,
+        ChangeTodoStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        TodoDto todo = await sender.Send(
+            new ChangeTodoStatusCommand(id, request.Status, request.Version),
+            cancellationToken);
 
         return Ok(todo);
     }

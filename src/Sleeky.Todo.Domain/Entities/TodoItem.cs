@@ -150,6 +150,57 @@ public sealed class TodoItem
         UpdatedAt = updatedAt.ToUniversalTime();
     }
 
+    public void AddDependency(string dependencyId, DateTimeOffset updatedAt)
+    {
+        EnsureNotDeleted();
+
+        string validatedDependencyId = ValidateId(dependencyId);
+        if (string.Equals(Id, validatedDependencyId, StringComparison.Ordinal))
+        {
+            throw new DomainException("A TODO cannot depend on itself.");
+        }
+
+        if (dependencyIds.Contains(validatedDependencyId, StringComparer.Ordinal))
+        {
+            throw new DomainException("The TODO dependency already exists.");
+        }
+
+        dependencyIds.Add(validatedDependencyId);
+        UpdatedAt = updatedAt.ToUniversalTime();
+    }
+
+    public void RemoveDependency(string dependencyId, DateTimeOffset updatedAt)
+    {
+        EnsureNotDeleted();
+
+        string validatedDependencyId = ValidateId(dependencyId);
+        if (!dependencyIds.Remove(validatedDependencyId))
+        {
+            throw new DomainException("The TODO dependency does not exist.");
+        }
+
+        UpdatedAt = updatedAt.ToUniversalTime();
+    }
+
+    public bool ChangeStatus(TodoStatus status, DateTimeOffset updatedAt)
+    {
+        EnsureNotDeleted();
+
+        if (!Enum.IsDefined(status))
+        {
+            throw new DomainException("A valid TODO status is required.");
+        }
+
+        if (Status == status)
+        {
+            return false;
+        }
+
+        Status = status;
+        UpdatedAt = updatedAt.ToUniversalTime();
+        return true;
+    }
+
     public void SoftDelete(DateTimeOffset deletedAt)
     {
         EnsureNotDeleted();
