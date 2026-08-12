@@ -14,12 +14,33 @@ A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR, a
 
 ## Current status
 
-The repository scaffold is complete. Application behavior and infrastructure configuration have not been implemented yet.
+The initial domain model, CRUD application handlers, request validation pipeline, and MongoDB client configuration are implemented. API endpoints and repository operations are still in progress.
 
 ## Prerequisites
 
 - .NET SDK 10.0.302
 - Node.js 24.19.0
+- MongoDB replica set available on `localhost:27017`
+
+## MongoDB configuration
+
+The API reads MongoDB settings from the `MongoDb` configuration section. The committed local defaults use the `sleekyTodo` database and `todoItems` collection:
+
+```json
+{
+  "MongoDb": {
+    "ConnectionString": "mongodb://localhost:27017/?replicaSet=rs0",
+    "DatabaseName": "sleekyTodo",
+    "TodoItemsCollectionName": "todoItems"
+  }
+}
+```
+
+Override individual values through environment variables when needed:
+
+```sh
+MongoDb__ConnectionString="mongodb://localhost:27017/?replicaSet=rs0" dotnet run --project src/Sleeky.Todo.Api
+```
 
 ## Build the scaffold
 
