@@ -1,24 +1,331 @@
 .app-shell {
-  width: min(36rem, calc(100% - 3rem));
+  width: min(72rem, calc(100% - 2rem));
   margin: 0 auto;
+  padding: 3rem 0 5rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-bottom: 2rem;
 }
 
 .eyebrow {
-  color: #6d5dfc;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  margin: 0;
+  color: #6548d8;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-h1 {
-  margin: 0.5rem 0 1rem;
-  color: #17151f;
-  font-size: clamp(2rem, 8vw, 4rem);
-  line-height: 1;
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
 }
 
-p {
-  color: #645f70;
+h1 {
+  max-width: 12ch;
+  margin: 0.45rem 0 0.75rem;
+  color: #1e1a29;
+  font-size: clamp(2.6rem, 7vw, 5.4rem);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.page-header > div > p:last-child,
+.todo-card p {
+  color: #696273;
   line-height: 1.6;
+}
+
+.session-note {
+  display: grid;
+  max-width: 15rem;
+  padding: 1rem;
+  border: 1px solid #ddd7e8;
+  border-radius: 0.75rem;
+  color: #696273;
+  font-size: 0.85rem;
+  gap: 0.25rem;
+}
+
+.session-note strong {
+  color: #322c3d;
+}
+
+.create-panel,
+.todo-card,
+.error-banner {
+  border: 1px solid #e0dbe8;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0.6rem 2rem rgb(49 37 77 / 6%);
+}
+
+.create-panel {
+  padding: clamp(1.25rem, 4vw, 2rem);
+}
+
+.todo-form fieldset {
+  display: grid;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  gap: 1rem;
+}
+
+.todo-form legend {
+  margin-bottom: 1.25rem;
+  color: #282230;
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+
+.todo-form label {
+  display: grid;
+  color: #514959;
+  font-size: 0.86rem;
+  font-weight: 700;
+  gap: 0.4rem;
+}
+
+.todo-form input,
+.todo-form textarea,
+.todo-form select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid #cec7d7;
+  border-radius: 0.55rem;
+  background: #fff;
+  color: #27212f;
+  font: inherit;
+  font-weight: 450;
+}
+
+.todo-form textarea {
+  resize: vertical;
+}
+
+.todo-form input:focus,
+.todo-form textarea:focus,
+.todo-form select:focus {
+  border-color: #7259d9;
+  outline: 3px solid rgb(114 89 217 / 15%);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.form-actions,
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.button {
+  min-height: 2.5rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.button.primary {
+  background: #6548d8;
+  color: #fff;
+}
+
+.button.secondary {
+  border-color: #d6cfdf;
+  background: #f8f6fb;
+  color: #463d50;
+}
+
+.button.danger {
+  background: #fff1f1;
+  color: #9f2f38;
+}
+
+.field-error {
+  color: #ad2935;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.2rem;
+  border-color: #eab8bd;
+  background: #fff8f8;
+  color: #84242d;
+}
+
+.error-banner p {
+  margin: 0.25rem 0;
+}
+
+.error-banner small {
+  color: #87636a;
+}
+
+.todo-section {
+  margin-top: 2.5rem;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.9rem;
+}
+
+.section-heading h2 {
+  margin: 0;
+  color: #2a2432;
+  font-size: 1.25rem;
+}
+
+.section-heading span {
+  display: grid;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: #ece8f3;
+  color: #5e556a;
+  font-size: 0.78rem;
+  font-weight: 750;
+  place-items: center;
+}
+
+.empty-state {
+  padding: 1.5rem;
+  border: 1px dashed #d4cedd;
+  border-radius: 0.8rem;
+  color: #756e7c;
+  text-align: center;
+}
+
+.todo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+}
+
+.todo-card {
+  padding: 1.2rem;
+}
+
+.todo-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.todo-card h3 {
+  margin: 0.55rem 0 0.75rem;
+  color: #27212f;
+  font-size: 1.15rem;
+}
+
+.priority,
+.version {
+  display: inline-flex;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.priority-0 {
+  background: #e7f6ed;
+  color: #2d6d47;
+}
+
+.priority-1 {
+  background: #fff4d9;
+  color: #855e13;
+}
+
+.priority-2 {
+  background: #ffe6e7;
+  color: #983139;
+}
+
+.version {
+  background: #f0edf5;
+  color: #5e5667;
+}
+
+.todo-card dl {
+  display: grid;
+  margin: 1rem 0;
+  gap: 0.55rem;
+}
+
+.todo-card dl div {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.todo-card dt {
+  color: #877e90;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.todo-card dd {
+  margin: 0;
+  color: #504757;
+  font-size: 0.82rem;
+}
+
+.todo-id {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 42rem) {
+  .app-shell {
+    padding-top: 1.5rem;
+  }
+
+  .page-header,
+  .error-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .session-note {
+    max-width: none;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
