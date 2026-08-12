@@ -114,6 +114,66 @@ public sealed class MongoTodoRepositoryTests
     }
 
     [TestMethod]
+    public async Task SoftDeleteAndRestoreCompleteRecoverableLifecycle()
+    {
+        TodoItem todoItem = CreateTodo();
+        await repository.AddAsync(todoItem);
+        TodoItem deleteWriter = await GetRequiredTodoAsync(todoItem.Id);
+        DateTimeOffset deletedAt = Timestamp.AddDays(1);
+        deleteWriter.SoftDelete(deletedAt);
+
+        TodoItem? deletedTodo = await repository.SoftDeleteAsync(
+            deleteWriter,
+            expectedVersion: 1);
+
+        deletedTodo.Should().NotBeNull();
+        deletedTodo!.Version.Should().Be(2);
+        deletedTodo.DeletedAt.Should().Be(deletedAt);
+        deletedTodo.PurgeAt.Should().Be(deletedAt.AddDays(90));
+        (await repository.GetByIdAsync(todoItem.Id)).Should().BeNull();
+        (await repository.ExistsAsync(todoItem.Id)).Should().BeFalse();
+        (await repository.ExistsAsync(todoItem.Id, includeDeleted: true)).Should().BeTrue();
+        (await GetDocumentCountAsync(todoItem.Id)).Should().Be(1);
+
+        TodoItem restoreWriter = await GetRequiredTodoAsync(
+            todoItem.Id,
+            includeDeleted: true);
+        DateTimeOffset restoredAt = deletedAt.AddDays(30);
+        restoreWriter.Restore(restoredAt);
+        TodoItem? restoredTodo = await repository.RestoreAsync(
+            restoreWriter,
+            expectedVersion: 2);
+
+        restoredTodo.Should().NotBeNull();
+        restoredTodo!.Version.Should().Be(3);
+        restoredTodo.DeletedAt.Should().BeNull();
+        restoredTodo.PurgeAt.Should().BeNull();
+        restoredTodo.UpdatedAt.Should().Be(restoredAt);
+        (await repository.ExistsAsync(todoItem.Id)).Should().BeTrue();
+        (await GetDocumentCountAsync(todoItem.Id)).Should().Be(1);
+    }
+
+    [TestMethod]
+    public async Task RepositoryRejectsAggregatesInWrongDeletionState()
+    {
+        TodoItem activeTodo = CreateTodo();
+        TodoItem deletedTodo = CreateTodo();
+        deletedTodo.SoftDelete(Timestamp.AddDays(1));
+
+        Func<Task> persistActiveAsDeleted = async () =>
+            await repository.SoftDeleteAsync(activeTodo, activeTodo.Version);
+        Func<Task> persistDeletedAsRestored = async () =>
+            await repository.RestoreAsync(deletedTodo, deletedTodo.Version);
+
+        await persistActiveAsDeleted.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("A TODO must be soft-deleted before it can be persisted as deleted.");
+        await persistDeletedAsRestored.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("A TODO must be restored before it can be persisted as active.");
+    }
+
+    [TestMethod]
     public async Task RepositoryWritesExpectedBsonRepresentations()
     {
         TodoItem todoItem = CreateTodo();
@@ -293,5 +353,14 @@ public sealed class MongoTodoRepositoryTests
     {
         return await repository.GetByIdAsync(id, includeDeleted)
             ?? throw new InvalidOperationException($"TODO '{id}' should exist for the test.");
+    }
+
+    private async Task<long> GetDocumentCountAsync(string id)
+    {
+        IMongoCollection<BsonDocument> collection = database
+            .GetCollection<BsonDocument>("todoItems");
+
+        return await collection.CountDocumentsAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", id));
     }
 }
