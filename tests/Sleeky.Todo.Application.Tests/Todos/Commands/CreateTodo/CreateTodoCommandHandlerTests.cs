@@ -39,4 +39,28 @@ public sealed class CreateTodoCommandHandlerTests
             Arg.Is<TodoItem>(todoItem => todoItem.Id == result.Id),
             cancellationToken);
     }
+
+    [TestMethod]
+    public async Task HandleCreatesFirstRecurringOccurrenceWithSeriesIdentity()
+    {
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        clock.UtcNow.Returns(TestTodoFactory.Timestamp);
+        CreateTodoCommand command = new CreateTodoCommand(
+            "Submit report",
+            "Monthly report",
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Monthly,
+            1);
+        CreateTodoCommandHandler handler = new CreateTodoCommandHandler(repository, clock);
+
+        TodoDto result = await handler.Handle(command, CancellationToken.None);
+
+        result.Recurrence.Should().NotBeNull();
+        result.Recurrence!.Type.Should().Be(RecurrenceType.Monthly);
+        result.Recurrence.AnchorDay.Should().Be(31);
+        result.SeriesId.Should().HaveLength(32);
+        result.OccurrenceNumber.Should().Be(1);
+    }
 }

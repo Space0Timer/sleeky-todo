@@ -30,7 +30,7 @@ an event bus or messaging infrastructure for an in-process application.
 
 MongoDB is the persistence store because TODO documents naturally contain
 embedded and evolving fields such as dependencies and recurrence metadata. The
-application uses a single-member replica set locally so later recurrence work
+application uses a single-member replica set locally so recurring completion
 can use MongoDB transactions without changing development topology.
 
 MongoDB-specific documents, BSON serializers, indexes, and repository behavior
@@ -114,8 +114,29 @@ Local development uses one MongoDB 7.0 replica-set member. The Compose
 initializer is idempotent: it checks replica-set status and initiates `rs0` only
 for an uninitialized database. The member advertises `localhost:27017` so the
 host-run API can use the committed connection string. This single-member setup
-is sufficient to exercise optimistic writes now and transactions in the later
-recurrence slice.
+supports optimistic writes and transactional recurring completion.
+
+## Recurrence and atomic completion
+
+Recurrence is represented by a domain value object containing a schedule type,
+positive interval, unit, and monthly anchor where relevant. Standard daily,
+weekly, and monthly schedules use an interval of one; custom schedules support
+every N days, weeks, or months. Calculations start from the scheduled due date,
+not completion time, so late completion does not cause schedule drift. Monthly
+calculation reconstructs the target day from the stored anchor, preserving
+end-of-month and leap-year behavior.
+
+The first recurring TODO receives a series ID and occurrence number 1. A real
+transition into `Completed` raises `TodoCompletedDomainEvent`; a no-op
+Completed-to-Completed request raises nothing. Application dispatches the event
+in-process while the MongoDB session transaction is active. Its handler inserts
+the next occurrence with copied name, description, priority, recurrence, and
+series data, but no dependencies. A handler failure aborts the completed update.
+
+The transaction reuses the existing expected-version filter. A unique partial
+index on `seriesId + occurrenceNumber` is the second idempotency boundary.
+Concurrent completion therefore produces one committed completion and next
+occurrence, while the stale request returns 409.
 
 ## Authentication outside the current scope
 
@@ -129,5 +150,5 @@ schemes, and test isolation by user must be designed together.
 
 ## Deferred decisions
 
-Recurring occurrences, retention cleanup scheduling, and production
-authentication remain deferred until their corresponding vertical slices.
+Retention cleanup scheduling and production authentication remain deferred
+until their corresponding vertical slices.

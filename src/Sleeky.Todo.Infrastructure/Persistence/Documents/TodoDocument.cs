@@ -36,7 +36,7 @@ internal sealed class TodoDocument
     public List<string> DependencyIds { get; set; } = new List<string>();
 
     [BsonElement("recurrence")]
-    public BsonDocument? Recurrence { get; set; }
+    public RecurrenceDocument? Recurrence { get; set; }
 
     [BsonElement("seriesId")]
     public string? SeriesId { get; set; }

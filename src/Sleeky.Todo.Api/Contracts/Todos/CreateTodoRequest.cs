@@ -11,4 +11,6 @@ public sealed class CreateTodoRequest
     public DateOnly DueDate { get; init; }
 
     public TodoPriority Priority { get; init; }
+
+    public RecurrenceRequest? Recurrence { get; init; }
 }

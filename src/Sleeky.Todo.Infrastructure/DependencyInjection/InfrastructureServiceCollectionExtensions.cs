@@ -11,6 +11,7 @@ using Sleeky.Todo.Infrastructure.Persistence.Health;
 using Sleeky.Todo.Infrastructure.Persistence.Indexes;
 using Sleeky.Todo.Infrastructure.Persistence.Queries;
 using Sleeky.Todo.Infrastructure.Persistence.Repositories;
+using Sleeky.Todo.Infrastructure.Persistence.Transactions;
 using Sleeky.Todo.Infrastructure.Time;
 
 namespace Sleeky.Todo.Infrastructure.DependencyInjection;
@@ -53,6 +54,8 @@ public static class InfrastructureServiceCollectionExtensions
             return mongoClient.GetDatabase(settings.DatabaseName);
         });
         services.AddSingleton<IClock, SystemClock>();
+        services.AddScoped<MongoTransactionContext>();
+        services.AddScoped<ITodoTransaction, MongoTodoTransaction>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
         services.AddHostedService<MongoDbIndexInitializer>();

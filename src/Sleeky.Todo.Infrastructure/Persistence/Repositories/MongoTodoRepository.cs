@@ -6,22 +6,26 @@ using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
+using Sleeky.Todo.Infrastructure.Persistence.Transactions;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 public sealed class MongoTodoRepository : ITodoRepository
 {
     private readonly IMongoCollection<TodoDocument> todoItems;
+    private readonly MongoTransactionContext transactionContext;
 
     public MongoTodoRepository(
         IMongoDatabase database,
-        IOptions<MongoDbSettings> settings)
+        IOptions<MongoDbSettings> settings,
+        MongoTransactionContext? transactionContext = null)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(settings);
 
         todoItems = database.GetCollection<TodoDocument>(
             settings.Value.TodoItemsCollectionName);
+        this.transactionContext = transactionContext ?? new MongoTransactionContext();
     }
 
     public async Task AddAsync(
@@ -29,7 +33,19 @@ public sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         TodoDocument document = TodoDocumentMapper.FromDomain(todoItem);
-        await todoItems.InsertOneAsync(document, cancellationToken: cancellationToken);
+        if (transactionContext.Session is null)
+        {
+            await todoItems.InsertOneAsync(
+                document,
+                cancellationToken: cancellationToken);
+        }
+        else
+        {
+            await todoItems.InsertOneAsync(
+                transactionContext.Session,
+                document,
+                cancellationToken: cancellationToken);
+        }
     }
 
     public async Task<TodoItem?> GetByIdAsync(
@@ -38,9 +54,10 @@ public sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
-        TodoDocument? document = await todoItems
-            .Find(filter)
-            .FirstOrDefaultAsync(cancellationToken);
+        IFindFluent<TodoDocument, TodoDocument> find = transactionContext.Session is null
+            ? todoItems.Find(filter)
+            : todoItems.Find(transactionContext.Session, filter);
+        TodoDocument? document = await find.FirstOrDefaultAsync(cancellationToken);
 
         return document is null ? null : TodoDocumentMapper.ToDomain(document);
     }
@@ -51,10 +68,16 @@ public sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
-        long count = await todoItems.CountDocumentsAsync(
-            filter,
-            new CountOptions { Limit = 1 },
-            cancellationToken);
+        long count = transactionContext.Session is null
+            ? await todoItems.CountDocumentsAsync(
+                filter,
+                new CountOptions { Limit = 1 },
+                cancellationToken)
+            : await todoItems.CountDocumentsAsync(
+                transactionContext.Session,
+                filter,
+                new CountOptions { Limit = 1 },
+                cancellationToken);
 
         return count > 0;
     }
@@ -79,9 +102,10 @@ public sealed class MongoTodoRepository : ITodoRepository
             filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
         }
 
-        List<TodoDocument> documents = await todoItems
-            .Find(filter)
-            .ToListAsync(cancellationToken);
+        IFindFluent<TodoDocument, TodoDocument> find = transactionContext.Session is null
+            ? todoItems.Find(filter)
+            : todoItems.Find(transactionContext.Session, filter);
+        List<TodoDocument> documents = await find.ToListAsync(cancellationToken);
 
         return documents.Select(TodoDocumentMapper.ToDomain).ToArray();
     }
@@ -98,10 +122,16 @@ public sealed class MongoTodoRepository : ITodoRepository
             & Builders<TodoDocument>.Filter.Ne(
                 document => document.Status,
                 TodoStatus.Archived);
-        long count = await todoItems.CountDocumentsAsync(
-            filter,
-            new CountOptions { Limit = 1 },
-            cancellationToken);
+        long count = transactionContext.Session is null
+            ? await todoItems.CountDocumentsAsync(
+                filter,
+                new CountOptions { Limit = 1 },
+                cancellationToken)
+            : await todoItems.CountDocumentsAsync(
+                transactionContext.Session,
+                filter,
+                new CountOptions { Limit = 1 },
+                cancellationToken);
 
         return count > 0;
     }
@@ -198,11 +228,18 @@ public sealed class MongoTodoRepository : ITodoRepository
         {
             ReturnDocument = ReturnDocument.After,
         };
-        TodoDocument? persistedDocument = await todoItems.FindOneAndReplaceAsync(
-            filter,
-            replacement,
-            options,
-            cancellationToken);
+        TodoDocument? persistedDocument = transactionContext.Session is null
+            ? await todoItems.FindOneAndReplaceAsync(
+                filter,
+                replacement,
+                options,
+                cancellationToken)
+            : await todoItems.FindOneAndReplaceAsync(
+                transactionContext.Session,
+                filter,
+                replacement,
+                options,
+                cancellationToken);
 
         return persistedDocument is null
             ? null

@@ -35,6 +35,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         IMongoDatabase database = serviceProvider.GetRequiredService<IMongoDatabase>();
         IClock clock = serviceProvider.GetRequiredService<IClock>();
         ITodoRepository repository = serviceProvider.GetRequiredService<ITodoRepository>();
+        ITodoTransaction transaction = serviceProvider.GetRequiredService<ITodoTransaction>();
 
         settings.DatabaseName.Should().Be("sleekyTodo");
         settings.TodoItemsCollectionName.Should().Be("todoItems");
@@ -42,6 +43,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         database.DatabaseNamespace.DatabaseName.Should().Be("sleekyTodo");
         clock.UtcNow.Offset.Should().Be(TimeSpan.Zero);
         repository.Should().BeOfType<MongoTodoRepository>();
+        transaction.Should().NotBeNull();
     }
 
     [TestMethod]

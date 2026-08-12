@@ -3,6 +3,7 @@ using FluentAssertions;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.Exceptions;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Domain.Tests.Entities;
 
@@ -268,6 +269,11 @@ public sealed class TodoItemTests
         DateTimeOffset updatedAt = InitialTimestamp.AddDays(1);
         DateTimeOffset deletedAt = updatedAt.AddDays(1);
         DateTimeOffset purgeAt = deletedAt.AddDays(90);
+        RecurrenceSchedule recurrence = RecurrenceSchedule.Create(
+            RecurrenceType.Monthly,
+            1,
+            null,
+            InitialDueDate);
 
         TodoItem item = TodoItem.Rehydrate(
             "todo-1",
@@ -277,7 +283,7 @@ public sealed class TodoItemTests
             TodoStatus.Archived,
             TodoPriority.Medium,
             new[] { "todo-a", "todo-b" },
-            null,
+            recurrence,
             "series-1",
             3,
             7,
@@ -291,6 +297,7 @@ public sealed class TodoItemTests
         item.Status.Should().Be(TodoStatus.Archived);
         item.Priority.Should().Be(TodoPriority.Medium);
         item.DependencyIds.Should().Equal("todo-a", "todo-b");
+        item.Recurrence.Should().Be(recurrence);
         item.SeriesId.Should().Be("series-1");
         item.OccurrenceNumber.Should().Be(3);
         item.Version.Should().Be(7);

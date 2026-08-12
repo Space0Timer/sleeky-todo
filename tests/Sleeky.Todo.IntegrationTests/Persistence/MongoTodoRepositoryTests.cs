@@ -8,6 +8,7 @@ using MongoDB.Driver;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.ValueObjects;
 using Sleeky.Todo.Infrastructure.Persistence;
 using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
@@ -40,7 +41,9 @@ public sealed class MongoTodoRepositoryTests
             return;
         }
 
-        mongoDbContainer = new MongoDbBuilder("mongo:7.0").Build();
+        mongoDbContainer = new MongoDbBuilder("mongo:7.0")
+            .WithReplicaSet("rs0")
+            .Build();
         await mongoDbContainer.StartAsync(testContext.CancellationToken);
     }
 
@@ -93,6 +96,42 @@ public sealed class MongoTodoRepositoryTests
         storedTodo.Version.Should().Be(todoItem.Version);
         storedTodo.CreatedAt.Should().Be(todoItem.CreatedAt);
         storedTodo.UpdatedAt.Should().Be(todoItem.UpdatedAt);
+    }
+
+    [TestMethod]
+    public async Task RecurrenceRoundTripsWithMonthlyAnchor()
+    {
+        RecurrenceSchedule recurrence = RecurrenceSchedule.Create(
+            RecurrenceType.Monthly,
+            1,
+            null,
+            new DateOnly(2026, 8, 31));
+        TodoItem todoItem = TodoItem.Create(
+            "recurring",
+            "Submit report",
+            "Monthly report",
+            new DateOnly(2026, 8, 31),
+            TodoPriority.High,
+            Timestamp,
+            recurrence,
+            "series-1",
+            1);
+
+        await repository.AddAsync(todoItem);
+        TodoItem? stored = await repository.GetByIdAsync(todoItem.Id);
+        BsonDocument raw = await database
+            .GetCollection<BsonDocument>("todoItems")
+            .Find(new BsonDocument("_id", todoItem.Id))
+            .FirstAsync();
+
+        stored.Should().NotBeNull();
+        stored!.Recurrence.Should().Be(recurrence);
+        stored.SeriesId.Should().Be("series-1");
+        stored.OccurrenceNumber.Should().Be(1);
+        raw["recurrence"]["type"].AsString.Should().Be("Monthly");
+        raw["recurrence"]["interval"].AsInt32.Should().Be(1);
+        raw["recurrence"]["unit"].AsString.Should().Be("Months");
+        raw["recurrence"]["anchorDay"].AsInt32.Should().Be(31);
     }
 
     [TestMethod]

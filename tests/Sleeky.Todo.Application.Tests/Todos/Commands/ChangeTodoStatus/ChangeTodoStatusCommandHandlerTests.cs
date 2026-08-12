@@ -2,6 +2,7 @@ using FluentAssertions;
 
 using NSubstitute;
 
+using Sleeky.Todo.Application.Abstractions.Events;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
@@ -10,6 +11,7 @@ using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Dependencies;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Commands.ChangeTodoStatus;
@@ -35,7 +37,9 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
             repository,
             evaluator,
-            clock);
+            clock,
+            new ImmediateTodoTransaction(),
+            new IgnoringDomainEventDispatcher());
 
         Func<Task> act = async () => await handler.Handle(
             new ChangeTodoStatusCommand(todo.Id, status, 1),
@@ -70,7 +74,9 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
             repository,
             evaluator,
-            clock);
+            clock,
+            new ImmediateTodoTransaction(),
+            new IgnoringDomainEventDispatcher());
 
         TodoDto result = await handler.Handle(
             new ChangeTodoStatusCommand(todo.Id, TodoStatus.Completed, 1),
@@ -93,7 +99,9 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
             repository,
             evaluator,
-            clock);
+            clock,
+            new ImmediateTodoTransaction(),
+            new IgnoringDomainEventDispatcher());
 
         TodoDto unchanged = await handler.Handle(
             new ChangeTodoStatusCommand(todo.Id, TodoStatus.NotStarted, 1),
@@ -115,5 +123,27 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         TodoItem todo = TestTodoFactory.Create();
         todo.AddDependency("dependency", TestTodoFactory.Timestamp);
         return todo;
+    }
+
+    private sealed class ImmediateTodoTransaction : ITodoTransaction
+    {
+        public Task<TResult> ExecuteAsync<TResult>(
+            string todoId,
+            long expectedVersion,
+            Func<CancellationToken, Task<TResult>> operation,
+            CancellationToken cancellationToken = default)
+        {
+            return operation(cancellationToken);
+        }
+    }
+
+    private sealed class IgnoringDomainEventDispatcher : IDomainEventDispatcher
+    {
+        public Task DispatchAsync(
+            IEnumerable<IDomainEvent> domainEvents,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

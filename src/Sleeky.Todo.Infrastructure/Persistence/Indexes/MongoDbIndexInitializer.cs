@@ -78,6 +78,20 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                         "purgeAt",
                         new BsonDocument("$type", "date")),
                 }),
+            new CreateIndexModel<TodoDocument>(
+                Builders<TodoDocument>.IndexKeys
+                    .Ascending(todo => todo.SeriesId)
+                    .Ascending(todo => todo.OccurrenceNumber),
+                new CreateIndexOptions<TodoDocument>
+                {
+                    Name = "unique_series_occurrence",
+                    Unique = true,
+                    PartialFilterExpression = new BsonDocument
+                    {
+                        { "seriesId", new BsonDocument("$type", "string") },
+                        { "occurrenceNumber", new BsonDocument("$type", "int") },
+                    },
+                }),
         ];
 
         _ = await collection.Indexes.CreateManyAsync(

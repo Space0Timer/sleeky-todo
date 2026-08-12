@@ -54,6 +54,33 @@ If the filter matches nothing, the repository returns `null`; command handlers m
 
 Integration tests issue simultaneous mutations with the same version and verify that exactly one succeeds for update/update, update/delete, and restore/restore races.
 
+## Transactional recurring completion
+
+Only a real transition from a non-completed state into `Completed` raises a
+`TodoCompletedDomainEvent`. Completion runs through a scoped transaction
+coordinator:
+
+```text
+ChangeTodoStatus handler
+  -> start MongoDB session transaction
+  -> versioned replacement of current occurrence
+  -> dispatch TodoCompletedDomainEvent in-process
+  -> calculate next date from scheduled due date
+  -> insert next occurrence through the same session
+  -> commit
+```
+
+The MongoDB repository reads the scoped transaction context and uses the active
+session for both the replacement and event-handler insert. Any event-handler or
+write failure aborts the transaction. A unique partial index on series ID and
+occurrence number complements optimistic concurrency and prevents duplicate
+next occurrences.
+
+The recurrence calculator preserves a stored monthly anchor rather than adding
+months to a previously clamped date. Thus January 31 becomes February's final
+day and then March 31. New occurrences copy descriptive fields, priority, and
+the schedule, but deliberately start with no dependency IDs.
+
 ## Soft delete and restore
 
 Soft delete is a domain transition rather than a physical MongoDB delete:
