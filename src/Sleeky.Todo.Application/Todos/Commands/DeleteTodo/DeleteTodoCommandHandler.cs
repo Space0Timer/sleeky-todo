@@ -16,6 +16,9 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
 
     public DeleteTodoCommandHandler(ITodoRepository todoRepository, IClock clock)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+        ArgumentNullException.ThrowIfNull(clock);
+
         this.todoRepository = todoRepository;
         this.clock = clock;
     }

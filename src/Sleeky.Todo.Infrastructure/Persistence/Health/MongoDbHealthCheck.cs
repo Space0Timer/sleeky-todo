@@ -11,6 +11,8 @@ internal sealed class MongoDbHealthCheck : IHealthCheck
 
     public MongoDbHealthCheck(IMongoDatabase database)
     {
+        ArgumentNullException.ThrowIfNull(database);
+
         this.database = database;
     }
 

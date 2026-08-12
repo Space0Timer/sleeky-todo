@@ -15,6 +15,8 @@ public sealed class ApiExceptionHandler : IExceptionHandler
 
     public ApiExceptionHandler(ILogger<ApiExceptionHandler> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
+
         this.logger = logger;
     }
 

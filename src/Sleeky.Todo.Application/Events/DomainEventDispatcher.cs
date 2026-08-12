@@ -11,6 +11,8 @@ public sealed class DomainEventDispatcher : IDomainEventDispatcher
     public DomainEventDispatcher(
         IEnumerable<IDomainEventHandler<TodoCompletedDomainEvent>> todoCompletedHandlers)
     {
+        ArgumentNullException.ThrowIfNull(todoCompletedHandlers);
+
         this.todoCompletedHandlers = todoCompletedHandlers;
     }
 

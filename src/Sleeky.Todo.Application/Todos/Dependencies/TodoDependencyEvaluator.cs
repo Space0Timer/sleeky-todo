@@ -10,6 +10,8 @@ public sealed class TodoDependencyEvaluator : ITodoDependencyEvaluator
 
     public TodoDependencyEvaluator(ITodoRepository todoRepository)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+
         this.todoRepository = todoRepository;
     }
 

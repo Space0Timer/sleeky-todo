@@ -24,6 +24,8 @@ public sealed class TodosController : ControllerBase
 
     public TodosController(ISender sender)
     {
+        ArgumentNullException.ThrowIfNull(sender);
+
         this.sender = sender;
     }
 

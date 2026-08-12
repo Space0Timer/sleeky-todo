@@ -237,6 +237,18 @@ both roll back. Optimistic version matching and the unique
 `seriesId + occurrenceNumber` index ensure concurrent requests create exactly
 one next occurrence.
 
+## Logging
+
+The API routes Microsoft `ILogger<T>` events through Serilog. Application code
+uses typed loggers so every event has a stable source category without taking a
+dependency on Serilog itself. Console logs include structured request method,
+path, status, duration, and trace context; request bodies, TODO descriptions,
+cursors, and MongoDB connection strings are not logged.
+
+Logging levels and sinks are configured in `src/Sleeky.Todo.Api/appsettings.json`.
+The development override enables debug events for Sleeky To-Do categories.
+Health-check request completion events are kept at debug level to reduce noise.
+
 ## Build everything
 
 ```sh

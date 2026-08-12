@@ -14,6 +14,9 @@ internal sealed class MongoTodoTransaction : ITodoTransaction
         IMongoClient mongoClient,
         MongoTransactionContext transactionContext)
     {
+        ArgumentNullException.ThrowIfNull(mongoClient);
+        ArgumentNullException.ThrowIfNull(transactionContext);
+
         this.mongoClient = mongoClient;
         this.transactionContext = transactionContext;
     }

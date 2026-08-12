@@ -12,6 +12,8 @@ public sealed class GetTodosQueryHandler
 
     public GetTodosQueryHandler(ITodoListReader todoListReader)
     {
+        ArgumentNullException.ThrowIfNull(todoListReader);
+
         this.todoListReader = todoListReader;
     }
 

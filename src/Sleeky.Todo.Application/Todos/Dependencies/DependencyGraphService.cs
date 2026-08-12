@@ -9,6 +9,8 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
     public DependencyGraphService(ITodoRepository todoRepository)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+
         this.todoRepository = todoRepository;
     }
 

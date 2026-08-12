@@ -22,6 +22,10 @@ public sealed class AddDependencyCommandHandler
         IDependencyGraphService dependencyGraphService,
         IClock clock)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+        ArgumentNullException.ThrowIfNull(dependencyGraphService);
+        ArgumentNullException.ThrowIfNull(clock);
+
         this.todoRepository = todoRepository;
         this.dependencyGraphService = dependencyGraphService;
         this.clock = clock;

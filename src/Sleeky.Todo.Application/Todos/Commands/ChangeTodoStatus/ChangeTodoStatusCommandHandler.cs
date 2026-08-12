@@ -29,6 +29,12 @@ public sealed class ChangeTodoStatusCommandHandler
         ITodoTransaction todoTransaction,
         IDomainEventDispatcher domainEventDispatcher)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+        ArgumentNullException.ThrowIfNull(dependencyEvaluator);
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(todoTransaction);
+        ArgumentNullException.ThrowIfNull(domainEventDispatcher);
+
         this.todoRepository = todoRepository;
         this.dependencyEvaluator = dependencyEvaluator;
         this.clock = clock;

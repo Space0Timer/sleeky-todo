@@ -18,10 +18,14 @@ public static class ApplicationServiceCollectionExtensions
 {
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddLogging();
         services.AddValidatorsFromAssembly(typeof(ApplicationServiceCollectionExtensions).Assembly);
         services.AddMediatR(configuration =>
         {
             configuration.RegisterServicesFromAssembly(typeof(ApplicationServiceCollectionExtensions).Assembly);
+            configuration.AddOpenBehavior(typeof(RequestLoggingBehavior<,>));
             configuration.AddOpenBehavior(typeof(ValidationBehavior<,>));
             configuration.AddOpenBehavior(typeof(DomainRuleExceptionBehavior<,>));
         });

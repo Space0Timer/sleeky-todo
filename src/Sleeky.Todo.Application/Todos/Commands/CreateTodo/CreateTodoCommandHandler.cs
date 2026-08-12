@@ -15,6 +15,9 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
 
     public CreateTodoCommandHandler(ITodoRepository todoRepository, IClock clock)
     {
+        ArgumentNullException.ThrowIfNull(todoRepository);
+        ArgumentNullException.ThrowIfNull(clock);
+
         this.todoRepository = todoRepository;
         this.clock = clock;
     }
