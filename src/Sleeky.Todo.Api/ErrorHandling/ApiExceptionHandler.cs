@@ -57,6 +57,10 @@ public sealed class ApiExceptionHandler : IExceptionHandler
                 StatusCodes.Status409Conflict,
                 "Domain rule conflict.",
                 exception.Message),
+            InvalidCursorException => CreateProblem(
+                StatusCodes.Status400BadRequest,
+                "Invalid cursor.",
+                exception.Message),
             _ => CreateProblem(
                 StatusCodes.Status500InternalServerError,
                 "An unexpected error occurred.",

@@ -74,6 +74,25 @@ exceptions map to stable RFC Problem Details responses. FluentValidation and
 ASP.NET Core model-binding failures share the same 400 title, detail, trace ID,
 and field-error shape.
 
+## Deterministic TODO list pagination
+
+The list read path uses a dedicated `ITodoListReader` abstraction rather than
+expanding the mutation-oriented aggregate repository. Infrastructure implements
+the reader as a MongoDB aggregation so dependency documents can be joined and
+blocked state can be calculated before a blocked/unblocked filter, cursor, or
+limit is applied.
+
+Cursors are versioned JSON payloads encoded with Base64URL. They bind the last
+sort value and TODO ID to the selected sort, direction, scope, and filter
+signature. Reusing a cursor after any bound option changes is a 400 error. Every
+sort uses the TODO ID in the same direction as its final tie-breaker, and the
+reader fetches one item beyond the requested limit to decide whether to return
+another cursor.
+
+Priority ordering is Low, Medium, High; status ordering is NotStarted,
+InProgress, Completed, Archived. These are explicit business orders and do not
+depend on the alphabetical BSON representation.
+
 ## Local replica set
 
 Local development uses one MongoDB 7.0 replica-set member. The Compose
@@ -95,6 +114,6 @@ schemes, and test isolation by user must be designed together.
 
 ## Deferred decisions
 
-Cursor pagination, recurring occurrences, dependency graph evaluation,
+Recurring occurrences, dependency graph mutation and cycle evaluation,
 retention cleanup scheduling, and production authentication remain deferred
 until their corresponding vertical slices.

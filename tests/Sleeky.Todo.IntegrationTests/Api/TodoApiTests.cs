@@ -252,6 +252,42 @@ public sealed class TodoApiTests
     }
 
     [TestMethod]
+    public async Task ListRejectsMalformedCursorAndPageSizeAboveMaximum()
+    {
+        HttpResponseMessage cursorResponse = await client.GetAsync(
+            "/api/todos?cursor=not%2Ba%2Bbase64url%2Bcursor");
+        JsonElement cursorProblem = await ReadJsonAsync(cursorResponse);
+        HttpResponseMessage limitResponse = await client.GetAsync(
+            "/api/todos?limit=101");
+        JsonElement limitProblem = await ReadJsonAsync(limitResponse);
+
+        cursorResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        cursorProblem.GetProperty("title").GetString().Should().Be("Invalid cursor.");
+        limitResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        limitProblem.GetProperty("title").GetString().Should().Be("Validation failed.");
+    }
+
+    [TestMethod]
+    public async Task ListRejectsCursorReusedWithDifferentFilters()
+    {
+        _ = await CreateTodoAsync();
+        _ = await CreateTodoAsync();
+        HttpResponseMessage firstResponse = await client.GetAsync(
+            "/api/todos?priority=High&limit=1");
+        JsonElement firstPage = await ReadJsonAsync(firstResponse);
+        string cursor = firstPage.GetProperty("nextCursor").GetString()
+            ?? throw new InvalidOperationException("The first page should provide a cursor.");
+
+        HttpResponseMessage response = await client.GetAsync(
+            $"/api/todos?priority=Low&limit=1&cursor={Uri.EscapeDataString(cursor)}");
+        JsonElement problem = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        problem.GetProperty("title").GetString().Should().Be("Invalid cursor.");
+        problem.GetProperty("detail").GetString().Should().Contain("does not match");
+    }
+
+    [TestMethod]
     public async Task SwaggerGenerationDocumentsExpectedResponses()
     {
         HttpResponseMessage response = await client.GetAsync("/swagger/v1/swagger.json");
@@ -259,6 +295,7 @@ public sealed class TodoApiTests
         JsonElement paths = swagger.GetProperty("paths");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        AssertResponses(paths, "/api/todos", "get", "200", "400");
         AssertResponses(paths, "/api/todos", "post", "201", "400", "409");
         AssertResponses(paths, "/api/todos/{id}", "get", "200", "400", "404");
         AssertResponses(paths, "/api/todos/{id}", "put", "200", "400", "404", "409");
@@ -291,6 +328,9 @@ public sealed class TodoApiTests
             .ToArray();
 
         indexNames.Should().Contain("active_due_date_id");
+        indexNames.Should().Contain("active_priority_id");
+        indexNames.Should().Contain("active_status_id");
+        indexNames.Should().Contain("active_name_normalized_id");
         indexNames.Should().Contain("purge_at");
     }
 

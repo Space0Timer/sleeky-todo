@@ -9,6 +9,7 @@ using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence;
 using Sleeky.Todo.Infrastructure.Persistence.Health;
 using Sleeky.Todo.Infrastructure.Persistence.Indexes;
+using Sleeky.Todo.Infrastructure.Persistence.Queries;
 using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 using Sleeky.Todo.Infrastructure.Time;
 
@@ -53,6 +54,7 @@ public static class InfrastructureServiceCollectionExtensions
         });
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
+        services.AddScoped<ITodoListReader, MongoTodoListReader>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services
             .AddHealthChecks()

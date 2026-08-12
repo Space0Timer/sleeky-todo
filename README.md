@@ -3,7 +3,8 @@
 A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR,
 React, and TypeScript. The current vertical slice supports creating, retrieving,
 updating, soft-deleting, and restoring TODOs with validation and optimistic
-concurrency.
+concurrency. The list API supports filters, scopes, deterministic cursor
+pagination, and blocked-state projection.
 
 ## Architecture
 
@@ -96,9 +97,10 @@ MongoDb__ConnectionString="mongodb://localhost:27017/?replicaSet=rs0" dotnet run
 
 Application handlers depend on `ITodoRepository`. Infrastructure implements that contract with `MongoTodoRepository`, which accesses the configured collection directly through `IMongoDatabase`. The BSON document and mapping types remain internal to Infrastructure.
 
-At startup, Infrastructure initializes the indexes used for active due-date
-queries and retained soft-deleted records. `GET /health` verifies that MongoDB
-can answer a ping.
+At startup, Infrastructure initializes compound active-record indexes for due
+date, priority, status, and normalized-name sorting, plus the retained
+soft-delete `purgeAt` index. `GET /health` verifies that MongoDB can answer a
+ping.
 
 The live repository and API integration tests require Docker and are opt-in.
 Each API test uses a dedicated database and drops only that database during
@@ -114,6 +116,7 @@ Update, delete, and restore operations use the version last read by the client. 
 
 The API routes are:
 
+- `GET /api/todos`
 - `POST /api/todos`
 - `GET /api/todos/{id}`
 - `PUT /api/todos/{id}`
@@ -125,6 +128,13 @@ validation returns `400`, missing TODOs return `404`, and stale versions or
 domain-rule conflicts return `409`. Every problem response includes a
 `traceId`; validation responses also contain a stable `errors` object keyed by
 camel-cased request field.
+
+`GET /api/todos` accepts `status`, `priority`, `due-from`, `due-to`,
+`dependencyStatus`, `scope`, `sortField`, `sortDirection`, `limit`, and
+`cursor`. Scopes are `Active`, `Archived`, and `Deleted`; supported sort fields
+are `DueDate`, `Priority`, `Status`, and `Name`. The default page size is 50 and
+the maximum is 100. Each response contains `items` and a `nextCursor`; changing
+filters, scope, or sorting requires starting again without the old cursor.
 
 ## Run the API
 
