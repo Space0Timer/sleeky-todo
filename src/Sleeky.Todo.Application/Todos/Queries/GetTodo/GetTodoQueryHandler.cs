@@ -23,7 +23,7 @@ public sealed class GetTodoQueryHandler : IRequestHandler<GetTodoQuery, TodoDto>
         TodoItem todoItem = await todoRepository.GetByIdAsync(
             request.Id,
             cancellationToken: cancellationToken)
-            ?? throw new TodoNotFoundException(request.Id);
+            ?? throw new NotFoundException("TODO", request.Id);
 
         return TodoDto.FromEntity(todoItem);
     }

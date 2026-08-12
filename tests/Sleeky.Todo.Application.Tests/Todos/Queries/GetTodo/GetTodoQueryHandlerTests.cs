@@ -44,9 +44,9 @@ public sealed class GetTodoQueryHandlerTests
         Func<Task> act = async () =>
             await handler.Handle(new GetTodoQuery(TodoId), CancellationToken.None);
 
-        TodoNotFoundException exception = (await act.Should()
-            .ThrowAsync<TodoNotFoundException>())
+        NotFoundException exception = (await act.Should()
+            .ThrowAsync<NotFoundException>())
             .Which;
-        exception.TodoId.Should().Be(TodoId);
+        exception.ResourceId.Should().Be(TodoId);
     }
 }

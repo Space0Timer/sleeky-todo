@@ -17,6 +17,7 @@ public static class ApplicationServiceCollectionExtensions
         {
             configuration.RegisterServicesFromAssembly(typeof(ApplicationServiceCollectionExtensions).Assembly);
             configuration.AddOpenBehavior(typeof(ValidationBehavior<,>));
+            configuration.AddOpenBehavior(typeof(DomainRuleExceptionBehavior<,>));
         });
 
         return services;

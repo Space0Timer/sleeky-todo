@@ -26,7 +26,7 @@ public sealed class UpdateTodoCommandHandler : IRequestHandler<UpdateTodoCommand
         TodoItem todoItem = await todoRepository.GetByIdAsync(
             request.Id,
             cancellationToken: cancellationToken)
-            ?? throw new TodoNotFoundException(request.Id);
+            ?? throw new NotFoundException("TODO", request.Id);
 
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
 
@@ -41,7 +41,7 @@ public sealed class UpdateTodoCommandHandler : IRequestHandler<UpdateTodoCommand
             todoItem,
             request.Version,
             cancellationToken)
-            ?? throw new TodoConcurrencyException(request.Id, request.Version);
+            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
 
         return TodoDto.FromEntity(updatedTodoItem);
     }

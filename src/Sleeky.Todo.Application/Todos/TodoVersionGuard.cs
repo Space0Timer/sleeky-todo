@@ -9,7 +9,7 @@ internal static class TodoVersionGuard
     {
         if (todoItem.Version != expectedVersion)
         {
-            throw new TodoConcurrencyException(todoItem.Id, expectedVersion);
+            throw new ConcurrencyConflictException("TODO", todoItem.Id, expectedVersion);
         }
     }
 }
