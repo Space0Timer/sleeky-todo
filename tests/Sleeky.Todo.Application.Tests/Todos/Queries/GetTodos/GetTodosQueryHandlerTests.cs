@@ -119,7 +119,7 @@ public sealed class GetTodosQueryHandlerTests
     private static TodoListItemDto CreateItem(int index)
     {
         return new TodoListItemDto(
-            $"todo-{index:D3}",
+            TestTodoFactory.CreateId($"todo-{index:D3}"),
             $"TODO {index:D3}",
             null,
             new DateOnly(2026, 8, 1).AddDays(index / 3),

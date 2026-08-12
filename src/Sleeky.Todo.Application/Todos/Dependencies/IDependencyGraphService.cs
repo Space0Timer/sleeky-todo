@@ -3,7 +3,7 @@ namespace Sleeky.Todo.Application.Todos.Dependencies;
 public interface IDependencyGraphService
 {
     Task<bool> WouldCreateCycleAsync(
-        string sourceTodoId,
-        string dependencyTodoId,
+        Guid sourceTodoId,
+        Guid dependencyTodoId,
         CancellationToken cancellationToken = default);
 }

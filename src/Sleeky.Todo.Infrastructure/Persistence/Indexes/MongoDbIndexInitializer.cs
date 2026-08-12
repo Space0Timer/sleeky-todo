@@ -96,7 +96,7 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                     Unique = true,
                     PartialFilterExpression = Builders<TodoDocument>.Filter.Type(
                         todo => todo.SeriesId,
-                        BsonType.String)
+                        BsonType.Binary)
                         & Builders<TodoDocument>.Filter.Type(
                             todo => todo.OccurrenceNumber,
                             BsonType.Int32),

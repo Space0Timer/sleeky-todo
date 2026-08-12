@@ -35,7 +35,7 @@ public sealed class CreateTodoCommandHandlerTests
 
         TodoDto result = await handler.Handle(command, cancellationToken);
 
-        result.Id.Should().HaveLength(32);
+        result.Id.Should().NotBe(Guid.Empty);
         result.Name.Should().Be("Submit report");
         result.Description.Should().Be("Monthly report");
         result.Version.Should().Be(1);
@@ -68,7 +68,7 @@ public sealed class CreateTodoCommandHandlerTests
         result.Recurrence.Should().NotBeNull();
         result.Recurrence!.Type.Should().Be(RecurrenceType.Monthly);
         result.Recurrence.AnchorDay.Should().Be(31);
-        result.SeriesId.Should().HaveLength(32);
+        result.SeriesId.Should().NotBeNull().And.NotBe(Guid.Empty);
         result.OccurrenceNumber.Should().Be(1);
     }
 }

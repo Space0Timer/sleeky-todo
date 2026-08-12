@@ -7,7 +7,7 @@ internal sealed class CompletingTodoTransaction : ITodoTransaction
     public bool Completed { get; private set; }
 
     public async Task<TResult> ExecuteAsync<TResult>(
-        string todoId,
+        Guid todoId,
         long expectedVersion,
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken = default)

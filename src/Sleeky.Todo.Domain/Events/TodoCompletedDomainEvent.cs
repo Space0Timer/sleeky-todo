@@ -3,10 +3,10 @@ namespace Sleeky.Todo.Domain.Events;
 public sealed record TodoCompletedDomainEvent : IDomainEvent
 {
     public TodoCompletedDomainEvent(
-        string todoId,
-        string? seriesId,
+        Guid todoId,
+        Guid? seriesId,
         int? occurrenceNumber,
-        string? nextOccurrenceId,
+        Guid? nextOccurrenceId,
         TodoCompletionContext completionContext)
     {
         TodoId = todoId;
@@ -16,13 +16,13 @@ public sealed record TodoCompletedDomainEvent : IDomainEvent
         CompletionContext = completionContext;
     }
 
-    public string TodoId { get; }
+    public Guid TodoId { get; }
 
-    public string? SeriesId { get; }
+    public Guid? SeriesId { get; }
 
     public int? OccurrenceNumber { get; }
 
-    public string? NextOccurrenceId { get; }
+    public Guid? NextOccurrenceId { get; }
 
     public TodoCompletionContext CompletionContext { get; }
 }

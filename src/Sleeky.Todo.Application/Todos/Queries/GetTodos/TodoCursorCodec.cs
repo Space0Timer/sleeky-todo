@@ -46,7 +46,7 @@ public static class TodoCursorCodec
                 || string.IsNullOrWhiteSpace(payload.SortField)
                 || string.IsNullOrWhiteSpace(payload.Direction)
                 || payload.LastSortValue is null
-                || string.IsNullOrWhiteSpace(payload.LastTodoId)
+                || payload.LastTodoId == Guid.Empty
                 || string.IsNullOrWhiteSpace(payload.FilterSignature))
             {
                 throw InvalidCursor();

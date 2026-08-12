@@ -69,7 +69,10 @@ public sealed class DependencyCommandHandlerTests
         IClock clock = Substitute.For<IClock>();
         repository.GetByIdAsync(source.Id, false, Arg.Any<CancellationToken>())
             .Returns(source);
-        repository.GetByIdAsync("missing", false, Arg.Any<CancellationToken>())
+        repository.GetByIdAsync(
+                TestTodoFactory.CreateId("missing"),
+                false,
+                Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
         repository.GetByIdAsync(dependency.Id, false, Arg.Any<CancellationToken>())
             .Returns(dependency);
@@ -85,7 +88,7 @@ public sealed class DependencyCommandHandlerTests
             NullLogger<AddDependencyCommandHandler>.Instance);
 
         Func<Task> missing = async () => await handler.Handle(
-            new AddDependencyCommand(source.Id, "missing", 1),
+            new AddDependencyCommand(source.Id, TestTodoFactory.CreateId("missing"), 1),
             CancellationToken.None);
         Func<Task> cycle = async () => await handler.Handle(
             new AddDependencyCommand(source.Id, dependency.Id, 1),
@@ -113,7 +116,10 @@ public sealed class DependencyCommandHandlerTests
             NullLogger<AddDependencyCommandHandler>.Instance);
 
         Func<Task> stale = async () => await handler.Handle(
-            new AddDependencyCommand(source.Id, "dependency", 2),
+            new AddDependencyCommand(
+                source.Id,
+                TestTodoFactory.CreateId("dependency"),
+                2),
             CancellationToken.None);
         Func<Task> self = async () => await handler.Handle(
             new AddDependencyCommand(source.Id, source.Id, 1),
@@ -129,7 +135,7 @@ public sealed class DependencyCommandHandlerTests
     public async Task RemoveDependencyPersistsAndRejectsMissingDependency()
     {
         TodoItem source = TestTodoFactory.Create("source");
-        source.AddDependency("dependency", TestTodoFactory.Timestamp);
+        source.AddDependency(TestTodoFactory.CreateId("dependency"), TestTodoFactory.Timestamp);
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         IClock clock = Substitute.For<IClock>();
         repository.GetByIdAsync(source.Id, false, Arg.Any<CancellationToken>())
@@ -142,7 +148,7 @@ public sealed class DependencyCommandHandlerTests
             NullLogger<RemoveDependencyCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(
-            new RemoveDependencyCommand(source.Id, "dependency", 1),
+            new RemoveDependencyCommand(source.Id, TestTodoFactory.CreateId("dependency"), 1),
             CancellationToken.None);
 
         result.DependencyIds.Should().BeEmpty();
@@ -155,7 +161,10 @@ public sealed class DependencyCommandHandlerTests
                 Arg.Any<CancellationToken>())
             .Returns(sourceWithoutDependencies);
         Func<Task> missing = async () => await handler.Handle(
-            new RemoveDependencyCommand(sourceWithoutDependencies.Id, "missing", 1),
+            new RemoveDependencyCommand(
+                sourceWithoutDependencies.Id,
+                TestTodoFactory.CreateId("missing"),
+                1),
             CancellationToken.None);
         await missing.Should()
             .ThrowAsync<DomainException>()

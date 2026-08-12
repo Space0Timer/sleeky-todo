@@ -47,7 +47,7 @@ public sealed class AddDependencyCommandHandler
             ?? throw new NotFoundException("TODO", request.Id);
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
 
-        if (string.Equals(todoItem.Id, request.DependencyId, StringComparison.Ordinal))
+        if (todoItem.Id == request.DependencyId)
         {
             todoItem.AddDependency(request.DependencyId, clock.UtcNow);
         }

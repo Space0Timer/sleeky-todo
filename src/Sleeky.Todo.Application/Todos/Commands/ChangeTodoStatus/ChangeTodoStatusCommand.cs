@@ -7,14 +7,14 @@ namespace Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 
 public sealed class ChangeTodoStatusCommand : IRequest<TodoDto>
 {
-    public ChangeTodoStatusCommand(string id, TodoStatus status, long version)
+    public ChangeTodoStatusCommand(Guid id, TodoStatus status, long version)
     {
         Id = id;
         Status = status;
         Version = version;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
     public TodoStatus Status { get; }
 

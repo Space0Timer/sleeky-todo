@@ -48,7 +48,7 @@ public sealed class MongoTodoRepository : ITodoRepository
     }
 
     public async Task<TodoItem?> GetByIdAsync(
-        string id,
+        Guid id,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default)
     {
@@ -62,7 +62,7 @@ public sealed class MongoTodoRepository : ITodoRepository
     }
 
     public async Task<bool> ExistsAsync(
-        string id,
+        Guid id,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default)
     {
@@ -82,13 +82,13 @@ public sealed class MongoTodoRepository : ITodoRepository
     }
 
     public async Task<IReadOnlyCollection<TodoItem>> GetByIdsAsync(
-        IEnumerable<string> ids,
+        IEnumerable<Guid> ids,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(ids);
 
-        string[] distinctIds = ids.Distinct(StringComparer.Ordinal).ToArray();
+        Guid[] distinctIds = ids.Distinct().ToArray();
         if (distinctIds.Length == 0)
         {
             return Array.Empty<TodoItem>();
@@ -110,7 +110,7 @@ public sealed class MongoTodoRepository : ITodoRepository
     }
 
     public async Task<bool> HasActiveDependentsAsync(
-        string dependencyId,
+        Guid dependencyId,
         CancellationToken cancellationToken = default)
     {
         FilterDefinition<TodoDocument> filter =
@@ -187,7 +187,7 @@ public sealed class MongoTodoRepository : ITodoRepository
     }
 
     private static FilterDefinition<TodoDocument> BuildIdFilter(
-        string id,
+        Guid id,
         bool includeDeleted)
     {
         FilterDefinition<TodoDocument> filter =
@@ -202,7 +202,7 @@ public sealed class MongoTodoRepository : ITodoRepository
     }
 
     private static FilterDefinition<TodoDocument> BuildMutationFilter(
-        string id,
+        Guid id,
         long expectedVersion,
         bool includeDeleted)
     {

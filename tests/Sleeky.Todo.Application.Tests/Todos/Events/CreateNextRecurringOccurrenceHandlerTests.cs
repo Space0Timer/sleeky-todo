@@ -25,10 +25,10 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
             null,
             TestTodoFactory.DueDate);
         TodoCompletedDomainEvent domainEvent = new TodoCompletedDomainEvent(
-            "todo-1",
-            "series-1",
+            TestTodoFactory.CreateId("todo-1"),
+            TestTodoFactory.CreateId("series-1"),
             1,
-            "todo-2",
+            TestTodoFactory.CreateId("todo-2"),
             new TodoCompletionContext(
                 "Submit report",
                 "Monthly report",
@@ -49,9 +49,9 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
         await handler.HandleAsync(domainEvent, CancellationToken.None);
 
         captured.Should().NotBeNull();
-        captured!.Id.Should().Be("todo-2");
+        captured!.Id.Should().Be(TestTodoFactory.CreateId("todo-2"));
         captured.DueDate.Should().Be(new DateOnly(2026, 9, 30));
-        captured.SeriesId.Should().Be("series-1");
+        captured.SeriesId.Should().Be(TestTodoFactory.CreateId("series-1"));
         captured.OccurrenceNumber.Should().Be(2);
         captured.Recurrence.Should().Be(recurrence);
         captured.DependencyIds.Should().BeEmpty();
@@ -63,7 +63,7 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
     {
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         TodoCompletedDomainEvent domainEvent = new TodoCompletedDomainEvent(
-            "todo-1",
+            TestTodoFactory.CreateId("todo-1"),
             null,
             null,
             null,

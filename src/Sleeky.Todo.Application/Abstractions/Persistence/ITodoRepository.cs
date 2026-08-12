@@ -9,22 +9,22 @@ public interface ITodoRepository
         CancellationToken cancellationToken = default);
 
     Task<TodoItem?> GetByIdAsync(
-        string id,
+        Guid id,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default);
 
     Task<bool> ExistsAsync(
-        string id,
+        Guid id,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<TodoItem>> GetByIdsAsync(
-        IEnumerable<string> ids,
+        IEnumerable<Guid> ids,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default);
 
     Task<bool> HasActiveDependentsAsync(
-        string dependencyId,
+        Guid dependencyId,
         CancellationToken cancellationToken = default);
 
     Task<TodoItem?> UpdateAsync(

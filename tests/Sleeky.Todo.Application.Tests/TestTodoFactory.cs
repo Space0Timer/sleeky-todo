@@ -18,12 +18,19 @@ internal static class TestTodoFactory
     public static TodoItem Create(string id = "todo-1")
     {
         return TodoItem.Create(
-            id,
+            CreateId(id),
             "Submit report",
             "Monthly report",
             DueDate,
             TodoPriority.High,
             Timestamp);
+    }
+
+    public static Guid CreateId(string value)
+    {
+        byte[] bytes = System.Security.Cryptography.MD5.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value));
+        return new Guid(bytes);
     }
 
     public static TodoItem CreateDeleted(string id = "todo-1")

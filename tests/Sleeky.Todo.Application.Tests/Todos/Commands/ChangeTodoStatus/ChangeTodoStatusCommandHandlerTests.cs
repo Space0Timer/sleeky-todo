@@ -34,7 +34,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         repository.GetByIdAsync(todo.Id, false, Arg.Any<CancellationToken>())
             .Returns(todo);
         evaluator.EvaluateAsync(
-                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<IEnumerable<Guid>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new TodoDependencyState(1));
         ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
@@ -70,7 +70,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         repository.GetByIdAsync(todo.Id, false, Arg.Any<CancellationToken>())
             .Returns(todo);
         evaluator.EvaluateAsync(
-                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<IEnumerable<Guid>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new TodoDependencyState(0));
         repository.UpdateAsync(todo, 1, Arg.Any<CancellationToken>())
@@ -133,14 +133,14 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             null,
             TestTodoFactory.DueDate);
         TodoItem todo = TodoItem.Create(
-            "todo-1",
+            TestTodoFactory.CreateId("todo-1"),
             "Submit report",
             null,
             TestTodoFactory.DueDate,
             TodoPriority.High,
             TestTodoFactory.Timestamp,
             recurrence,
-            "series-1",
+            TestTodoFactory.CreateId("series-1"),
             1);
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         ITodoDependencyEvaluator evaluator = Substitute.For<ITodoDependencyEvaluator>();
@@ -151,7 +151,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         repository.GetByIdAsync(todo.Id, false, Arg.Any<CancellationToken>())
             .Returns(todo);
         evaluator.EvaluateAsync(
-                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<IEnumerable<Guid>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new TodoDependencyState(0));
         repository.UpdateAsync(todo, 1, Arg.Any<CancellationToken>())
@@ -175,15 +175,15 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         entry.TransactionCompleted.Should().BeTrue();
         entry.Level.Should().Be(LogLevel.Information);
         entry.Properties["TodoId"].Should().Be(result.NextOccurrenceId);
-        entry.Properties["SeriesId"].Should().Be("series-1");
-        entry.Properties["CompletedTodoId"].Should().Be("todo-1");
+        entry.Properties["SeriesId"].Should().Be(TestTodoFactory.CreateId("series-1"));
+        entry.Properties["CompletedTodoId"].Should().Be(TestTodoFactory.CreateId("todo-1"));
         logger.Entries.Should().ContainSingle(candidate => candidate.EventId == 1108);
     }
 
     private static TodoItem CreateTodoWithDependency()
     {
         TodoItem todo = TestTodoFactory.Create();
-        todo.AddDependency("dependency", TestTodoFactory.Timestamp);
+        todo.AddDependency(TestTodoFactory.CreateId("dependency"), TestTodoFactory.Timestamp);
         return todo;
     }
 }

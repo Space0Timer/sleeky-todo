@@ -4,7 +4,7 @@ public sealed class ConcurrencyConflictException : Exception
 {
     public ConcurrencyConflictException(
         string resourceName,
-        string resourceId,
+        Guid resourceId,
         long expectedVersion)
         : base($"{resourceName} '{resourceId}' is no longer at expected version {expectedVersion}.")
     {
@@ -15,7 +15,7 @@ public sealed class ConcurrencyConflictException : Exception
 
     public long ExpectedVersion { get; }
 
-    public string ResourceId { get; }
+    public Guid ResourceId { get; }
 
     public string ResourceName { get; }
 }

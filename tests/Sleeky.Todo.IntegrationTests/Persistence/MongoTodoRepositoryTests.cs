@@ -107,26 +107,28 @@ public sealed class MongoTodoRepositoryTests
             null,
             new DateOnly(2026, 8, 31));
         TodoItem todoItem = TodoItem.Create(
-            "recurring",
+            Id("recurring"),
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
             TodoPriority.High,
             Timestamp,
             recurrence,
-            "series-1",
+            Id("series-1"),
             1);
 
         await repository.AddAsync(todoItem);
         TodoItem? stored = await repository.GetByIdAsync(todoItem.Id);
         BsonDocument raw = await database
             .GetCollection<BsonDocument>("todoItems")
-            .Find(new BsonDocument("_id", todoItem.Id))
+            .Find(new BsonDocument(
+                "_id",
+                new BsonBinaryData(todoItem.Id, GuidRepresentation.Standard)))
             .FirstAsync();
 
         stored.Should().NotBeNull();
         stored!.Recurrence.Should().Be(recurrence);
-        stored.SeriesId.Should().Be("series-1");
+        stored.SeriesId.Should().Be(Id("series-1"));
         stored.OccurrenceNumber.Should().Be(1);
         raw["recurrence"]["type"].AsString.Should().Be("Monthly");
         raw["recurrence"]["interval"].AsInt32.Should().Be(1);
@@ -144,14 +146,14 @@ public sealed class MongoTodoRepositoryTests
         await repository.AddAsync(deleted);
 
         IReadOnlyCollection<TodoItem> activeOnly = await repository.GetByIdsAsync(
-            new[] { active.Id, deleted.Id, "missing" });
+            new[] { active.Id, deleted.Id, Id("missing") });
         IReadOnlyCollection<TodoItem> includingDeleted = await repository.GetByIdsAsync(
             new[] { active.Id, deleted.Id },
             includeDeleted: true);
 
         activeOnly.Select(todo => todo.Id).Should().Equal(active.Id);
         includingDeleted.Select(todo => todo.Id)
-            .Should().BeEquivalentTo(active.Id, deleted.Id);
+            .Should().BeEquivalentTo(new[] { active.Id, deleted.Id });
     }
 
     [TestMethod]
@@ -261,9 +263,14 @@ public sealed class MongoTodoRepositoryTests
             .GetCollection<BsonDocument>("todoItems");
 
         BsonDocument document = await collection
-            .Find(Builders<BsonDocument>.Filter.Eq("_id", todoItem.Id))
+            .Find(Builders<BsonDocument>.Filter.Eq(
+                "_id",
+                new BsonBinaryData(todoItem.Id, GuidRepresentation.Standard)))
             .SingleAsync();
 
+        document["_id"].AsBsonBinaryData.SubType.Should()
+            .Be(BsonBinarySubType.UuidStandard);
+        document["_id"].AsBsonBinaryData.ToGuid().Should().Be(todoItem.Id);
         document["dueDate"].AsString.Should().Be("2026-08-31");
         document["status"].AsInt32.Should().Be((int)TodoStatus.NotStarted);
         document["priority"].AsInt32.Should().Be((int)TodoPriority.High);
@@ -409,7 +416,7 @@ public sealed class MongoTodoRepositoryTests
     private static TodoItem CreateTodo(string id = "todo-1")
     {
         return TodoItem.Create(
-            id,
+            Id(id),
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
@@ -425,20 +432,29 @@ public sealed class MongoTodoRepositoryTests
             StringComparison.OrdinalIgnoreCase);
     }
 
+    private static Guid Id(string value)
+    {
+        byte[] bytes = System.Security.Cryptography.MD5.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value));
+        return new Guid(bytes);
+    }
+
     private async Task<TodoItem> GetRequiredTodoAsync(
-        string id,
+        Guid id,
         bool includeDeleted = false)
     {
         return await repository.GetByIdAsync(id, includeDeleted)
             ?? throw new InvalidOperationException($"TODO '{id}' should exist for the test.");
     }
 
-    private async Task<long> GetDocumentCountAsync(string id)
+    private async Task<long> GetDocumentCountAsync(Guid id)
     {
         IMongoCollection<BsonDocument> collection = database
             .GetCollection<BsonDocument>("todoItems");
 
         return await collection.CountDocumentsAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", id));
+            Builders<BsonDocument>.Filter.Eq(
+                "_id",
+                new BsonBinaryData(id, GuidRepresentation.Standard)));
     }
 }

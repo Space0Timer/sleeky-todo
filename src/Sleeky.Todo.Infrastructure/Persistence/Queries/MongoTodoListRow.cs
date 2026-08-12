@@ -9,7 +9,8 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Queries;
 internal sealed class MongoTodoListRow
 {
     [BsonId]
-    public string Id { get; set; } = string.Empty;
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public Guid Id { get; set; }
 
     [BsonElement(MongoTodoFields.Name)]
     public string Name { get; set; } = string.Empty;

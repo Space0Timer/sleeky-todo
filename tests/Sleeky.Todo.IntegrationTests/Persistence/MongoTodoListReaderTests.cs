@@ -120,9 +120,9 @@ public sealed class MongoTodoListReaderTests
                 dueTo: new DateOnly(2026, 8, 31)));
 
         statusPage.Items.Select(item => item.Id)
-            .Should().BeEquivalentTo("todo-b", "todo-c");
-        priorityPage.Items.Select(item => item.Id).Should().Equal("todo-b");
-        duePage.Items.Select(item => item.Id).Should().Equal("todo-b");
+            .Should().BeEquivalentTo(new[] { Id("todo-b"), Id("todo-c") });
+        priorityPage.Items.Select(item => item.Id).Should().Equal(Id("todo-b"));
+        duePage.Items.Select(item => item.Id).Should().Equal(Id("todo-b"));
     }
 
     [TestMethod]
@@ -202,7 +202,7 @@ public sealed class MongoTodoListReaderTests
         }
         while (cursor is not null);
 
-        string[] expectedIds = GetExpectedIds(documents, sortField, direction);
+        Guid[] expectedIds = GetExpectedIds(documents, sortField, direction);
         allItems.Select(item => item.Id).Should().Equal(expectedIds);
         allItems.Should().HaveCount(documents.Length);
         allItems.Select(item => item.Id).Should().OnlyHaveUniqueItems();
@@ -231,9 +231,9 @@ public sealed class MongoTodoListReaderTests
         CursorPage<TodoListItemDto> deleted = await ListAsync(
             new GetTodosQuery(scope: TodoListScope.Deleted));
 
-        active.Items.Select(item => item.Id).Should().Equal("active");
-        archived.Items.Select(item => item.Id).Should().Equal("archived");
-        deleted.Items.Select(item => item.Id).Should().Equal("deleted");
+        active.Items.Select(item => item.Id).Should().Equal(Id("active"));
+        archived.Items.Select(item => item.Id).Should().Equal(Id("archived"));
+        deleted.Items.Select(item => item.Id).Should().Equal(Id("deleted"));
         deleted.Items[0].DeletedAt.Should().NotBeNull();
         deleted.Items[0].PurgeAt.Should().NotBeNull();
     }
@@ -288,14 +288,17 @@ public sealed class MongoTodoListReaderTests
             new GetTodosQuery(dependencyStatus: TodoDependencyStatus.Unblocked));
 
         blocked.Items.Select(item => item.Id).Should().BeEquivalentTo(
-            "dependent-blocked",
-            "dependent-archived-dependency",
-            "dependent-deleted-dependency");
-        blocked.Items.Single(item => item.Id == "dependent-blocked")
+            new[]
+            {
+                Id("dependent-blocked"),
+                Id("dependent-archived-dependency"),
+                Id("dependent-deleted-dependency"),
+            });
+        blocked.Items.Single(item => item.Id == Id("dependent-blocked"))
             .IncompleteDependencyCount.Should().Be(2);
         blocked.Items.Should().OnlyContain(item => item.IsBlocked);
-        unblocked.Items.Select(item => item.Id).Should().Contain("dependent-unblocked");
-        unblocked.Items.Single(item => item.Id == "dependent-unblocked")
+        unblocked.Items.Select(item => item.Id).Should().Contain(Id("dependent-unblocked"));
+        unblocked.Items.Single(item => item.Id == Id("dependent-unblocked"))
             .IncompleteDependencyCount.Should().Be(0);
 
         List<TodoListItemDto> pagedBlockedItems = new List<TodoListItemDto>();
@@ -313,9 +316,12 @@ public sealed class MongoTodoListReaderTests
         while (cursor is not null);
 
         pagedBlockedItems.Select(item => item.Id).Should().BeEquivalentTo(
-            "dependent-blocked",
-            "dependent-archived-dependency",
-            "dependent-deleted-dependency");
+            new[]
+            {
+                Id("dependent-blocked"),
+                Id("dependent-archived-dependency"),
+                Id("dependent-deleted-dependency"),
+            });
         pagedBlockedItems.Select(item => item.Id).Should().OnlyHaveUniqueItems();
     }
 
@@ -344,14 +350,24 @@ public sealed class MongoTodoListReaderTests
 
         return new BsonDocument
         {
-            { "_id", id },
+            {
+                "_id",
+                new BsonBinaryData(Id(id), GuidRepresentation.Standard)
+            },
             { "name", name },
             { "nameNormalized", name.ToLowerInvariant() },
             { "description", $"Description for {name}" },
             { "dueDate", dueDate.ToString("yyyy-MM-dd") },
             { "status", (int)status },
             { "priority", (int)priority },
-            { "dependencyIds", new BsonArray(dependencies ?? Array.Empty<string>()) },
+            {
+                "dependencyIds",
+                new BsonArray(
+                    (dependencies ?? Array.Empty<string>())
+                        .Select(dependency => new BsonBinaryData(
+                            Id(dependency),
+                            GuidRepresentation.Standard)))
+            },
             { "recurrence", BsonNull.Value },
             { "seriesId", BsonNull.Value },
             { "occurrenceNumber", BsonNull.Value },
@@ -363,7 +379,7 @@ public sealed class MongoTodoListReaderTests
         };
     }
 
-    private static string[] GetExpectedIds(
+    private static Guid[] GetExpectedIds(
         IReadOnlyList<BsonDocument> documents,
         TodoSortField sortField,
         TodoSortDirection direction)
@@ -377,11 +393,25 @@ public sealed class MongoTodoListReaderTests
             _ => throw new ArgumentOutOfRangeException(nameof(sortField)),
         };
         IEnumerable<BsonDocument> ordered = direction == TodoSortDirection.Asc
-            ? documents.OrderBy(value).ThenBy(document => document["_id"].AsString)
+            ? documents.OrderBy(value).ThenBy(GetIdString)
             : documents.OrderByDescending(value)
-                .ThenByDescending(document => document["_id"].AsString);
+                .ThenByDescending(GetIdString);
 
-        return ordered.Select(document => document["_id"].AsString).ToArray();
+        return ordered
+            .Select(document => document["_id"].AsBsonBinaryData.ToGuid())
+            .ToArray();
+    }
+
+    private static string GetIdString(BsonDocument document)
+    {
+        return document["_id"].AsBsonBinaryData.ToGuid().ToString("D");
+    }
+
+    private static Guid Id(string value)
+    {
+        byte[] bytes = System.Security.Cryptography.MD5.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value));
+        return new Guid(bytes);
     }
 
     private async Task<CursorPage<TodoListItemDto>> ListAsync(GetTodosQuery query)

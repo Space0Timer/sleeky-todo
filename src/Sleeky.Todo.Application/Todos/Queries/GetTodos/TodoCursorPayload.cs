@@ -10,7 +10,7 @@ public sealed class TodoCursorPayload
 
     public string LastSortValue { get; init; } = string.Empty;
 
-    public string LastTodoId { get; init; } = string.Empty;
+    public Guid LastTodoId { get; init; }
 
     public string FilterSignature { get; init; } = string.Empty;
 }

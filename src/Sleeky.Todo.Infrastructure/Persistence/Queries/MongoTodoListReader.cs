@@ -177,7 +177,7 @@ public sealed class MongoTodoListReader : ITodoListReader
         TodoListCriteria criteria)
     {
         string lastSortValue = criteria.LastSortValue!;
-        string lastTodoId = criteria.LastTodoId!;
+        Guid lastTodoId = criteria.LastTodoId!.Value;
 
         return criteria.SortField switch
         {
@@ -211,7 +211,7 @@ public sealed class MongoTodoListReader : ITodoListReader
     private static FilterDefinition<TodoDocument> BuildCursorFilterForField<TValue>(
         Expression<Func<TodoDocument, TValue>> field,
         TValue lastSortValue,
-        string lastTodoId,
+        Guid lastTodoId,
         TodoSortDirection direction)
     {
         FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;

@@ -184,7 +184,7 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
     `UI page ${String(index).padStart(2, '0')}`
   ))
   const documents = names.map((name, index) => ({
-    _id: `ui-page-${String(index).padStart(2, '0')}`,
+    _id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
     name,
     nameNormalized: name.toLowerCase(),
     description: 'Cursor acceptance record',
@@ -201,7 +201,7 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
     deletedAt: null,
     purgeAt: null,
   }))
-  const seedScript = `const docs=${JSON.stringify(documents)}; docs.forEach((doc) => { doc.createdAt=new Date(doc.createdAt); doc.updatedAt=new Date(doc.updatedAt); }); db.getSiblingDB('sleekyTodoPlaywright').todoItems.insertMany(docs);`
+  const seedScript = `const docs=${JSON.stringify(documents)}; docs.forEach((doc) => { doc._id=UUID(doc._id); doc.createdAt=new Date(doc.createdAt); doc.updatedAt=new Date(doc.updatedAt); }); db.getSiblingDB('sleekyTodoPlaywright').todoItems.insertMany(docs);`
   await execFileAsync('docker', [
     'compose',
     'exec',

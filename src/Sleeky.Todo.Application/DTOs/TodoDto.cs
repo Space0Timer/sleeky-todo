@@ -7,22 +7,22 @@ namespace Sleeky.Todo.Application.DTOs;
 public sealed class TodoDto
 {
     private TodoDto(
-        string id,
+        Guid id,
         string name,
         string? description,
         DateOnly dueDate,
         TodoStatus status,
         TodoPriority priority,
-        IReadOnlyCollection<string> dependencyIds,
+        IReadOnlyCollection<Guid> dependencyIds,
         RecurrenceSchedule? recurrence,
-        string? seriesId,
+        Guid? seriesId,
         int? occurrenceNumber,
         long version,
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
         DateTimeOffset? deletedAt,
         DateTimeOffset? purgeAt,
-        string? nextOccurrenceId)
+        Guid? nextOccurrenceId)
     {
         Id = id;
         Name = name;
@@ -42,7 +42,7 @@ public sealed class TodoDto
         NextOccurrenceId = nextOccurrenceId;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
     public string Name { get; }
 
@@ -54,11 +54,11 @@ public sealed class TodoDto
 
     public TodoPriority Priority { get; }
 
-    public IReadOnlyCollection<string> DependencyIds { get; }
+    public IReadOnlyCollection<Guid> DependencyIds { get; }
 
     public RecurrenceSchedule? Recurrence { get; }
 
-    public string? SeriesId { get; }
+    public Guid? SeriesId { get; }
 
     public int? OccurrenceNumber { get; }
 
@@ -72,11 +72,11 @@ public sealed class TodoDto
 
     public DateTimeOffset? PurgeAt { get; }
 
-    public string? NextOccurrenceId { get; }
+    public Guid? NextOccurrenceId { get; }
 
     public static TodoDto FromEntity(
         TodoItem todoItem,
-        string? nextOccurrenceId = null)
+        Guid? nextOccurrenceId = null)
     {
         ArgumentNullException.ThrowIfNull(todoItem);
 
