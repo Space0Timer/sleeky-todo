@@ -22,7 +22,7 @@ internal sealed class MongoTodoTransaction : ITodoTransaction
     }
 
     public async Task<TResult> ExecuteAsync<TResult>(
-        string todoId,
+        Guid todoId,
         long expectedVersion,
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken = default)

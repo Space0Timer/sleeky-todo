@@ -6,16 +6,16 @@ namespace Sleeky.Todo.Application.Todos.Commands.RemoveDependency;
 
 public sealed class RemoveDependencyCommand : IRequest<TodoDto>
 {
-    public RemoveDependencyCommand(string id, string dependencyId, long version)
+    public RemoveDependencyCommand(Guid id, Guid dependencyId, long version)
     {
         Id = id;
         DependencyId = dependencyId;
         Version = version;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
-    public string DependencyId { get; }
+    public Guid DependencyId { get; }
 
     public long Version { get; }
 }

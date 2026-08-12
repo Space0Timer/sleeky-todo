@@ -6,16 +6,16 @@ namespace Sleeky.Todo.Application.Todos.Commands.AddDependency;
 
 public sealed class AddDependencyCommand : IRequest<TodoDto>
 {
-    public AddDependencyCommand(string id, string dependencyId, long version)
+    public AddDependencyCommand(Guid id, Guid dependencyId, long version)
     {
         Id = id;
         DependencyId = dependencyId;
         Version = version;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
-    public string DependencyId { get; }
+    public Guid DependencyId { get; }
 
     public long Version { get; }
 }

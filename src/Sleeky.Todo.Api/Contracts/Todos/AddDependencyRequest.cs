@@ -2,7 +2,7 @@ namespace Sleeky.Todo.Api.Contracts.Todos;
 
 public sealed class AddDependencyRequest
 {
-    public string DependencyId { get; init; } = string.Empty;
+    public Guid DependencyId { get; init; }
 
     public long Version { get; init; }
 }

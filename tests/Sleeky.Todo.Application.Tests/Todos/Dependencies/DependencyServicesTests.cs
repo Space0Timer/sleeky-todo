@@ -16,35 +16,35 @@ public sealed class DependencyServicesTests
     public async Task GraphServiceDetectsMultiLevelCycleUsingBatchedFrontiers()
     {
         ITodoRepository repository = Substitute.For<ITodoRepository>();
-        Dictionary<string, TodoItem> graph = new Dictionary<string, TodoItem>
+        Dictionary<Guid, TodoItem> graph = new Dictionary<Guid, TodoItem>
         {
-            ["todo-b"] = CreateTodo(
+            [Id("todo-b")] = CreateTodo(
                 "todo-b",
                 dependencies: new[] { "todo-c", "todo-d" }),
-            ["todo-c"] = CreateTodo(
+            [Id("todo-c")] = CreateTodo(
                 "todo-c",
                 dependencies: new[] { "todo-a" }),
-            ["todo-d"] = CreateTodo("todo-d"),
-            ["todo-a"] = CreateTodo("todo-a"),
+            [Id("todo-d")] = CreateTodo("todo-d"),
+            [Id("todo-a")] = CreateTodo("todo-a"),
         };
         repository.GetByIdsAsync(
-                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<IEnumerable<Guid>>(),
                 false,
                 Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<IEnumerable<string>>()
+            .Returns(call => call.Arg<IEnumerable<Guid>>()
                 .Where(graph.ContainsKey)
                 .Select(id => graph[id])
                 .ToArray());
         DependencyGraphService service = new DependencyGraphService(repository);
 
         bool createsCycle = await service.WouldCreateCycleAsync(
-            "todo-a",
-            "todo-b");
+            Id("todo-a"),
+            Id("todo-b"));
 
         createsCycle.Should().BeTrue();
         await repository.Received(1).GetByIdsAsync(
-            Arg.Is<IEnumerable<string>>(ids =>
-                ids.ToHashSet().SetEquals(new[] { "todo-c", "todo-d" })),
+            Arg.Is<IEnumerable<Guid>>(ids =>
+                ids.ToHashSet().SetEquals(new[] { Id("todo-c"), Id("todo-d") })),
             false,
             Arg.Any<CancellationToken>());
     }
@@ -53,32 +53,32 @@ public sealed class DependencyServicesTests
     public async Task GraphServiceTerminatesWhenExistingGraphContainsCycle()
     {
         ITodoRepository repository = Substitute.For<ITodoRepository>();
-        Dictionary<string, TodoItem> graph = new Dictionary<string, TodoItem>
+        Dictionary<Guid, TodoItem> graph = new Dictionary<Guid, TodoItem>
         {
-            ["todo-b"] = CreateTodo(
+            [Id("todo-b")] = CreateTodo(
                 "todo-b",
                 dependencies: new[] { "todo-c" }),
-            ["todo-c"] = CreateTodo(
+            [Id("todo-c")] = CreateTodo(
                 "todo-c",
                 dependencies: new[] { "todo-b" }),
         };
         repository.GetByIdsAsync(
-                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<IEnumerable<Guid>>(),
                 false,
                 Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<IEnumerable<string>>()
+            .Returns(call => call.Arg<IEnumerable<Guid>>()
                 .Where(graph.ContainsKey)
                 .Select(id => graph[id])
                 .ToArray());
         DependencyGraphService service = new DependencyGraphService(repository);
 
         bool createsCycle = await service.WouldCreateCycleAsync(
-            "todo-a",
-            "todo-b");
+            Id("todo-a"),
+            Id("todo-b"));
 
         createsCycle.Should().BeFalse();
         await repository.Received(2).GetByIdsAsync(
-            Arg.Any<IEnumerable<string>>(),
+            Arg.Any<IEnumerable<Guid>>(),
             false,
             Arg.Any<CancellationToken>());
     }
@@ -93,19 +93,19 @@ public sealed class DependencyServicesTests
         TodoItem deleted = CreateTodo("deleted", TodoStatus.Completed);
         deleted.SoftDelete(TestTodoFactory.Timestamp.AddDays(1));
         repository.GetByIdsAsync(
-                Arg.Any<IEnumerable<string>>(),
+                Arg.Any<IEnumerable<Guid>>(),
                 true,
                 Arg.Any<CancellationToken>())
             .Returns(new[] { completed, incomplete, archived, deleted });
         TodoDependencyEvaluator evaluator = new TodoDependencyEvaluator(repository);
 
         TodoDependencyState state = await evaluator.EvaluateAsync(
-            ["completed", "incomplete", "archived", "deleted", "missing"]);
+            [Id("completed"), Id("incomplete"), Id("archived"), Id("deleted"), Id("missing")]);
 
         state.IsBlocked.Should().BeTrue();
         state.IncompleteDependencyCount.Should().Be(4);
         await repository.Received(1).GetByIdsAsync(
-            Arg.Any<IEnumerable<string>>(),
+            Arg.Any<IEnumerable<Guid>>(),
             true,
             Arg.Any<CancellationToken>());
     }
@@ -116,13 +116,13 @@ public sealed class DependencyServicesTests
         IReadOnlyCollection<string>? dependencies = null)
     {
         return TodoItem.Rehydrate(
-            id,
+            Id(id),
             id,
             null,
             TestTodoFactory.DueDate,
             status,
             TodoPriority.Medium,
-            dependencies ?? Array.Empty<string>(),
+            dependencies?.Select(Id).ToArray() ?? Array.Empty<Guid>(),
             null,
             null,
             null,
@@ -131,5 +131,10 @@ public sealed class DependencyServicesTests
             TestTodoFactory.Timestamp,
             null,
             null);
+    }
+
+    private static Guid Id(string value)
+    {
+        return TestTodoFactory.CreateId(value);
     }
 }

@@ -96,7 +96,7 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                     Unique = true,
                     PartialFilterExpression = new BsonDocument
                     {
-                        { "seriesId", new BsonDocument("$type", "string") },
+                        { "seriesId", new BsonDocument("$type", "binData") },
                         { "occurrenceNumber", new BsonDocument("$type", "int") },
                     },
                 }),

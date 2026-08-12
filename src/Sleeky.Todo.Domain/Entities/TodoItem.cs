@@ -9,11 +9,11 @@ public sealed class TodoItem
 {
     private static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(90);
 
-    private readonly List<string> dependencyIds = new List<string>();
+    private readonly List<Guid> dependencyIds = new List<Guid>();
     private readonly List<IDomainEvent> domainEvents = new List<IDomainEvent>();
 
     private TodoItem(
-        string id,
+        Guid id,
         string name,
         string? description,
         DateOnly dueDate,
@@ -31,7 +31,7 @@ public sealed class TodoItem
         UpdatedAt = createdAt;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
     public string Name { get; private set; } = string.Empty;
 
@@ -45,13 +45,13 @@ public sealed class TodoItem
 
     public TodoPriority Priority { get; private set; }
 
-    public IReadOnlyCollection<string> DependencyIds => dependencyIds.AsReadOnly();
+    public IReadOnlyCollection<Guid> DependencyIds => dependencyIds.AsReadOnly();
 
     public IReadOnlyCollection<IDomainEvent> DomainEvents => domainEvents.AsReadOnly();
 
     public RecurrenceSchedule? Recurrence { get; private set; }
 
-    public string? SeriesId { get; private set; }
+    public Guid? SeriesId { get; private set; }
 
     public int? OccurrenceNumber { get; private set; }
 
@@ -66,17 +66,17 @@ public sealed class TodoItem
     public DateTimeOffset? PurgeAt { get; private set; }
 
     public static TodoItem Create(
-        string id,
+        Guid id,
         string name,
         string? description,
         DateOnly dueDate,
         TodoPriority priority,
         DateTimeOffset createdAt,
         RecurrenceSchedule? recurrence = null,
-        string? seriesId = null,
+        Guid? seriesId = null,
         int? occurrenceNumber = null)
     {
-        string validatedId = ValidateId(id);
+        Guid validatedId = ValidateId(id);
         DateTimeOffset utcCreatedAt = createdAt.ToUniversalTime();
 
         ValidateRecurrenceState(recurrence, seriesId, occurrenceNumber);
@@ -96,15 +96,15 @@ public sealed class TodoItem
     }
 
     public static TodoItem Rehydrate(
-        string id,
+        Guid id,
         string name,
         string? description,
         DateOnly dueDate,
         TodoStatus status,
         TodoPriority priority,
-        IEnumerable<string> dependencyIds,
+        IEnumerable<Guid> dependencyIds,
         RecurrenceSchedule? recurrence,
-        string? seriesId,
+        Guid? seriesId,
         int? occurrenceNumber,
         long version,
         DateTimeOffset createdAt,
@@ -165,17 +165,17 @@ public sealed class TodoItem
         UpdatedAt = updatedAt.ToUniversalTime();
     }
 
-    public void AddDependency(string dependencyId, DateTimeOffset updatedAt)
+    public void AddDependency(Guid dependencyId, DateTimeOffset updatedAt)
     {
         EnsureNotDeleted();
 
-        string validatedDependencyId = ValidateId(dependencyId);
-        if (string.Equals(Id, validatedDependencyId, StringComparison.Ordinal))
+        Guid validatedDependencyId = ValidateId(dependencyId);
+        if (Id == validatedDependencyId)
         {
             throw new DomainException("A TODO cannot depend on itself.");
         }
 
-        if (dependencyIds.Contains(validatedDependencyId, StringComparer.Ordinal))
+        if (dependencyIds.Contains(validatedDependencyId))
         {
             throw new DomainException("The TODO dependency already exists.");
         }
@@ -184,11 +184,11 @@ public sealed class TodoItem
         UpdatedAt = updatedAt.ToUniversalTime();
     }
 
-    public void RemoveDependency(string dependencyId, DateTimeOffset updatedAt)
+    public void RemoveDependency(Guid dependencyId, DateTimeOffset updatedAt)
     {
         EnsureNotDeleted();
 
-        string validatedDependencyId = ValidateId(dependencyId);
+        Guid validatedDependencyId = ValidateId(dependencyId);
         if (!dependencyIds.Remove(validatedDependencyId))
         {
             throw new DomainException("The TODO dependency does not exist.");
@@ -218,9 +218,9 @@ public sealed class TodoItem
 
         if (previousStatus != TodoStatus.Completed && status == TodoStatus.Completed)
         {
-            string? nextOccurrenceId = Recurrence is null
+            Guid? nextOccurrenceId = Recurrence is null
                 ? null
-                : Guid.NewGuid().ToString("N");
+                : Guid.NewGuid();
             domainEvents.Add(
                 new TodoCompletedDomainEvent(
                     Id,
@@ -279,14 +279,14 @@ public sealed class TodoItem
         UpdatedAt = utcRestoredAt;
     }
 
-    private static string ValidateId(string id)
+    private static Guid ValidateId(Guid id)
     {
-        if (string.IsNullOrWhiteSpace(id))
+        if (id == Guid.Empty)
         {
             throw new DomainException("A TODO identifier is required.");
         }
 
-        return id.Trim();
+        return id;
     }
 
     private static string ValidateName(string name)
@@ -328,7 +328,7 @@ public sealed class TodoItem
 
     private static void ValidateRecurrenceState(
         RecurrenceSchedule? recurrence,
-        string? seriesId,
+        Guid? seriesId,
         int? occurrenceNumber)
     {
         if (recurrence is null)
@@ -342,7 +342,7 @@ public sealed class TodoItem
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(seriesId))
+        if (seriesId is null || seriesId == Guid.Empty)
         {
             throw new DomainException("A recurring TODO requires a series identifier.");
         }

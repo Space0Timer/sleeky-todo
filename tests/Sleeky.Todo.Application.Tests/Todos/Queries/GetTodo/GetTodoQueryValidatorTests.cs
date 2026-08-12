@@ -13,21 +13,9 @@ public sealed class GetTodoQueryValidatorTests
     private readonly GetTodoQueryValidator validator = new GetTodoQueryValidator();
 
     [TestMethod]
-    public void ValidateRejectsWhitespaceOnlyIdentifier()
+    public void ValidateRejectsEmptyIdentifier()
     {
-        ValidationResult result = validator.Validate(new GetTodoQuery("   "));
-
-        result.Errors.Should().ContainSingle(
-            failure => failure.PropertyName == nameof(GetTodoQuery.Id));
-    }
-
-    [TestMethod]
-    public void ValidateRejectsOversizedIdentifier()
-    {
-        GetTodoQuery query = new GetTodoQuery(
-            new string('i', TodoValidationLimits.IdentifierMaximumLength + 1));
-
-        ValidationResult result = validator.Validate(query);
+        ValidationResult result = validator.Validate(new GetTodoQuery(Guid.Empty));
 
         result.Errors.Should().ContainSingle(
             failure => failure.PropertyName == nameof(GetTodoQuery.Id));
@@ -36,7 +24,8 @@ public sealed class GetTodoQueryValidatorTests
     [TestMethod]
     public void ValidateAcceptsValidIdentifier()
     {
-        ValidationResult result = validator.Validate(new GetTodoQuery("todo-1"));
+        ValidationResult result = validator.Validate(
+            new GetTodoQuery(TestTodoFactory.CreateId("todo-1")));
 
         result.IsValid.Should().BeTrue();
     }

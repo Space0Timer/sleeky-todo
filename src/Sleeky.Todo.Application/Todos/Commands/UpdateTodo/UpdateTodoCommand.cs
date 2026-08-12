@@ -8,7 +8,7 @@ namespace Sleeky.Todo.Application.Todos.Commands.UpdateTodo;
 public sealed class UpdateTodoCommand : IRequest<TodoDto>
 {
     public UpdateTodoCommand(
-        string id,
+        Guid id,
         string name,
         string? description,
         DateOnly dueDate,
@@ -23,7 +23,7 @@ public sealed class UpdateTodoCommand : IRequest<TodoDto>
         Version = version;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
     public string Name { get; }
 

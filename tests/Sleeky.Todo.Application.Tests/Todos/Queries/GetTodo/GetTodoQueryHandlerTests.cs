@@ -34,20 +34,20 @@ public sealed class GetTodoQueryHandlerTests
     [TestMethod]
     public async Task HandleThrowsNotFoundWhenTodoDoesNotExist()
     {
-        const string TodoId = "missing-todo";
+        Guid todoId = TestTodoFactory.CreateId("missing-todo");
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         repository
-            .GetByIdAsync(TodoId, false, Arg.Any<CancellationToken>())
+            .GetByIdAsync(todoId, false, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
         GetTodoQueryHandler handler = new GetTodoQueryHandler(repository);
 
         Func<Task> act = async () =>
-            await handler.Handle(new GetTodoQuery(TodoId), CancellationToken.None);
+            await handler.Handle(new GetTodoQuery(todoId), CancellationToken.None);
 
         NotFoundException exception = (await act.Should()
             .ThrowAsync<NotFoundException>())
             .Which;
-        exception.ResourceId.Should().Be(TodoId);
+        exception.ResourceId.Should().Be(todoId);
     }
 
     [TestMethod]

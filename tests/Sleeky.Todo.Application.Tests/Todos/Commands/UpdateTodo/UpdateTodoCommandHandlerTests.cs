@@ -61,9 +61,12 @@ public sealed class UpdateTodoCommandHandlerTests
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         IClock clock = Substitute.For<IClock>();
         repository
-            .GetByIdAsync("missing-todo", false, Arg.Any<CancellationToken>())
+            .GetByIdAsync(
+                TestTodoFactory.CreateId("missing-todo"),
+                false,
+                Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
-        UpdateTodoCommand command = CreateCommand("missing-todo", 1);
+        UpdateTodoCommand command = CreateCommand(TestTodoFactory.CreateId("missing-todo"), 1);
         UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(
             repository,
             clock,
@@ -129,7 +132,7 @@ public sealed class UpdateTodoCommandHandlerTests
         await act.Should().ThrowAsync<ConcurrencyConflictException>();
     }
 
-    private static UpdateTodoCommand CreateCommand(string id, long version)
+    private static UpdateTodoCommand CreateCommand(Guid id, long version)
     {
         return new UpdateTodoCommand(
             id,

@@ -5,7 +5,7 @@ namespace Sleeky.Todo.Application.DTOs;
 public sealed class TodoListItemDto
 {
     public TodoListItemDto(
-        string id,
+        Guid id,
         string name,
         string? descriptionPreview,
         DateOnly dueDate,
@@ -32,7 +32,7 @@ public sealed class TodoListItemDto
         PurgeAt = purgeAt;
     }
 
-    public string Id { get; }
+    public Guid Id { get; }
 
     public string Name { get; }
 

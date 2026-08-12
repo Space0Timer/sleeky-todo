@@ -45,7 +45,7 @@ public sealed class CreateNextRecurringOccurrenceHandler
             domainEvent.CompletionContext.ScheduledDueDate,
             domainEvent.CompletionContext.Recurrence);
         TodoItem nextOccurrence = TodoItem.Create(
-            domainEvent.NextOccurrenceId,
+            domainEvent.NextOccurrenceId.Value,
             domainEvent.CompletionContext.Name,
             domainEvent.CompletionContext.Description,
             nextDueDate,

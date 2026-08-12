@@ -78,7 +78,7 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TodoDto>> Get(
-        string id,
+        Guid id,
         CancellationToken cancellationToken)
     {
         TodoDto todo = await sender.Send(new GetTodoQuery(id), cancellationToken);
@@ -91,7 +91,7 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> Update(
-        string id,
+        Guid id,
         UpdateTodoRequest request,
         CancellationToken cancellationToken)
     {
@@ -113,7 +113,7 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> AddDependency(
-        string id,
+        Guid id,
         AddDependencyRequest request,
         CancellationToken cancellationToken)
     {
@@ -130,8 +130,8 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> RemoveDependency(
-        string id,
-        string dependencyId,
+        Guid id,
+        Guid dependencyId,
         RemoveDependencyRequest request,
         CancellationToken cancellationToken)
     {
@@ -148,7 +148,7 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> ChangeStatus(
-        string id,
+        Guid id,
         ChangeTodoStatusRequest request,
         CancellationToken cancellationToken)
     {
@@ -165,7 +165,7 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(
-        string id,
+        Guid id,
         DeleteTodoRequest request,
         CancellationToken cancellationToken)
     {
@@ -182,7 +182,7 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> Restore(
-        string id,
+        Guid id,
         RestoreTodoRequest request,
         CancellationToken cancellationToken)
     {

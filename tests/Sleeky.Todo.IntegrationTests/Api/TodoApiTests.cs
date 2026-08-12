@@ -230,7 +230,7 @@ public sealed class TodoApiTests
             version: 2);
         HttpResponseMessage missingResponse = await AddDependencyAsync(
             sourceId,
-            "missing-dependency",
+            Guid.NewGuid().ToString("D"),
             version: 2);
         (_, JsonElement deletedDependency) = await CreateTodoAsync();
         string deletedDependencyId = GetTodoId(deletedDependency);
@@ -429,9 +429,9 @@ public sealed class TodoApiTests
             ?? throw new InvalidOperationException("A recurring TODO requires a series ID.");
         IMongoCollection<BsonDocument> collection = GetTodoCollection();
         BsonDocument duplicateOccurrence = await collection
-            .Find(new BsonDocument("_id", recurringId))
+            .Find(new BsonDocument("_id", StandardUuid(recurringId)))
             .FirstAsync();
-        duplicateOccurrence["_id"] = "preexisting-occurrence";
+        duplicateOccurrence["_id"] = StandardUuid(Guid.NewGuid());
         duplicateOccurrence["occurrenceNumber"] = 2;
         await collection.InsertOneAsync(duplicateOccurrence);
 
@@ -443,7 +443,7 @@ public sealed class TodoApiTests
             $"/api/todos/{recurringId}");
         JsonElement current = await ReadJsonAsync(currentResponse);
         long seriesCount = await collection.CountDocumentsAsync(
-            new BsonDocument("seriesId", seriesId));
+            new BsonDocument("seriesId", StandardUuid(seriesId)));
 
         completion.StatusCode.Should().Be(HttpStatusCode.Conflict);
         currentResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -476,7 +476,7 @@ public sealed class TodoApiTests
             version: 1);
         HttpResponseMessage[] responses = await Task.WhenAll(first, second);
         long seriesCount = await GetTodoCollection().CountDocumentsAsync(
-            new BsonDocument("seriesId", seriesId));
+            new BsonDocument("seriesId", StandardUuid(seriesId)));
 
         responses.Select(response => response.StatusCode).Should().BeEquivalentTo(
             new[] { HttpStatusCode.OK, HttpStatusCode.Conflict });
@@ -742,6 +742,16 @@ public sealed class TodoApiTests
         }
     }
 
+    private static BsonBinaryData StandardUuid(string value)
+    {
+        return StandardUuid(Guid.Parse(value));
+    }
+
+    private static BsonBinaryData StandardUuid(Guid value)
+    {
+        return new BsonBinaryData(value, GuidRepresentation.Standard);
+    }
+
     private IMongoCollection<BsonDocument> GetTodoCollection()
     {
         MongoClient mongoClient = new MongoClient(
@@ -791,7 +801,7 @@ public sealed class TodoApiTests
             $"/api/todos/{id}/dependencies",
             new AddDependencyRequest
             {
-                DependencyId = dependencyId,
+                DependencyId = Guid.Parse(dependencyId),
                 Version = version,
             });
     }

@@ -6,10 +6,12 @@ using Sleeky.Todo.Infrastructure.Persistence.Serialization;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Documents;
 
+[BsonIgnoreExtraElements]
 internal sealed class TodoDocument
 {
     [BsonId]
-    public string Id { get; set; } = string.Empty;
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public Guid Id { get; set; }
 
     [BsonElement("name")]
     public string Name { get; set; } = string.Empty;
@@ -33,13 +35,15 @@ internal sealed class TodoDocument
     public TodoPriority Priority { get; set; }
 
     [BsonElement("dependencyIds")]
-    public List<string> DependencyIds { get; set; } = new List<string>();
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public List<Guid> DependencyIds { get; set; } = new List<Guid>();
 
     [BsonElement("recurrence")]
     public RecurrenceDocument? Recurrence { get; set; }
 
     [BsonElement("seriesId")]
-    public string? SeriesId { get; set; }
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public Guid? SeriesId { get; set; }
 
     [BsonElement("occurrenceNumber")]
     public int? OccurrenceNumber { get; set; }

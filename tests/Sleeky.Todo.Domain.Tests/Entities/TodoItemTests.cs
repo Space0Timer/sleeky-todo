@@ -12,16 +12,20 @@ public sealed class TodoItemTests
 {
     private static readonly DateOnly InitialDueDate = new DateOnly(2026, 8, 31);
     private static readonly DateTimeOffset InitialTimestamp = new DateTimeOffset(2026, 8, 12, 9, 0, 0, TimeSpan.FromHours(8));
+    private static readonly Guid TodoId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid DependencyId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid OtherDependencyId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private static readonly Guid SeriesId = Guid.Parse("44444444-4444-4444-4444-444444444444");
 
     [TestMethod]
     public void CreateSetsDefaultsAndNormalizesValues()
     {
         TodoItem item = CreateTodo(
-            id: "  todo-1  ",
+            id: TodoId,
             name: "  Submit Report  ",
             description: "  Monthly report  ");
 
-        item.Id.Should().Be("todo-1");
+        item.Id.Should().Be(TodoId);
         item.Name.Should().Be("Submit Report");
         item.NameNormalized.Should().Be("submit report");
         item.Description.Should().Be("Monthly report");
@@ -50,7 +54,7 @@ public sealed class TodoItemTests
     [TestMethod]
     public void CreateRejectsMissingIdentifier()
     {
-        Func<TodoItem> act = () => CreateTodo(id: "   ");
+        Func<TodoItem> act = () => CreateTodo(id: Guid.Empty);
 
         act.Should()
             .Throw<DomainException>()
@@ -71,7 +75,7 @@ public sealed class TodoItemTests
     public void CreateRejectsInvalidPriority()
     {
         Func<TodoItem> act = () => TodoItem.Create(
-            "todo-1",
+            TodoId,
             "Submit Report",
             null,
             InitialDueDate,
@@ -114,15 +118,15 @@ public sealed class TodoItemTests
         DateTimeOffset addedAt = InitialTimestamp.AddHours(1);
         DateTimeOffset removedAt = InitialTimestamp.AddHours(2);
 
-        item.AddDependency("dependency-1", addedAt);
+        item.AddDependency(DependencyId, addedAt);
 
-        item.DependencyIds.Should().Equal("dependency-1");
+        item.DependencyIds.Should().Equal(DependencyId);
         item.UpdatedAt.Should().Be(addedAt.ToUniversalTime());
-        ICollection<string> exposedCollection = (ICollection<string>)item.DependencyIds;
-        Action mutateDirectly = () => exposedCollection.Add("dependency-2");
+        ICollection<Guid> exposedCollection = (ICollection<Guid>)item.DependencyIds;
+        Action mutateDirectly = () => exposedCollection.Add(OtherDependencyId);
         mutateDirectly.Should().Throw<NotSupportedException>();
 
-        item.RemoveDependency("dependency-1", removedAt);
+        item.RemoveDependency(DependencyId, removedAt);
         item.DependencyIds.Should().BeEmpty();
         item.UpdatedAt.Should().Be(removedAt.ToUniversalTime());
     }
@@ -137,9 +141,9 @@ public sealed class TodoItemTests
             .Throw<DomainException>()
             .WithMessage("A TODO cannot depend on itself.");
 
-        item.AddDependency("dependency-1", InitialTimestamp);
+        item.AddDependency(DependencyId, InitialTimestamp);
         Action addDuplicate = () => item.AddDependency(
-            "dependency-1",
+            DependencyId,
             InitialTimestamp.AddHours(1));
         addDuplicate.Should()
             .Throw<DomainException>()
@@ -151,7 +155,7 @@ public sealed class TodoItemTests
     {
         TodoItem item = CreateTodo();
 
-        Action act = () => item.RemoveDependency("missing", InitialTimestamp);
+        Action act = () => item.RemoveDependency(DependencyId, InitialTimestamp);
 
         act.Should()
             .Throw<DomainException>()
@@ -276,15 +280,15 @@ public sealed class TodoItemTests
             InitialDueDate);
 
         TodoItem item = TodoItem.Rehydrate(
-            "todo-1",
+            TodoId,
             "Submit Report",
             "Monthly report",
             InitialDueDate,
             TodoStatus.Archived,
             TodoPriority.Medium,
-            new[] { "todo-a", "todo-b" },
+            new[] { DependencyId, OtherDependencyId },
             recurrence,
-            "series-1",
+            SeriesId,
             3,
             7,
             InitialTimestamp,
@@ -292,13 +296,13 @@ public sealed class TodoItemTests
             deletedAt,
             purgeAt);
 
-        item.Id.Should().Be("todo-1");
+        item.Id.Should().Be(TodoId);
         item.NameNormalized.Should().Be("submit report");
         item.Status.Should().Be(TodoStatus.Archived);
         item.Priority.Should().Be(TodoPriority.Medium);
-        item.DependencyIds.Should().Equal("todo-a", "todo-b");
+        item.DependencyIds.Should().Equal(DependencyId, OtherDependencyId);
         item.Recurrence.Should().Be(recurrence);
-        item.SeriesId.Should().Be("series-1");
+        item.SeriesId.Should().Be(SeriesId);
         item.OccurrenceNumber.Should().Be(3);
         item.Version.Should().Be(7);
         item.CreatedAt.Should().Be(InitialTimestamp.ToUniversalTime());
@@ -311,13 +315,13 @@ public sealed class TodoItemTests
     public void RehydrateRejectsInvalidPersistedVersion()
     {
         Func<TodoItem> act = () => TodoItem.Rehydrate(
-            "todo-1",
+            TodoId,
             "Submit Report",
             null,
             InitialDueDate,
             TodoStatus.NotStarted,
             TodoPriority.Low,
-            Array.Empty<string>(),
+            Array.Empty<Guid>(),
             null,
             null,
             null,
@@ -358,12 +362,12 @@ public sealed class TodoItemTests
     }
 
     private static TodoItem CreateTodo(
-        string id = "todo-1",
+        Guid? id = null,
         string name = "Submit Report",
         string? description = "Monthly report")
     {
         return TodoItem.Create(
-            id,
+            id ?? TodoId,
             name,
             description,
             InitialDueDate,
@@ -376,13 +380,13 @@ public sealed class TodoItemTests
         DateTimeOffset? purgeAt)
     {
         return TodoItem.Rehydrate(
-            "todo-1",
+            TodoId,
             "Submit Report",
             null,
             InitialDueDate,
             TodoStatus.NotStarted,
             TodoPriority.Low,
-            Array.Empty<string>(),
+            Array.Empty<Guid>(),
             null,
             null,
             null,
