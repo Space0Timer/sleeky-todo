@@ -1,0 +1,141 @@
+using Microsoft.Extensions.Options;
+
+using MongoDB.Driver;
+
+using Sleeky.Todo.Application.Abstractions.Persistence;
+using Sleeky.Todo.Domain.Entities;
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
+
+namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
+
+public sealed class MongoTodoRepository : ITodoRepository
+{
+    private readonly IMongoCollection<TodoDocument> todoItems;
+
+    public MongoTodoRepository(
+        IMongoDatabase database,
+        IOptions<MongoDbSettings> settings)
+    {
+        ArgumentNullException.ThrowIfNull(database);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        todoItems = database.GetCollection<TodoDocument>(
+            settings.Value.TodoItemsCollectionName);
+    }
+
+    public async Task AddAsync(
+        TodoItem todoItem,
+        CancellationToken cancellationToken = default)
+    {
+        TodoDocument document = TodoDocumentMapper.FromDomain(todoItem);
+        await todoItems.InsertOneAsync(document, cancellationToken: cancellationToken);
+    }
+
+    public async Task<TodoItem?> GetByIdAsync(
+        string id,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
+    {
+        FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
+        TodoDocument? document = await todoItems
+            .Find(filter)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return document is null ? null : TodoDocumentMapper.ToDomain(document);
+    }
+
+    public async Task<bool> ExistsAsync(
+        string id,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
+    {
+        FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
+        long count = await todoItems.CountDocumentsAsync(
+            filter,
+            new CountOptions { Limit = 1 },
+            cancellationToken);
+
+        return count > 0;
+    }
+
+    public Task<TodoItem?> UpdateAsync(
+        TodoItem todoItem,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        FilterDefinition<TodoDocument> filter = BuildMutationFilter(
+            todoItem.Id,
+            expectedVersion,
+            includeDeleted: false);
+
+        return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
+    }
+
+    public Task<TodoItem?> SoftDeleteAsync(
+        TodoItem todoItem,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        FilterDefinition<TodoDocument> filter = BuildMutationFilter(
+            todoItem.Id,
+            expectedVersion,
+            includeDeleted: false);
+
+        return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
+    }
+
+    public Task<TodoItem?> RestoreAsync(
+        TodoItem todoItem,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        FilterDefinition<TodoDocument> filter =
+            Builders<TodoDocument>.Filter.Eq(document => document.Id, todoItem.Id)
+            & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion)
+            & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);
+
+        return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
+    }
+
+    private static FilterDefinition<TodoDocument> BuildIdFilter(
+        string id,
+        bool includeDeleted)
+    {
+        FilterDefinition<TodoDocument> filter =
+            Builders<TodoDocument>.Filter.Eq(document => document.Id, id);
+
+        if (!includeDeleted)
+        {
+            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
+        }
+
+        return filter;
+    }
+
+    private static FilterDefinition<TodoDocument> BuildMutationFilter(
+        string id,
+        long expectedVersion,
+        bool includeDeleted)
+    {
+        return BuildIdFilter(id, includeDeleted)
+            & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion);
+    }
+
+    private async Task<TodoItem?> ReplaceAsync(
+        TodoItem todoItem,
+        long expectedVersion,
+        FilterDefinition<TodoDocument> filter,
+        CancellationToken cancellationToken)
+    {
+        long nextVersion = checked(expectedVersion + 1);
+        TodoDocument replacement = TodoDocumentMapper.FromDomain(todoItem, nextVersion);
+        ReplaceOneResult result = await todoItems.ReplaceOneAsync(
+            filter,
+            replacement,
+            cancellationToken: cancellationToken);
+
+        return result.MatchedCount == 0
+            ? null
+            : TodoDocumentMapper.ToDomain(replacement);
+    }
+}

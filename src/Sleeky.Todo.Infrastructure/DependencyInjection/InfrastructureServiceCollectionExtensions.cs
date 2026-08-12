@@ -4,7 +4,9 @@ using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 namespace Sleeky.Todo.Infrastructure.DependencyInjection;
 
@@ -45,7 +47,7 @@ public static class InfrastructureServiceCollectionExtensions
 
             return mongoClient.GetDatabase(settings.DatabaseName);
         });
-        services.AddSingleton<MongoDbContext>();
+        services.AddScoped<ITodoRepository, MongoTodoRepository>();
 
         return services;
     }
