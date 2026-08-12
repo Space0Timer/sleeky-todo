@@ -50,7 +50,7 @@ The live repository integration tests require Docker and are opt-in:
 RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTests
 ```
 
-Dedicated simultaneous-write concurrency tests remain deferred to the optimistic-concurrency step.
+Update, delete, and restore operations use the version last read by the client. MongoDB mutations atomically match both `_id` and `version`, increment the version, and return the persisted document. If another writer has already changed the record, the mutation returns no document and the application raises a concurrency conflict.
 
 ## Build the scaffold
 
