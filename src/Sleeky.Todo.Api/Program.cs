@@ -1,3 +1,5 @@
+using Sleeky.Todo.Application.DependencyInjection;
+
 namespace Sleeky.Todo.Api;
 
 public partial class Program
@@ -6,6 +8,7 @@ public partial class Program
     {
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+        builder.Services.AddApplication();
         builder.Services.AddControllers();
 
         WebApplication app = builder.Build();
