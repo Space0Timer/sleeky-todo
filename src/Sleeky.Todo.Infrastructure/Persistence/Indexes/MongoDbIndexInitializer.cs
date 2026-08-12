@@ -1,0 +1,56 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+
+using MongoDB.Bson;
+using MongoDB.Driver;
+
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
+
+namespace Sleeky.Todo.Infrastructure.Persistence.Indexes;
+
+internal sealed class MongoDbIndexInitializer : IHostedService
+{
+    private readonly IMongoCollection<TodoDocument> collection;
+
+    public MongoDbIndexInitializer(
+        IMongoDatabase database,
+        IOptions<MongoDbSettings> options)
+    {
+        collection = database.GetCollection<TodoDocument>(
+            options.Value.TodoItemsCollectionName);
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        CreateIndexModel<TodoDocument>[] indexes =
+        [
+            new CreateIndexModel<TodoDocument>(
+                Builders<TodoDocument>.IndexKeys
+                    .Ascending(todo => todo.DeletedAt)
+                    .Ascending(todo => todo.DueDate)
+                    .Ascending(todo => todo.Id),
+                new CreateIndexOptions<TodoDocument>
+                {
+                    Name = "active_due_date_id",
+                }),
+            new CreateIndexModel<TodoDocument>(
+                Builders<TodoDocument>.IndexKeys.Ascending(todo => todo.PurgeAt),
+                new CreateIndexOptions<TodoDocument>
+                {
+                    Name = "purge_at",
+                    PartialFilterExpression = new BsonDocument(
+                        "purgeAt",
+                        new BsonDocument("$type", "date")),
+                }),
+        ];
+
+        _ = await collection.Indexes.CreateManyAsync(
+            indexes,
+            cancellationToken: cancellationToken);
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+}

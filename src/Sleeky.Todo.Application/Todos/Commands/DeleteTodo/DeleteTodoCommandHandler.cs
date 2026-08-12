@@ -26,7 +26,7 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
         TodoItem todoItem = await todoRepository.GetByIdAsync(
             request.Id,
             cancellationToken: cancellationToken)
-            ?? throw new TodoNotFoundException(request.Id);
+            ?? throw new NotFoundException("TODO", request.Id);
 
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
         todoItem.SoftDelete(clock.UtcNow);
@@ -35,7 +35,7 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
             todoItem,
             request.Version,
             cancellationToken)
-            ?? throw new TodoConcurrencyException(request.Id, request.Version);
+            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
 
         return TodoDto.FromEntity(deletedTodoItem);
     }

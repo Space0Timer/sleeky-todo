@@ -29,10 +29,10 @@ public sealed class RestoreTodoCommandHandlerTests
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
-        TodoNotFoundException exception = (await act.Should()
-            .ThrowAsync<TodoNotFoundException>())
+        NotFoundException exception = (await act.Should()
+            .ThrowAsync<NotFoundException>())
             .Which;
-        exception.TodoId.Should().Be(TodoId);
+        exception.ResourceId.Should().Be(TodoId);
         await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
             default!,
             default,
@@ -86,7 +86,7 @@ public sealed class RestoreTodoCommandHandlerTests
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<TodoConcurrencyException>();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
         await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
             default!,
             default,
@@ -111,7 +111,7 @@ public sealed class RestoreTodoCommandHandlerTests
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<TodoConcurrencyException>();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
     }
 
     [TestMethod]

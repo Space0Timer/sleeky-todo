@@ -1,0 +1,41 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - mongodb-data:/data/db
+
+  mongodb-init:
+    image: mongo:7.0
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["mongosh", "--host", "mongodb:27017", "--quiet", "--eval"]
+    command:
+      - |
+        try {
+          const status = rs.status();
+          print("Replica set already initialized: " + status.set);
+        } catch (error) {
+          if (error.code === 94 || error.codeName === "NotYetInitialized") {
+            rs.initiate({
+              _id: "rs0",
+              members: [{ _id: 0, host: "localhost:27017" }]
+            });
+            print("Replica set initialization requested.");
+          } else {
+            throw error;
+          }
+        }
+
+volumes:
+  mongodb-data:

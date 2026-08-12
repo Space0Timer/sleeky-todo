@@ -63,7 +63,7 @@ public sealed class UpdateTodoCommandHandlerTests
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<TodoNotFoundException>();
+        await act.Should().ThrowAsync<NotFoundException>();
         await repository.DidNotReceiveWithAnyArgs().UpdateAsync(
             default!,
             default,
@@ -84,8 +84,8 @@ public sealed class UpdateTodoCommandHandlerTests
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
-        TodoConcurrencyException exception = (await act.Should()
-            .ThrowAsync<TodoConcurrencyException>())
+        ConcurrencyConflictException exception = (await act.Should()
+            .ThrowAsync<ConcurrencyConflictException>())
             .Which;
         exception.ExpectedVersion.Should().Be(command.Version);
         await repository.DidNotReceiveWithAnyArgs().UpdateAsync(
@@ -112,7 +112,7 @@ public sealed class UpdateTodoCommandHandlerTests
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
-        await act.Should().ThrowAsync<TodoConcurrencyException>();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
     }
 
     private static UpdateTodoCommand CreateCommand(string id, long version)

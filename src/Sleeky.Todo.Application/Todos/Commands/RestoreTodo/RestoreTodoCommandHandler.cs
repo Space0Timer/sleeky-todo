@@ -27,7 +27,7 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
             request.Id,
             includeDeleted: true,
             cancellationToken)
-            ?? throw new TodoNotFoundException(request.Id);
+            ?? throw new NotFoundException("TODO", request.Id);
 
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
         todoItem.Restore(clock.UtcNow);
@@ -36,7 +36,7 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
             todoItem,
             request.Version,
             cancellationToken)
-            ?? throw new TodoConcurrencyException(request.Id, request.Version);
+            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
 
         return TodoDto.FromEntity(restoredTodoItem);
     }

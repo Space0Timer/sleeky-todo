@@ -44,9 +44,35 @@ public sealed class GetTodoQueryHandlerTests
         Func<Task> act = async () =>
             await handler.Handle(new GetTodoQuery(TodoId), CancellationToken.None);
 
-        TodoNotFoundException exception = (await act.Should()
-            .ThrowAsync<TodoNotFoundException>())
+        NotFoundException exception = (await act.Should()
+            .ThrowAsync<NotFoundException>())
             .Which;
-        exception.TodoId.Should().Be(TodoId);
+        exception.ResourceId.Should().Be(TodoId);
+    }
+
+    [TestMethod]
+    public async Task HandleExcludesDeletedTodosFromNormalRetrieval()
+    {
+        TodoItem deletedTodo = TestTodoFactory.CreateDeleted();
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        repository
+            .GetByIdAsync(deletedTodo.Id, false, Arg.Any<CancellationToken>())
+            .Returns((TodoItem?)null);
+        GetTodoQueryHandler handler = new GetTodoQueryHandler(repository);
+
+        Func<Task> act = async () =>
+            await handler.Handle(
+                new GetTodoQuery(deletedTodo.Id),
+                CancellationToken.None);
+
+        await act.Should().ThrowAsync<NotFoundException>();
+        await repository.Received(1).GetByIdAsync(
+            deletedTodo.Id,
+            false,
+            Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().GetByIdAsync(
+            deletedTodo.Id,
+            true,
+            Arg.Any<CancellationToken>());
     }
 }
