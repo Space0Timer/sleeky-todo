@@ -63,6 +63,70 @@ and fetches `limit + 1`. Application owns cursor encoding and validation so the
 HTTP and persistence layers share one filter-bound cursor contract without
 exposing BSON types.
 
+### Enum storage
+
+`TodoStatus` and `TodoPriority` are stored as BSON `int32` values. Their explicit
+numeric values are the business sort order:
+
+```text
+TodoPriority: Low=0, Medium=1, High=2
+TodoStatus: NotStarted=0, InProgress=1, Completed=2, Archived=3
+```
+
+The numeric values are persistence contracts and must not be renumbered. New
+values are appended only with a deliberate data migration. Integer storage lets
+MongoDB filter, cursor-page, and sort directly on the persisted fields, so the
+reader does not need temporary rank fields or `$switch` expressions.
+
+Legacy string values are validated and converted by
+`MongoDbEnumStorageMigrator` during startup before index initialization. The
+migration is idempotent, rejects unknown values before changing data, and is
+not a mixed-version rollout: old writers must be stopped first.
+
+### Fluent aggregation design
+
+The reader uses typed MongoDB filters, cursor comparisons, sorting, and limits.
+Raw BSON stages are limited to the self-lookup, dependency count, and computed
+projection where the aggregation expression is clearer than a driver builder.
+
+For requests without a dependency-state filter, the pipeline is:
+
+```text
+scope and field match
+  -> cursor match
+  -> deterministic sort
+  -> limit
+  -> completed-dependency lookup
+  -> incomplete-count calculation
+  -> list-row projection
+```
+
+Sorting and limiting before the lookup bounds dependency work. Blocked and
+unblocked requests calculate dependency state before filtering, sorting, and
+limiting so a page is not incorrectly truncated before the requested state is
+selected.
+
+The cursor predicate is equivalent to
+`sortField > lastSortValue OR (sortField == lastSortValue AND _id > lastTodoId)`;
+both comparisons reverse for descending order. The persisted sort field and
+`_id` are sorted in the same direction for deterministic, indexable pages.
+
+### Dependency calculation
+
+The list lookup joins only dependency IDs that are present, not deleted, and
+completed, and projects only `_id`. Full dependency documents are not copied
+through the aggregation. The list projection calculates:
+
+```text
+incompleteDependencyCount = dependencyIds.Count - completedDependencyIds.Count
+isBlocked = incompleteDependencyCount > 0
+```
+
+Missing, deleted, archived, and unfinished dependencies therefore remain
+incomplete, matching the status-transition rule. The values are calculated at
+read time rather than persisted so dependency mutations cannot leave a stale
+blocked flag or count.
+
 ## Optimistic concurrency
 
 Every mutable TODO carries a numeric version. Update, soft-delete, restore,
