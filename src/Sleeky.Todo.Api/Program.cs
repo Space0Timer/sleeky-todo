@@ -1,3 +1,4 @@
+using Sleeky.Todo.Api.DependencyInjection;
 using Sleeky.Todo.Application.DependencyInjection;
 using Sleeky.Todo.Infrastructure.DependencyInjection;
 
@@ -11,11 +12,14 @@ public partial class Program
 
         builder.Services.AddApplication();
         builder.Services.AddInfrastructure(builder.Configuration);
-        builder.Services.AddControllers();
+        builder.Services.AddApi();
 
         WebApplication app = builder.Build();
 
+        app.UseExceptionHandler();
         app.UseHttpsRedirection();
+        app.UseSwagger();
+        app.UseSwaggerUI();
         app.MapControllers();
 
         app.Run();
