@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/DotNetAnalyzers/StyleCopAnalyzers/master/stylecop.schema.json",
+  "settings": {
+    "documentationRules": {
+      "documentExposedElements": false,
+      "documentInternalElements": false
+    },
+    "orderingRules": {
+      "usingDirectivesPlacement": "outsideNamespace"
+    }
+  }
+}
