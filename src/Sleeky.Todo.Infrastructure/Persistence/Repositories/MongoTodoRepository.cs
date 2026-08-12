@@ -127,15 +127,25 @@ public sealed class MongoTodoRepository : ITodoRepository
         FilterDefinition<TodoDocument> filter,
         CancellationToken cancellationToken)
     {
+        if (todoItem.Version != expectedVersion)
+        {
+            return null;
+        }
+
         long nextVersion = checked(expectedVersion + 1);
         TodoDocument replacement = TodoDocumentMapper.FromDomain(todoItem, nextVersion);
-        ReplaceOneResult result = await todoItems.ReplaceOneAsync(
+        FindOneAndReplaceOptions<TodoDocument> options = new FindOneAndReplaceOptions<TodoDocument>
+        {
+            ReturnDocument = ReturnDocument.After,
+        };
+        TodoDocument? persistedDocument = await todoItems.FindOneAndReplaceAsync(
             filter,
             replacement,
-            cancellationToken: cancellationToken);
+            options,
+            cancellationToken);
 
-        return result.MatchedCount == 0
+        return persistedDocument is null
             ? null
-            : TodoDocumentMapper.ToDomain(replacement);
+            : TodoDocumentMapper.ToDomain(persistedDocument);
     }
 }
