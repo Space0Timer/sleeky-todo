@@ -6,8 +6,10 @@ using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Infrastructure.DependencyInjection;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 namespace Sleeky.Todo.IntegrationTests.DependencyInjection;
 
@@ -30,13 +32,13 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             .Value;
         IMongoClient mongoClient = serviceProvider.GetRequiredService<IMongoClient>();
         IMongoDatabase database = serviceProvider.GetRequiredService<IMongoDatabase>();
-        MongoDbContext context = serviceProvider.GetRequiredService<MongoDbContext>();
+        ITodoRepository repository = serviceProvider.GetRequiredService<ITodoRepository>();
 
         settings.DatabaseName.Should().Be("sleekyTodo");
         settings.TodoItemsCollectionName.Should().Be("todoItems");
         mongoClient.Should().BeOfType<MongoClient>();
         database.DatabaseNamespace.DatabaseName.Should().Be("sleekyTodo");
-        context.TodoItems.CollectionNamespace.CollectionName.Should().Be("todoItems");
+        repository.Should().BeOfType<MongoTodoRepository>();
     }
 
     [TestMethod]
