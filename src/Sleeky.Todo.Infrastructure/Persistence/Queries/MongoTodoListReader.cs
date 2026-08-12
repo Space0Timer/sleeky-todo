@@ -44,8 +44,8 @@ public sealed class MongoTodoListReader : ITodoListReader
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(settings);
 
-        collectionName = settings.Value.TodoItemsCollectionName;
-        todoItems = database.GetCollection<TodoDocument>(collectionName);
+        this.collectionName = settings.Value.TodoItemsCollectionName;
+        this.todoItems = database.GetCollection<TodoDocument>(this.collectionName);
     }
 
     public async Task<IReadOnlyList<TodoListItemDto>> GetTodosAsync(

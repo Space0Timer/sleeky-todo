@@ -29,13 +29,17 @@ public sealed class RequestLoggingBehavior<TRequest, TResponse>
         ArgumentNullException.ThrowIfNull(next);
 
         string requestName = typeof(TRequest).Name;
-        ApplicationLogMessages.HandlingRequest(logger, requestName);
+        this.logger.LogDebug(
+            1001,
+            "Handling application request {RequestName}",
+            requestName);
         long startedAt = Stopwatch.GetTimestamp();
 
         TResponse response = await next(cancellationToken);
 
-        ApplicationLogMessages.HandledRequest(
-            logger,
+        this.logger.LogInformation(
+            1002,
+            "Handled application request {RequestName} in {ElapsedMilliseconds:F2} ms",
             requestName,
             Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
         return response;

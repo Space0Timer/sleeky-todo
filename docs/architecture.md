@@ -170,14 +170,22 @@ configuration-driven Serilog pipeline after dependency injection is available.
 One HTTP completion event records method, path, status, duration, request ID,
 and trace ID. A MediatR behavior records the application request type and
 successful handling duration, and Infrastructure records successful MongoDB
-index initialization. Health-check completion events are reduced to Debug.
+index initialization. Successful health-check completion events are reduced to
+Debug, while unhealthy health checks remain Warning events. A recurring TODO
+completion records the series, completed TODO, and newly created TODO identifiers
+only after the transaction commits. Successful TODO create, update, status,
+dependency, delete, and restore mutations also emit Information audit events
+containing identifiers, versions, and operation-specific metadata.
 Expected validation, not-found, domain, and concurrency responses are not logged
 as exceptions; the global exception handler emits the single Error event for an
-unexpected exception, while its HTTP 500 completion is a Warning.
+unexpected exception with its trace ID, method, and path, while its HTTP 500
+completion is a Warning.
 
 Logging excludes request bodies, TODO descriptions, cursor query values, and
 MongoDB connection strings. Structured events use stable event IDs and named
-properties rather than interpolated payloads.
+properties rather than interpolated payloads. Code uses direct typed logger calls
+such as `this.logger.LogInformation(eventId, template, values)` so the emitting
+class and event shape remain explicit without provider-specific APIs.
 
 ## Startup responsibilities
 

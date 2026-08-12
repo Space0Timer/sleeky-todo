@@ -1,5 +1,7 @@
 using FluentAssertions;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using NSubstitute;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
@@ -36,7 +38,10 @@ public sealed class UpdateTodoCommandHandlerTests
             TestTodoFactory.DueDate.AddDays(1),
             TodoPriority.Medium,
             todoItem.Version);
-        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(repository, clock);
+        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<UpdateTodoCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(command, CancellationToken.None);
 
@@ -59,7 +64,10 @@ public sealed class UpdateTodoCommandHandlerTests
             .GetByIdAsync("missing-todo", false, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
         UpdateTodoCommand command = CreateCommand("missing-todo", 1);
-        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(repository, clock);
+        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<UpdateTodoCommandHandler>.Instance);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
@@ -80,7 +88,10 @@ public sealed class UpdateTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         UpdateTodoCommand command = CreateCommand(todoItem.Id, todoItem.Version + 1);
-        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(repository, clock);
+        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<UpdateTodoCommandHandler>.Instance);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
@@ -108,7 +119,10 @@ public sealed class UpdateTodoCommandHandlerTests
             .UpdateAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
         UpdateTodoCommand command = CreateCommand(todoItem.Id, todoItem.Version);
-        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(repository, clock);
+        UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(
+            repository,
+            clock,
+            NullLogger<UpdateTodoCommandHandler>.Instance);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 

@@ -117,12 +117,16 @@ or persistence code to Serilog. Static Serilog access is restricted to bootstrap
 fatal startup reporting, and shutdown flushing in `Program.cs`.
 
 The logging pipeline produces a condensed HTTP completion event, trace context,
-MediatR request timing, and index-initialization events. It records identifiers
+MediatR request timing, index-initialization events, and a post-commit event when
+a recurring completion creates its next TODO. Successful TODO mutations emit
+Information audit events through direct typed `ILogger<T>` calls with stable
+event IDs and structured placeholders. Logging records identifiers, versions,
 and operational metadata, not request bodies, descriptions, cursor values, or
-connection strings. Known 400, 404, and 409 outcomes remain normal request
-events. Unexpected exceptions are logged once at Error by the global exception
-handler; the corresponding HTTP completion remains a Warning to avoid a second
-error event for the same failure.
+connection strings. Successful health probes are Debug events, while unhealthy
+probes remain Warning events. Known 400, 404, and 409 outcomes remain normal
+request events. Unexpected exceptions are logged once at Error with the trace
+ID, method, and path by the global exception handler; the corresponding HTTP
+completion remains a Warning to avoid a second error event for the same failure.
 
 ## Fail-fast injected dependencies
 

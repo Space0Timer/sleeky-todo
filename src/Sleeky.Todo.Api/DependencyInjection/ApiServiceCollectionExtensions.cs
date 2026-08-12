@@ -51,20 +51,20 @@ public static class ApiServiceCollectionExtensions
         {
             options.GetLevel = (httpContext, _, exception) =>
             {
-                if (httpContext.Request.Path.StartsWithSegments("/health"))
-                {
-                    return LogEventLevel.Debug;
-                }
-
                 if (exception is not null)
                 {
                     return LogEventLevel.Error;
                 }
 
-                return httpContext.Response.StatusCode
-                    >= StatusCodes.Status500InternalServerError
-                        ? LogEventLevel.Warning
-                        : LogEventLevel.Information;
+                if (httpContext.Response.StatusCode
+                    >= StatusCodes.Status500InternalServerError)
+                {
+                    return LogEventLevel.Warning;
+                }
+
+                return httpContext.Request.Path.StartsWithSegments("/health")
+                    ? LogEventLevel.Debug
+                    : LogEventLevel.Information;
             };
             options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
             {
