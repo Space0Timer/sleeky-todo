@@ -8,17 +8,17 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Documents;
 [BsonIgnoreExtraElements]
 internal sealed class RecurrenceDocument
 {
-    [BsonElement("type")]
+    [BsonElement(MongoRecurrenceFields.Type)]
     [BsonRepresentation(BsonType.String)]
     public RecurrenceType Type { get; set; }
 
-    [BsonElement("interval")]
+    [BsonElement(MongoRecurrenceFields.Interval)]
     public int Interval { get; set; }
 
-    [BsonElement("unit")]
+    [BsonElement(MongoRecurrenceFields.Unit)]
     [BsonRepresentation(BsonType.String)]
     public RecurrenceUnit Unit { get; set; }
 
-    [BsonElement("anchorDay")]
+    [BsonElement(MongoRecurrenceFields.AnchorDay)]
     public int? AnchorDay { get; set; }
 }

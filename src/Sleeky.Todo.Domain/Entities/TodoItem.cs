@@ -333,12 +333,7 @@ public sealed class TodoItem
     {
         if (recurrence is null)
         {
-            if (seriesId is not null || occurrenceNumber.HasValue)
-            {
-                throw new DomainException(
-                    "A non-recurring TODO cannot belong to a recurrence series.");
-            }
-
+            ValidateAbsentRecurrenceMetadata(seriesId, occurrenceNumber);
             return;
         }
 
@@ -352,6 +347,19 @@ public sealed class TodoItem
             throw new DomainException(
                 "A recurring TODO requires a positive occurrence number.");
         }
+    }
+
+    private static void ValidateAbsentRecurrenceMetadata(
+        Guid? seriesId,
+        int? occurrenceNumber)
+    {
+        if (seriesId is null && !occurrenceNumber.HasValue)
+        {
+            return;
+        }
+
+        throw new DomainException(
+            "A non-recurring TODO cannot belong to a recurrence series.");
     }
 
     private static string? NormalizeDescription(string? description)

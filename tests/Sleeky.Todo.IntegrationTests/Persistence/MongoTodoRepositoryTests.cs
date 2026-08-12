@@ -272,8 +272,8 @@ public sealed class MongoTodoRepositoryTests
             .Be(BsonBinarySubType.UuidStandard);
         document["_id"].AsBsonBinaryData.ToGuid().Should().Be(todoItem.Id);
         document["dueDate"].AsString.Should().Be("2026-08-31");
-        document["status"].AsString.Should().Be(nameof(TodoStatus.NotStarted));
-        document["priority"].AsString.Should().Be(nameof(TodoPriority.High));
+        document["status"].AsInt32.Should().Be((int)TodoStatus.NotStarted);
+        document["priority"].AsInt32.Should().Be((int)TodoPriority.High);
         document["createdAt"].BsonType.Should().Be(BsonType.DateTime);
     }
 
@@ -344,11 +344,10 @@ public sealed class MongoTodoRepositoryTests
         {
             persistedTodo.Name.Should().Be("Updated name");
             persistedTodo.DeletedAt.Should().BeNull();
+            return;
         }
-        else
-        {
-            persistedTodo.DeletedAt.Should().NotBeNull();
-        }
+
+        persistedTodo.DeletedAt.Should().NotBeNull();
     }
 
     [TestMethod]

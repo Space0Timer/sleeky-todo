@@ -82,9 +82,9 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                 new CreateIndexOptions<TodoDocument>
                 {
                     Name = "purge_at",
-                    PartialFilterExpression = new BsonDocument(
-                        "purgeAt",
-                        new BsonDocument("$type", "date")),
+                    PartialFilterExpression = Builders<TodoDocument>.Filter.Type(
+                        todo => todo.PurgeAt,
+                        BsonType.DateTime),
                 }),
             new CreateIndexModel<TodoDocument>(
                 Builders<TodoDocument>.IndexKeys
@@ -94,11 +94,12 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                 {
                     Name = "unique_series_occurrence",
                     Unique = true,
-                    PartialFilterExpression = new BsonDocument
-                    {
-                        { "seriesId", new BsonDocument("$type", "binData") },
-                        { "occurrenceNumber", new BsonDocument("$type", "int") },
-                    },
+                    PartialFilterExpression = Builders<TodoDocument>.Filter.Type(
+                        todo => todo.SeriesId,
+                        BsonType.Binary)
+                        & Builders<TodoDocument>.Filter.Type(
+                            todo => todo.OccurrenceNumber,
+                            BsonType.Int32),
                 }),
         ];
 

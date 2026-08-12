@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq.Expressions;
 
 using Microsoft.Extensions.Options;
 
@@ -19,23 +20,8 @@ public sealed class MongoTodoListReader : ITodoListReader
 {
     private const int DescriptionPreviewLength = 120;
 
-    private static readonly string[] PriorityOrder =
-    [
-        nameof(TodoPriority.Low),
-        nameof(TodoPriority.Medium),
-        nameof(TodoPriority.High),
-    ];
-
-    private static readonly string[] StatusOrder =
-    [
-        nameof(TodoStatus.NotStarted),
-        nameof(TodoStatus.InProgress),
-        nameof(TodoStatus.Completed),
-        nameof(TodoStatus.Archived),
-    ];
-
-    private readonly IMongoCollection<TodoDocument> todoItems;
     private readonly string collectionName;
+    private readonly IMongoCollection<TodoDocument> todoItems;
 
     public MongoTodoListReader(
         IMongoDatabase database,
@@ -54,142 +40,270 @@ public sealed class MongoTodoListReader : ITodoListReader
     {
         ArgumentNullException.ThrowIfNull(criteria);
 
-        List<BsonDocument> stages =
-        [
-            new BsonDocument("$match", BuildFilter(criteria)),
-            BuildDependencyLookupStage(collectionName),
-            BuildIncompleteDependencyCountStage(),
-            new BsonDocument(
-                "$set",
-                new BsonDocument(
-                    "isBlocked",
-                    new BsonDocument(
-                        "$gt",
-                        new BsonArray { "$incompleteDependencyCount", 0 }))),
-        ];
+        IAggregateFluent<TodoDocument> filteredTodos = BuildFilteredPipeline(
+            this.todoItems,
+            criteria);
+        IAggregateFluent<MongoTodoListRow> query = criteria.DependencyStatus.HasValue
+            ? BuildDependencyFilteredQuery(filteredTodos, criteria, this.collectionName)
+            : BuildPageFirstQuery(filteredTodos, criteria, this.collectionName);
+        List<MongoTodoListRow> rows = await query.ToListAsync(cancellationToken);
 
-        if (criteria.DependencyStatus.HasValue)
-        {
-            stages.Add(
-                new BsonDocument(
-                    "$match",
-                    new BsonDocument(
-                        "isBlocked",
-                        criteria.DependencyStatus == TodoDependencyStatus.Blocked)));
-        }
-
-        stages.Add(
-            new BsonDocument(
-                "$set",
-                new BsonDocument("sortValue", BuildSortValue(criteria.SortField))));
-
-        if (criteria.LastSortValue is not null && criteria.LastTodoId is not null)
-        {
-            stages.Add(new BsonDocument("$match", BuildCursorFilter(criteria)));
-        }
-
-        int sortDirection = criteria.SortDirection == TodoSortDirection.Asc ? 1 : -1;
-        stages.Add(
-            new BsonDocument(
-                "$sort",
-                new BsonDocument
-                {
-                    { "sortValue", sortDirection },
-                    { "_id", sortDirection },
-                }));
-        stages.Add(new BsonDocument("$limit", criteria.Limit));
-        stages.Add(
-            new BsonDocument(
-                "$project",
-                new BsonDocument
-                {
-                    { "dependencyDocuments", 0 },
-                    { "sortValue", 0 },
-                }));
-
-        IReadOnlyList<BsonDocument> documents = await todoItems
-            .Aggregate<BsonDocument>(stages)
-            .ToListAsync(cancellationToken);
-
-        return documents.Select(ToDto).ToArray();
+        return rows.ConvertAll(ToDto);
     }
 
-    private static BsonDocument BuildFilter(TodoListCriteria criteria)
+    private static IAggregateFluent<TodoDocument> BuildFilteredPipeline(
+        IMongoCollection<TodoDocument> todoItems,
+        TodoListCriteria criteria)
     {
-        BsonArray filters = new BsonArray();
-        filters.Add(criteria.Scope switch
+        IAggregateFluent<TodoDocument> pipeline = todoItems
+            .Aggregate()
+            .Match(BuildFilter(criteria));
+
+        if (criteria.LastSortValue is null || criteria.LastTodoId is null)
         {
-            TodoListScope.Active => new BsonDocument(
-                "$and",
-                new BsonArray
-                {
-                    new BsonDocument("deletedAt", BsonNull.Value),
-                    new BsonDocument(
-                        "status",
-                        new BsonDocument("$ne", nameof(TodoStatus.Archived))),
-                }),
-            TodoListScope.Archived => new BsonDocument(
-                "$and",
-                new BsonArray
-                {
-                    new BsonDocument("deletedAt", BsonNull.Value),
-                    new BsonDocument("status", nameof(TodoStatus.Archived)),
-                }),
-            TodoListScope.Deleted => new BsonDocument(
-                "deletedAt",
-                new BsonDocument("$type", "date")),
-            _ => throw new ArgumentOutOfRangeException(nameof(criteria)),
-        });
+            return pipeline;
+        }
+
+        return pipeline.Match(BuildCursorFilter(criteria));
+    }
+
+    private static IAggregateFluent<MongoTodoListRow> BuildPageFirstQuery(
+        IAggregateFluent<TodoDocument> pipeline,
+        TodoListCriteria criteria,
+        string collectionName)
+    {
+        IAggregateFluent<TodoDocument> page = ApplySortAndLimit(pipeline, criteria);
+        IAggregateFluent<BsonDocument> withDependencyState = AddDependencyState(
+            page,
+            collectionName);
+
+        return ProjectRows(withDependencyState);
+    }
+
+    private static IAggregateFluent<MongoTodoListRow> BuildDependencyFilteredQuery(
+        IAggregateFluent<TodoDocument> pipeline,
+        TodoListCriteria criteria,
+        string collectionName)
+    {
+        IAggregateFluent<BsonDocument> withDependencyState = AddDependencyState(
+            pipeline,
+            collectionName)
+            .Match(BuildDependencyStatusFilter(criteria.DependencyStatus!.Value));
+        IAggregateFluent<TodoDocument> filteredDocuments =
+            withDependencyState.As<TodoDocument>();
+        IAggregateFluent<TodoDocument> page = ApplySortAndLimit(
+            filteredDocuments,
+            criteria);
+
+        return ProjectRows(page);
+    }
+
+    private static IAggregateFluent<BsonDocument> AddDependencyState(
+        IAggregateFluent<TodoDocument> pipeline,
+        string collectionName)
+    {
+        return pipeline
+            .AppendStage(CreateStage<TodoDocument, BsonDocument>(
+                BuildCompletedDependencyLookupStage(collectionName)))
+            .AppendStage(CreateStage<BsonDocument, BsonDocument>(
+                BuildIncompleteDependencyCountStage()));
+    }
+
+    private static IAggregateFluent<TodoDocument> ApplySortAndLimit(
+        IAggregateFluent<TodoDocument> pipeline,
+        TodoListCriteria criteria)
+    {
+        return pipeline
+            .Sort(BuildSort(criteria.SortField, criteria.SortDirection))
+            .Limit(criteria.Limit);
+    }
+
+    private static IAggregateFluent<MongoTodoListRow> ProjectRows<TDocument>(
+        IAggregateFluent<TDocument> pipeline)
+    {
+        return pipeline.AppendStage(CreateStage<TDocument, MongoTodoListRow>(
+            BuildProjectionStage()));
+    }
+
+    private static FilterDefinition<TodoDocument> BuildFilter(
+        TodoListCriteria criteria)
+    {
+        FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;
+        FilterDefinition<TodoDocument> filter = BuildScopeFilter(criteria.Scope);
 
         if (criteria.Status.HasValue)
         {
-            filters.Add(new BsonDocument("status", criteria.Status.Value.ToString()));
+            filter &= filters.Eq(todo => todo.Status, criteria.Status.Value);
         }
 
         if (criteria.Priority.HasValue)
         {
-            filters.Add(new BsonDocument("priority", criteria.Priority.Value.ToString()));
+            filter &= filters.Eq(todo => todo.Priority, criteria.Priority.Value);
         }
 
-        if (criteria.DueFrom.HasValue || criteria.DueTo.HasValue)
+        if (criteria.DueFrom.HasValue)
         {
-            BsonDocument dueDateFilter = new BsonDocument();
-            if (criteria.DueFrom.HasValue)
-            {
-                dueDateFilter.Add(
-                    "$gte",
-                    criteria.DueFrom.Value.ToString(
-                        "yyyy-MM-dd",
-                        CultureInfo.InvariantCulture));
-            }
-
-            if (criteria.DueTo.HasValue)
-            {
-                dueDateFilter.Add(
-                    "$lte",
-                    criteria.DueTo.Value.ToString(
-                        "yyyy-MM-dd",
-                        CultureInfo.InvariantCulture));
-            }
-
-            filters.Add(new BsonDocument("dueDate", dueDateFilter));
+            filter &= filters.Gte(todo => todo.DueDate, criteria.DueFrom.Value);
         }
 
-        return filters.Count == 1
-            ? filters[0].AsBsonDocument
-            : new BsonDocument("$and", filters);
+        if (criteria.DueTo.HasValue)
+        {
+            filter &= filters.Lte(todo => todo.DueDate, criteria.DueTo.Value);
+        }
+
+        return filter;
     }
 
-    private static BsonDocument BuildDependencyLookupStage(string todoCollectionName)
+    private static FilterDefinition<TodoDocument> BuildScopeFilter(TodoListScope scope)
+    {
+        FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;
+
+        return scope switch
+        {
+            TodoListScope.Active =>
+                filters.Eq(todo => todo.DeletedAt, null)
+                & filters.Ne(todo => todo.Status, TodoStatus.Archived),
+            TodoListScope.Archived =>
+                filters.Eq(todo => todo.DeletedAt, null)
+                & filters.Eq(todo => todo.Status, TodoStatus.Archived),
+            TodoListScope.Deleted => filters.Type(
+                todo => todo.DeletedAt,
+                BsonType.DateTime),
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+    }
+
+    private static FilterDefinition<TodoDocument> BuildCursorFilter(
+        TodoListCriteria criteria)
+    {
+        string lastSortValue = criteria.LastSortValue!;
+        Guid lastTodoId = criteria.LastTodoId!.Value;
+
+        return criteria.SortField switch
+        {
+            TodoSortField.DueDate => BuildCursorFilterForField(
+                todo => todo.DueDate,
+                DateOnly.ParseExact(
+                    lastSortValue,
+                    MongoTodoFields.DateFormat,
+                    CultureInfo.InvariantCulture),
+                lastTodoId,
+                criteria.SortDirection),
+            TodoSortField.Priority => BuildCursorFilterForField(
+                todo => todo.Priority,
+                (TodoPriority)ParseNumericSortValue(lastSortValue),
+                lastTodoId,
+                criteria.SortDirection),
+            TodoSortField.Status => BuildCursorFilterForField(
+                todo => todo.Status,
+                (TodoStatus)ParseNumericSortValue(lastSortValue),
+                lastTodoId,
+                criteria.SortDirection),
+            TodoSortField.Name => BuildCursorFilterForField(
+                todo => todo.NameNormalized,
+                lastSortValue,
+                lastTodoId,
+                criteria.SortDirection),
+            _ => throw new ArgumentOutOfRangeException(nameof(criteria)),
+        };
+    }
+
+    private static FilterDefinition<TodoDocument> BuildCursorFilterForField<TValue>(
+        Expression<Func<TodoDocument, TValue>> field,
+        TValue lastSortValue,
+        Guid lastTodoId,
+        TodoSortDirection direction)
+    {
+        FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;
+        FilterDefinition<TodoDocument> valueComparison = direction == TodoSortDirection.Asc
+            ? filters.Gt(field, lastSortValue)
+            : filters.Lt(field, lastSortValue);
+        FilterDefinition<TodoDocument> idComparison = direction == TodoSortDirection.Asc
+            ? filters.Gt(todo => todo.Id, lastTodoId)
+            : filters.Lt(todo => todo.Id, lastTodoId);
+
+        return valueComparison
+            | (filters.Eq(field, lastSortValue) & idComparison);
+    }
+
+    private static SortDefinition<TodoDocument> BuildSort(
+        TodoSortField field,
+        TodoSortDirection direction)
+    {
+        SortDefinitionBuilder<TodoDocument> sorts = Builders<TodoDocument>.Sort;
+        SortDefinition<TodoDocument> primarySort = direction == TodoSortDirection.Asc
+            ? BuildAscendingSort(field)
+            : BuildDescendingSort(field);
+        SortDefinition<TodoDocument> idSort = direction == TodoSortDirection.Asc
+            ? sorts.Ascending(todo => todo.Id)
+            : sorts.Descending(todo => todo.Id);
+
+        return sorts.Combine(primarySort, idSort);
+    }
+
+    private static SortDefinition<TodoDocument> BuildAscendingSort(TodoSortField field)
+    {
+        SortDefinitionBuilder<TodoDocument> sorts = Builders<TodoDocument>.Sort;
+
+        return field switch
+        {
+            TodoSortField.DueDate => sorts.Ascending(todo => todo.DueDate),
+            TodoSortField.Priority => sorts.Ascending(todo => todo.Priority),
+            TodoSortField.Status => sorts.Ascending(todo => todo.Status),
+            TodoSortField.Name => sorts.Ascending(todo => todo.NameNormalized),
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+    }
+
+    private static SortDefinition<TodoDocument> BuildDescendingSort(TodoSortField field)
+    {
+        SortDefinitionBuilder<TodoDocument> sorts = Builders<TodoDocument>.Sort;
+
+        return field switch
+        {
+            TodoSortField.DueDate => sorts.Descending(todo => todo.DueDate),
+            TodoSortField.Priority => sorts.Descending(todo => todo.Priority),
+            TodoSortField.Status => sorts.Descending(todo => todo.Status),
+            TodoSortField.Name => sorts.Descending(todo => todo.NameNormalized),
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+    }
+
+    private static int ParseNumericSortValue(string value)
+    {
+        return int.Parse(
+            value,
+            NumberStyles.None,
+            CultureInfo.InvariantCulture);
+    }
+
+    private static BsonDocument BuildCompletedDependencyLookupStage(
+        string collectionName)
     {
         return new BsonDocument(
             "$lookup",
             new BsonDocument
             {
-                { "from", todoCollectionName },
-                { "localField", "dependencyIds" },
-                { "foreignField", "_id" },
-                { "as", "dependencyDocuments" },
+                { "from", collectionName },
+                { "localField", MongoTodoFields.DependencyIds },
+                { "foreignField", MongoTodoFields.Id },
+                {
+                    "pipeline",
+                    new BsonArray
+                    {
+                        new BsonDocument(
+                            "$match",
+                            new BsonDocument
+                            {
+                                { MongoTodoFields.DeletedAt, BsonNull.Value },
+                                { MongoTodoFields.Status, (int)TodoStatus.Completed },
+                            }),
+                        new BsonDocument(
+                            "$project",
+                            new BsonDocument(MongoTodoFields.Id, 1)),
+                    }
+                },
+                { "as", MongoTodoFields.CompletedDependencies },
             });
     }
 
@@ -197,165 +311,115 @@ public sealed class MongoTodoListReader : ITodoListReader
     {
         BsonDocument dependencyIds = new BsonDocument(
             "$ifNull",
-            new BsonArray { "$dependencyIds", new BsonArray() });
-        BsonDocument missingDependencyCount = new BsonDocument(
-            "$subtract",
             new BsonArray
             {
-                new BsonDocument("$size", dependencyIds),
-                new BsonDocument("$size", "$dependencyDocuments"),
-            });
-        BsonDocument incompleteDocuments = new BsonDocument(
-            "$filter",
-            new BsonDocument
-            {
-                { "input", "$dependencyDocuments" },
-                { "as", "dependency" },
-                {
-                    "cond",
-                    new BsonDocument(
-                        "$or",
-                        new BsonArray
-                        {
-                            new BsonDocument(
-                                "$ne",
-                                new BsonArray { "$$dependency.deletedAt", BsonNull.Value }),
-                            new BsonDocument(
-                                "$ne",
-                                new BsonArray
-                                {
-                                    "$$dependency.status",
-                                    nameof(TodoStatus.Completed),
-                                }),
-                        })
-                },
+                FieldPath(MongoTodoFields.DependencyIds),
+                new BsonArray(),
             });
 
         return new BsonDocument(
             "$set",
             new BsonDocument(
-                "incompleteDependencyCount",
+                MongoTodoFields.IncompleteDependencyCount,
                 new BsonDocument(
-                    "$add",
+                    "$subtract",
                     new BsonArray
                     {
-                        missingDependencyCount,
-                        new BsonDocument("$size", incompleteDocuments),
+                        new BsonDocument("$size", dependencyIds),
+                        new BsonDocument(
+                            "$size",
+                            FieldPath(MongoTodoFields.CompletedDependencies)),
                     })));
     }
 
-    private static BsonValue BuildSortValue(TodoSortField sortField)
+    private static FilterDefinition<BsonDocument> BuildDependencyStatusFilter(
+        TodoDependencyStatus status)
     {
-        return sortField switch
+        FilterDefinitionBuilder<BsonDocument> filters = Builders<BsonDocument>.Filter;
+
+        return status switch
         {
-            TodoSortField.DueDate => "$dueDate",
-            TodoSortField.Priority => BuildOrderExpression(
-                "$priority",
-                PriorityOrder),
-            TodoSortField.Status => BuildOrderExpression(
-                "$status",
-                StatusOrder),
-            TodoSortField.Name => "$nameNormalized",
-            _ => throw new ArgumentOutOfRangeException(nameof(sortField)),
+            TodoDependencyStatus.Blocked => filters.Gt(
+                MongoTodoFields.IncompleteDependencyCount,
+                0),
+            TodoDependencyStatus.Unblocked => filters.Eq(
+                MongoTodoFields.IncompleteDependencyCount,
+                0),
+            _ => throw new ArgumentOutOfRangeException(nameof(status)),
         };
     }
 
-    private static BsonDocument BuildOrderExpression(
-        string field,
-        IReadOnlyList<string> orderedValues)
+    private static BsonDocument BuildProjectionStage()
     {
-        BsonArray branches = new BsonArray(
-            orderedValues.Select((value, index) =>
-                new BsonDocument
-                {
-                    {
-                        "case",
-                        new BsonDocument("$eq", new BsonArray { field, value })
-                    },
-                    { "then", index },
-                }));
-
         return new BsonDocument(
-            "$switch",
+            "$project",
             new BsonDocument
             {
-                { "branches", branches },
-                { "default", orderedValues.Count },
-            });
-    }
-
-    private static BsonDocument BuildCursorFilter(TodoListCriteria criteria)
-    {
-        string comparison = criteria.SortDirection == TodoSortDirection.Asc ? "$gt" : "$lt";
-        BsonValue lastSortValue = ParseSortValue(
-            criteria.LastSortValue!,
-            criteria.SortField);
-
-        return new BsonDocument(
-            "$or",
-            new BsonArray
-            {
-                new BsonDocument(
-                    "sortValue",
-                    new BsonDocument(comparison, lastSortValue)),
-                new BsonDocument(
-                    "$and",
-                    new BsonArray
-                    {
-                        new BsonDocument("sortValue", lastSortValue),
-                        new BsonDocument(
-                            "_id",
+                { MongoTodoFields.Id, 1 },
+                { MongoTodoFields.Name, 1 },
+                { MongoTodoFields.Description, 1 },
+                { MongoTodoFields.DueDate, 1 },
+                { MongoTodoFields.Status, 1 },
+                { MongoTodoFields.Priority, 1 },
+                {
+                    MongoTodoFields.IsRecurring,
+                    new BsonDocument(
+                        "$ne",
+                        new BsonArray
+                        {
                             new BsonDocument(
-                                comparison,
-                                new BsonBinaryData(
-                                    criteria.LastTodoId.GetValueOrDefault(),
-                                    GuidRepresentation.Standard))),
-                    }),
+                                "$ifNull",
+                                new BsonArray
+                                {
+                                    FieldPath(MongoTodoFields.Recurrence),
+                                    BsonNull.Value,
+                                }),
+                            BsonNull.Value,
+                        })
+                },
+                {
+                    MongoTodoFields.IsBlocked,
+                    new BsonDocument(
+                        "$gt",
+                        new BsonArray
+                        {
+                            FieldPath(MongoTodoFields.IncompleteDependencyCount),
+                            0,
+                        })
+                },
+                { MongoTodoFields.IncompleteDependencyCount, 1 },
+                { MongoTodoFields.Version, 1 },
+                { MongoTodoFields.DeletedAt, 1 },
+                { MongoTodoFields.PurgeAt, 1 },
             });
     }
 
-    private static BsonValue ParseSortValue(string value, TodoSortField sortField)
+    private static PipelineStageDefinition<TInput, TOutput> CreateStage<TInput, TOutput>(
+        BsonDocument stage)
     {
-        return sortField switch
-        {
-            TodoSortField.Priority or TodoSortField.Status => int.Parse(
-                value,
-                NumberStyles.None,
-                CultureInfo.InvariantCulture),
-            _ => value,
-        };
+        return new BsonDocumentPipelineStageDefinition<TInput, TOutput>(stage);
     }
 
-    private static TodoListItemDto ToDto(BsonDocument document)
+    private static string FieldPath(string field)
     {
-        string? description = GetNullableString(document, "description");
-        bool isRecurring = document.TryGetValue(
-            "recurrence",
-            out BsonValue? recurrence)
-            && !recurrence.IsBsonNull
-            && !(recurrence.IsBsonDocument
-                && recurrence.AsBsonDocument.TryGetValue(
-                    "_csharpnull",
-                    out BsonValue? csharpNull)
-                && csharpNull.IsBoolean
-                && csharpNull.AsBoolean);
+        return string.Concat("$", field);
+    }
 
+    private static TodoListItemDto ToDto(MongoTodoListRow row)
+    {
         return new TodoListItemDto(
-            document["_id"].AsBsonBinaryData.ToGuid(),
-            document["name"].AsString,
-            CreateDescriptionPreview(description),
-            DateOnly.ParseExact(
-                document["dueDate"].AsString,
-                "yyyy-MM-dd",
-                CultureInfo.InvariantCulture),
-            Enum.Parse<TodoStatus>(document["status"].AsString),
-            Enum.Parse<TodoPriority>(document["priority"].AsString),
-            isRecurring,
-            document["isBlocked"].AsBoolean,
-            document["incompleteDependencyCount"].AsInt32,
-            document["version"].ToInt64(),
-            GetNullableDateTimeOffset(document, "deletedAt"),
-            GetNullableDateTimeOffset(document, "purgeAt"));
+            row.Id,
+            row.Name,
+            CreateDescriptionPreview(row.Description),
+            row.DueDate,
+            row.Status,
+            row.Priority,
+            row.IsRecurring,
+            row.IsBlocked,
+            row.IncompleteDependencyCount,
+            row.Version,
+            ToDateTimeOffset(row.DeletedAt),
+            ToDateTimeOffset(row.PurgeAt));
     }
 
     private static string? CreateDescriptionPreview(string? description)
@@ -370,19 +434,14 @@ public sealed class MongoTodoListReader : ITodoListReader
             "...");
     }
 
-    private static string? GetNullableString(BsonDocument document, string field)
+    private static DateTimeOffset? ToDateTimeOffset(DateTime? value)
     {
-        return document.TryGetValue(field, out BsonValue? value) && !value.IsBsonNull
-            ? value.AsString
-            : null;
-    }
+        if (!value.HasValue)
+        {
+            return null;
+        }
 
-    private static DateTimeOffset? GetNullableDateTimeOffset(
-        BsonDocument document,
-        string field)
-    {
-        return document.TryGetValue(field, out BsonValue? value) && !value.IsBsonNull
-            ? new DateTimeOffset(value.ToUniversalTime())
-            : null;
+        DateTime utcValue = DateTime.SpecifyKind(value.Value, DateTimeKind.Utc);
+        return new DateTimeOffset(utcValue);
     }
 }

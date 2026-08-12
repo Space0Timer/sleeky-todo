@@ -691,6 +691,47 @@ public sealed class TodoApiTests
         recurrenceIndex["unique"].AsBoolean.Should().BeTrue();
     }
 
+    [TestMethod]
+    public async Task StartupMigratesStringTodoEnumsToIntegers()
+    {
+        client.Dispose();
+        factory.Dispose();
+
+        MongoClient mongoClient = new MongoClient(
+            mongoDbContainer!.GetConnectionString());
+        IMongoCollection<BsonDocument> collection = mongoClient
+            .GetDatabase(databaseName)
+            .GetCollection<BsonDocument>("todoItems");
+        Guid documentId = Guid.NewGuid();
+        BsonBinaryData persistedId = new BsonBinaryData(
+            documentId,
+            GuidRepresentation.Standard);
+        await collection.InsertOneAsync(
+            new BsonDocument
+            {
+                { "_id", persistedId },
+                { "status", nameof(TodoStatus.Completed) },
+                { "priority", nameof(TodoPriority.High) },
+            });
+
+        factory = new TodoApiFactory(
+            mongoDbContainer.GetConnectionString(),
+            databaseName);
+        client = factory.CreateClient(
+            new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+            });
+        _ = await client.GetAsync("/health");
+
+        BsonDocument migrated = await collection
+            .Find(Builders<BsonDocument>.Filter.Eq("_id", persistedId))
+            .SingleAsync();
+
+        migrated["status"].AsInt32.Should().Be((int)TodoStatus.Completed);
+        migrated["priority"].AsInt32.Should().Be((int)TodoPriority.High);
+    }
+
     private static bool ShouldRunMongoDbTests()
     {
         return string.Equals(
