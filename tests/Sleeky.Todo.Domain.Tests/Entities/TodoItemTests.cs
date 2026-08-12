@@ -180,6 +180,69 @@ public sealed class TodoItemTests
             .WithMessage("Only a deleted TODO can be restored.");
     }
 
+    [TestMethod]
+    public void RehydrateRestoresPersistedState()
+    {
+        DateTimeOffset updatedAt = InitialTimestamp.AddDays(1);
+        DateTimeOffset deletedAt = updatedAt.AddDays(1);
+        DateTimeOffset purgeAt = deletedAt.AddDays(90);
+
+        TodoItem item = TodoItem.Rehydrate(
+            "todo-1",
+            "Submit Report",
+            "Monthly report",
+            InitialDueDate,
+            TodoStatus.Archived,
+            TodoPriority.Medium,
+            new[] { "todo-a", "todo-b" },
+            null,
+            "series-1",
+            3,
+            7,
+            InitialTimestamp,
+            updatedAt,
+            deletedAt,
+            purgeAt);
+
+        item.Id.Should().Be("todo-1");
+        item.NameNormalized.Should().Be("submit report");
+        item.Status.Should().Be(TodoStatus.Archived);
+        item.Priority.Should().Be(TodoPriority.Medium);
+        item.DependencyIds.Should().Equal("todo-a", "todo-b");
+        item.SeriesId.Should().Be("series-1");
+        item.OccurrenceNumber.Should().Be(3);
+        item.Version.Should().Be(7);
+        item.CreatedAt.Should().Be(InitialTimestamp.ToUniversalTime());
+        item.UpdatedAt.Should().Be(updatedAt.ToUniversalTime());
+        item.DeletedAt.Should().Be(deletedAt.ToUniversalTime());
+        item.PurgeAt.Should().Be(purgeAt.ToUniversalTime());
+    }
+
+    [TestMethod]
+    public void RehydrateRejectsInvalidPersistedVersion()
+    {
+        Func<TodoItem> act = () => TodoItem.Rehydrate(
+            "todo-1",
+            "Submit Report",
+            null,
+            InitialDueDate,
+            TodoStatus.NotStarted,
+            TodoPriority.Low,
+            Array.Empty<string>(),
+            null,
+            null,
+            null,
+            0,
+            InitialTimestamp,
+            InitialTimestamp,
+            null,
+            null);
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage("A positive TODO version is required.");
+    }
+
     private static TodoItem CreateTodo(
         string id = "todo-1",
         string name = "Submit Report",

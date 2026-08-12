@@ -14,7 +14,7 @@ A layered-monolith TODO application built with ASP.NET Core, MongoDB, MediatR, a
 
 ## Current status
 
-The initial domain model, CRUD application handlers, request validation pipeline, and MongoDB client configuration are implemented. API endpoints and repository operations are still in progress.
+The initial domain model, CRUD application handlers, request validation pipeline, MongoDB configuration, and MongoDB repository are implemented. API endpoints are still in progress.
 
 ## Prerequisites
 
@@ -41,6 +41,16 @@ Override individual values through environment variables when needed:
 ```sh
 MongoDb__ConnectionString="mongodb://localhost:27017/?replicaSet=rs0" dotnet run --project src/Sleeky.Todo.Api
 ```
+
+Application handlers depend on `ITodoRepository`. Infrastructure implements that contract with `MongoTodoRepository`, which accesses the configured collection directly through `IMongoDatabase`. The BSON document and mapping types remain internal to Infrastructure.
+
+The live repository integration tests require Docker and are opt-in:
+
+```sh
+RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTests
+```
+
+Dedicated simultaneous-write concurrency tests remain deferred to the optimistic-concurrency step.
 
 ## Build the scaffold
 

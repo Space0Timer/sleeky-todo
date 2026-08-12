@@ -81,6 +81,57 @@ public sealed class TodoItem
             utcCreatedAt);
     }
 
+    public static TodoItem Rehydrate(
+        string id,
+        string name,
+        string? description,
+        DateOnly dueDate,
+        TodoStatus status,
+        TodoPriority priority,
+        IEnumerable<string> dependencyIds,
+        RecurrenceSchedule? recurrence,
+        string? seriesId,
+        int? occurrenceNumber,
+        long version,
+        DateTimeOffset createdAt,
+        DateTimeOffset updatedAt,
+        DateTimeOffset? deletedAt,
+        DateTimeOffset? purgeAt)
+    {
+        ArgumentNullException.ThrowIfNull(dependencyIds);
+
+        if (!Enum.IsDefined(status))
+        {
+            throw new DomainException("A valid TODO status is required.");
+        }
+
+        if (version <= 0)
+        {
+            throw new DomainException("A positive TODO version is required.");
+        }
+
+        TodoItem todoItem = new TodoItem(
+            ValidateId(id),
+            name,
+            description,
+            dueDate,
+            priority,
+            createdAt.ToUniversalTime())
+        {
+            Status = status,
+            Recurrence = recurrence,
+            SeriesId = seriesId,
+            OccurrenceNumber = occurrenceNumber,
+            Version = version,
+            UpdatedAt = updatedAt.ToUniversalTime(),
+            DeletedAt = deletedAt?.ToUniversalTime(),
+            PurgeAt = purgeAt?.ToUniversalTime(),
+        };
+        todoItem.dependencyIds.AddRange(dependencyIds);
+
+        return todoItem;
+    }
+
     public void UpdateDetails(
         string name,
         string? description,
