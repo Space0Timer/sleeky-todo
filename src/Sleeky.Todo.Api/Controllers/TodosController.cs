@@ -9,6 +9,7 @@ using Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
 using Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
 using Sleeky.Todo.Application.Todos.Commands.UpdateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodo;
+using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
 namespace Sleeky.Todo.Api.Controllers;
 
@@ -21,6 +22,29 @@ public sealed class TodosController : ControllerBase
     public TodosController(ISender sender)
     {
         this.sender = sender;
+    }
+
+    [HttpGet]
+    [ProducesResponseType<CursorPage<TodoListItemDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPage<TodoListItemDto>>> List(
+        [FromQuery] GetTodosRequest request,
+        CancellationToken cancellationToken)
+    {
+        GetTodosQuery query = new GetTodosQuery(
+            request.Status,
+            request.Priority,
+            request.DueFrom,
+            request.DueTo,
+            request.DependencyStatus,
+            request.Scope,
+            request.SortField,
+            request.SortDirection,
+            request.Limit,
+            request.Cursor);
+        CursorPage<TodoListItemDto> page = await sender.Send(query, cancellationToken);
+
+        return Ok(page);
     }
 
     [HttpPost]

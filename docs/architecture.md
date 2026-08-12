@@ -30,6 +30,13 @@ Application handler
 
 A separate `MongoDbContext` wrapper is intentionally not used. With one database and one collection it only duplicated `IMongoDatabase.GetCollection`; the repository owns collection access directly.
 
+List queries use a separate `ITodoListReader` implemented by
+`MongoTodoListReader`. Its aggregation applies scope and field filters, joins
+dependency documents, computes blocked state, applies the deterministic cursor,
+and fetches `limit + 1`. Application owns cursor encoding and validation so the
+HTTP and persistence layers share one filter-bound cursor contract without
+exposing BSON types.
+
 ## Optimistic concurrency
 
 Every mutable TODO carries a numeric version. Update, soft-delete, and restore requests include the version last read by the client.
