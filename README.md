@@ -41,7 +41,9 @@ and trade-offs.
 The CRUD, list-query, dependency-rule, and recurrence slices are implemented
 through the domain, application, MongoDB, and HTTP API layers. Recurrence
 supports daily, weekly, monthly, and custom day/week/month intervals with
-monthly anchor preservation.
+monthly anchor preservation. The React client exposes the persisted scoped
+list, filters, cursor loading, dependency management, recurring creation,
+status workflows, recoverable deletion, and explicit stale-version recovery.
 
 ## Prerequisites
 

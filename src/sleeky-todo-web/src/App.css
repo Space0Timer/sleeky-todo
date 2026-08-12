@@ -60,7 +60,9 @@ h1 {
 
 .create-panel,
 .todo-card,
-.error-banner {
+.error-banner,
+.notice-banner,
+.filter-panel {
   border: 1px solid #e0dbe8;
   border-radius: 1rem;
   background: #fff;
@@ -96,7 +98,11 @@ h1 {
 
 .todo-form input,
 .todo-form textarea,
-.todo-form select {
+.todo-form select,
+.filter-panel input,
+.filter-panel select,
+.manage-panel input,
+.manage-panel select {
   width: 100%;
   box-sizing: border-box;
   padding: 0.72rem 0.8rem;
@@ -119,10 +125,39 @@ h1 {
   outline: 3px solid rgb(114 89 217 / 15%);
 }
 
+.filter-panel input:focus,
+.filter-panel select:focus,
+.manage-panel input:focus,
+.manage-panel select:focus {
+  border-color: #7259d9;
+  outline: 3px solid rgb(114 89 217 / 15%);
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  grid-template-columns: auto 1fr;
+}
+
+.checkbox-label input {
+  width: 1rem;
+  height: 1rem;
+}
+
+.recurrence-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 1rem;
+  border: 1px solid #e0dbe8;
+  border-radius: 0.7rem;
+  background: #faf9fc;
+  gap: 0.8rem;
 }
 
 .form-actions,
@@ -164,6 +199,17 @@ h1 {
   color: #9f2f38;
 }
 
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6548d8;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 .field-error {
   color: #ad2935;
   font-size: 0.78rem;
@@ -188,6 +234,72 @@ h1 {
 
 .error-banner small {
   color: #87636a;
+}
+
+.notice-banner {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1.1rem;
+  border-color: #b9dec8;
+  background: #f3fbf6;
+  color: #27613f;
+  font-weight: 700;
+}
+
+.scope-tabs {
+  display: flex;
+  margin-top: 2.5rem;
+  border-bottom: 1px solid #dcd6e5;
+  gap: 0.25rem;
+}
+
+.scope-tab {
+  padding: 0.8rem 1.1rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #6c6376;
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.scope-tab[aria-selected="true"] {
+  border-bottom-color: #6548d8;
+  color: #4b35af;
+}
+
+.filter-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  margin-top: 1rem;
+  padding: 1rem;
+  gap: 0.8rem;
+}
+
+.filter-panel label,
+.manage-panel label {
+  display: grid;
+  color: #514959;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 0.35rem;
+}
+
+.filter-panel input,
+.filter-panel select,
+.manage-panel input,
+.manage-panel select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid #cec7d7;
+  border-radius: 0.5rem;
+  background: #fff;
+  font: inherit;
+}
+
+.clear-filters {
+  align-self: end;
 }
 
 .todo-section {
@@ -251,12 +363,21 @@ h1 {
 }
 
 .priority,
-.version {
+.version,
+.status,
+.recurring,
+.blocked {
   display: inline-flex;
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 750;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
 .priority-0 {
@@ -277,6 +398,47 @@ h1 {
 .version {
   background: #f0edf5;
   color: #5e5667;
+}
+
+.status-0 {
+  background: #eef0f5;
+  color: #4d5668;
+}
+
+.status-1 {
+  background: #e6f2ff;
+  color: #245f91;
+}
+
+.status-2 {
+  background: #e7f6ed;
+  color: #2d6d47;
+}
+
+.status-3 {
+  background: #eeeaf5;
+  color: #655676;
+}
+
+.recurring {
+  background: #eee9ff;
+  color: #5840bb;
+}
+
+.blocked {
+  background: #ffe6e7;
+  color: #983139;
+}
+
+.blocked-note {
+  display: grid;
+  margin: 0.75rem 0;
+  padding: 0.7rem;
+  border-radius: 0.55rem;
+  background: #fff5f5;
+  color: #8d3038;
+  font-size: 0.8rem;
+  gap: 0.2rem;
 }
 
 .todo-card dl {
@@ -310,6 +472,58 @@ h1 {
   white-space: nowrap;
 }
 
+.manage-panel {
+  display: grid;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e3dee9;
+  gap: 1rem;
+}
+
+.schedule-note,
+.muted {
+  margin: 0;
+  color: #756e7c;
+  font-size: 0.8rem;
+}
+
+.dependency-manager {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.dependency-manager ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  gap: 0.4rem;
+}
+
+.dependency-manager li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.45rem;
+  background: #f5f2f8;
+  color: #514959;
+  font-size: 0.8rem;
+}
+
+.dependency-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
 @media (max-width: 42rem) {
   .app-shell {
     padding-top: 1.5rem;
@@ -326,6 +540,11 @@ h1 {
   }
 
   .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-panel,
+  .recurrence-fields {
     grid-template-columns: 1fr;
   }
 }

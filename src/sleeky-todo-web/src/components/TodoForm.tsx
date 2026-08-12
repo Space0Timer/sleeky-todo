@@ -15,19 +15,6 @@ type TodoFormProps = {
   onSubmit: (draft: TodoDraft) => Promise<boolean>
 }
 
-function today(): string {
-  const current = new Date()
-  const offset = current.getTimezoneOffset() * 60_000
-  return new Date(current.getTime() - offset).toISOString().slice(0, 10)
-}
-
-const emptyDraft: TodoDraft = {
-  name: '',
-  description: '',
-  dueDate: today(),
-  priority: todoPriority.medium,
-}
-
 function FieldError({ messages }: { messages?: string[] }) {
   if (!messages?.length) {
     return null
@@ -45,15 +32,16 @@ export function TodoForm({
   onCancel,
   onSubmit,
 }: TodoFormProps) {
-  const [draft, setDraft] = useState<TodoDraft>(initial ?? emptyDraft)
+  const [draft, setDraft] = useState<TodoDraft>(initial ?? {
+    name: '',
+    description: '',
+    dueDate: '',
+    priority: todoPriority.medium,
+  })
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const succeeded = await onSubmit(draft)
-
-    if (succeeded && !initial) {
-      setDraft({ ...emptyDraft, dueDate: today() })
-    }
+    await onSubmit(draft)
   }
 
   return (
