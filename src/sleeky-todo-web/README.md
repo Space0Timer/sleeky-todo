@@ -2,13 +2,15 @@
 
 React and TypeScript frontend for Sleeky To-Do.
 
-The first application shell includes a typed API client and create, edit,
-soft-delete, and restore flows. It renders FluentValidation messages and
-optimistic-concurrency conflicts returned as Problem Details.
+The application uses the persisted list API for Active, Archived, and Trash
+views. It supports cursor-based loading, status/priority/due-date/dependency
+filters, deterministic sorting, create and edit flows, status transitions,
+dependency management, recurring schedules, soft deletion, and restore.
 
-The backend does not expose a list endpoint yet, so the shell displays TODOs
-created during the current browser session. Server-backed listing and browser
-session recovery belong to the later pagination slice.
+Blocked TODOs identify their incomplete prerequisites and prevent invalid
+status transitions. API validation, domain-rule failures, and optimistic-
+concurrency conflicts are rendered from Problem Details; stale records can be
+reloaded directly from the conflict banner.
 
 ## Development
 
