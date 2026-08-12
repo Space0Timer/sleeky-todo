@@ -110,6 +110,8 @@ public sealed class TodoItem
             throw new DomainException("A positive TODO version is required.");
         }
 
+        ValidateDeletionState(deletedAt, purgeAt);
+
         TodoItem todoItem = new TodoItem(
             ValidateId(id),
             name,
@@ -168,6 +170,11 @@ public sealed class TodoItem
 
         DateTimeOffset utcRestoredAt = restoredAt.ToUniversalTime();
 
+        if (utcRestoredAt < DeletedAt.Value)
+        {
+            throw new DomainException("A TODO cannot be restored before it was deleted.");
+        }
+
         if (utcRestoredAt >= PurgeAt.Value)
         {
             throw new DomainException("The TODO retention period has expired.");
@@ -206,6 +213,23 @@ public sealed class TodoItem
         }
 
         return priority;
+    }
+
+    private static void ValidateDeletionState(
+        DateTimeOffset? deletedAt,
+        DateTimeOffset? purgeAt)
+    {
+        if (deletedAt.HasValue != purgeAt.HasValue)
+        {
+            throw new DomainException(
+                "TODO deletion and purge timestamps must either both be set or both be null.");
+        }
+
+        if (deletedAt.HasValue && purgeAt <= deletedAt)
+        {
+            throw new DomainException(
+                "A TODO purge timestamp must be later than its deletion timestamp.");
+        }
     }
 
     private static string? NormalizeDescription(string? description)

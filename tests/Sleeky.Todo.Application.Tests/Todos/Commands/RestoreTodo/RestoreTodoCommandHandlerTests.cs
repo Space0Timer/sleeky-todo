@@ -8,12 +8,37 @@ using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
 using Sleeky.Todo.Domain.Entities;
+using Sleeky.Todo.Domain.Exceptions;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Commands.RestoreTodo;
 
 [TestClass]
 public sealed class RestoreTodoCommandHandlerTests
 {
+    [TestMethod]
+    public async Task HandleThrowsNotFoundWhenTodoDoesNotExist()
+    {
+        const string TodoId = "missing-todo";
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        repository
+            .GetByIdAsync(TodoId, true, Arg.Any<CancellationToken>())
+            .Returns((TodoItem?)null);
+        RestoreTodoCommand command = new RestoreTodoCommand(TodoId, 1);
+        RestoreTodoCommandHandler handler = new RestoreTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        TodoNotFoundException exception = (await act.Should()
+            .ThrowAsync<TodoNotFoundException>())
+            .Which;
+        exception.TodoId.Should().Be(TodoId);
+        await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
+            default!,
+            default,
+            default);
+    }
+
     [TestMethod]
     public async Task HandleLoadsDeletedTodoAndReturnsRestoredTodo()
     {
@@ -87,5 +112,53 @@ public sealed class RestoreTodoCommandHandlerTests
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
 
         await act.Should().ThrowAsync<TodoConcurrencyException>();
+    }
+
+    [TestMethod]
+    public async Task HandleRejectsActiveTodoWithoutCallingRestoreRepositoryMethod()
+    {
+        TodoItem todoItem = TestTodoFactory.Create();
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        clock.UtcNow.Returns(TestTodoFactory.Timestamp.AddDays(1));
+        repository
+            .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
+            .Returns(todoItem);
+        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommandHandler handler = new RestoreTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<DomainException>()
+            .WithMessage("Only a deleted TODO can be restored.");
+        await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
+            default!,
+            default,
+            default);
+    }
+
+    [TestMethod]
+    public async Task HandleRejectsTodoAtRetentionBoundaryWithoutCallingRepositoryMethod()
+    {
+        TodoItem todoItem = TestTodoFactory.CreateDeleted();
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        clock.UtcNow.Returns(todoItem.PurgeAt!.Value);
+        repository
+            .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
+            .Returns(todoItem);
+        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommandHandler handler = new RestoreTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<DomainException>()
+            .WithMessage("The TODO retention period has expired.");
+        await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
+            default!,
+            default,
+            default);
     }
 }

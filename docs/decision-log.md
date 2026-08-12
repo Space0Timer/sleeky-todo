@@ -26,3 +26,11 @@ The numeric `version` field is the sole concurrency token; `updatedAt` is not us
 MongoDB mutations atomically filter by TODO ID and expected version, write version `N + 1`, and return the persisted document. A missing match indicates a stale write, which the application represents as `TodoConcurrencyException`. The API will map this known exception to HTTP 409 when ProblemDetails middleware is added.
 
 This design avoids locks and prevents lost updates. Concurrent integration tests verify that exactly one mutation succeeds when two writers submit update, delete, or restore operations using the same version.
+
+## Ninety-day recoverable deletion
+
+“Data should not be permanently lost when deleted” is interpreted as requiring a recoverable soft-delete period. Delete records the UTC deletion time and a purge time exactly 90 days later; it does not remove the MongoDB document. Normal queries exclude deleted records.
+
+Restore is allowed strictly before the purge timestamp and requires the latest version. At the purge boundary the record is expired and cannot be restored. A later retention job will physically remove expired records; that cleanup is intentionally separate from request handling.
+
+Deleting a TODO that is still required by active dependents will be rejected once dependency rules are implemented.

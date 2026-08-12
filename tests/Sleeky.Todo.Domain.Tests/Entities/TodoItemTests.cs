@@ -169,6 +169,20 @@ public sealed class TodoItemTests
     }
 
     [TestMethod]
+    public void RestoreRejectsTimestampBeforeDeletion()
+    {
+        TodoItem item = CreateTodo();
+        DateTimeOffset deletedAt = InitialTimestamp.AddDays(1);
+        item.SoftDelete(deletedAt);
+
+        Action act = () => item.Restore(deletedAt.AddTicks(-1));
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage("A TODO cannot be restored before it was deleted.");
+    }
+
+    [TestMethod]
     public void RestoreRejectsActiveTodo()
     {
         TodoItem item = CreateTodo();
@@ -243,6 +257,31 @@ public sealed class TodoItemTests
             .WithMessage("A positive TODO version is required.");
     }
 
+    [TestMethod]
+    public void RehydrateRejectsIncompleteDeletionState()
+    {
+        Func<TodoItem> act = () => RehydrateWithDeletionState(
+            InitialTimestamp.AddDays(1),
+            null);
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage(
+                "TODO deletion and purge timestamps must either both be set or both be null.");
+    }
+
+    [TestMethod]
+    public void RehydrateRejectsPurgeTimestampAtOrBeforeDeletion()
+    {
+        DateTimeOffset deletedAt = InitialTimestamp.AddDays(1);
+        Func<TodoItem> act = () => RehydrateWithDeletionState(deletedAt, deletedAt);
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage(
+                "A TODO purge timestamp must be later than its deletion timestamp.");
+    }
+
     private static TodoItem CreateTodo(
         string id = "todo-1",
         string name = "Submit Report",
@@ -255,5 +294,27 @@ public sealed class TodoItemTests
             InitialDueDate,
             TodoPriority.High,
             InitialTimestamp);
+    }
+
+    private static TodoItem RehydrateWithDeletionState(
+        DateTimeOffset? deletedAt,
+        DateTimeOffset? purgeAt)
+    {
+        return TodoItem.Rehydrate(
+            "todo-1",
+            "Submit Report",
+            null,
+            InitialDueDate,
+            TodoStatus.NotStarted,
+            TodoPriority.Low,
+            Array.Empty<string>(),
+            null,
+            null,
+            null,
+            1,
+            InitialTimestamp,
+            InitialTimestamp,
+            deletedAt,
+            purgeAt);
     }
 }

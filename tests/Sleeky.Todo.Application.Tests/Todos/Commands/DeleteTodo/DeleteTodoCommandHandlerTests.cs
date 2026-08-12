@@ -15,6 +15,30 @@ namespace Sleeky.Todo.Application.Tests.Todos.Commands.DeleteTodo;
 public sealed class DeleteTodoCommandHandlerTests
 {
     [TestMethod]
+    public async Task HandleThrowsNotFoundWhenTodoDoesNotExist()
+    {
+        const string TodoId = "missing-todo";
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        IClock clock = Substitute.For<IClock>();
+        repository
+            .GetByIdAsync(TodoId, false, Arg.Any<CancellationToken>())
+            .Returns((TodoItem?)null);
+        DeleteTodoCommand command = new DeleteTodoCommand(TodoId, 1);
+        DeleteTodoCommandHandler handler = new DeleteTodoCommandHandler(repository, clock);
+
+        Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
+
+        TodoNotFoundException exception = (await act.Should()
+            .ThrowAsync<TodoNotFoundException>())
+            .Which;
+        exception.TodoId.Should().Be(TodoId);
+        await repository.DidNotReceiveWithAnyArgs().SoftDeleteAsync(
+            default!,
+            default,
+            default);
+    }
+
+    [TestMethod]
     public async Task HandleSoftDeletesWithExpectedVersionAndReturnsDeletedTodo()
     {
         TodoItem todoItem = TestTodoFactory.Create();
