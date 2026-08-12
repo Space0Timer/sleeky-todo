@@ -1,4 +1,5 @@
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
 using Sleeky.Todo.Domain.ValueObjects;
 
@@ -9,6 +10,7 @@ public sealed class TodoItem
     private static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(90);
 
     private readonly List<string> dependencyIds = new List<string>();
+    private readonly List<IDomainEvent> domainEvents = new List<IDomainEvent>();
 
     private TodoItem(
         string id,
@@ -45,6 +47,8 @@ public sealed class TodoItem
 
     public IReadOnlyCollection<string> DependencyIds => dependencyIds.AsReadOnly();
 
+    public IReadOnlyCollection<IDomainEvent> DomainEvents => domainEvents.AsReadOnly();
+
     public RecurrenceSchedule? Recurrence { get; private set; }
 
     public string? SeriesId { get; private set; }
@@ -67,10 +71,15 @@ public sealed class TodoItem
         string? description,
         DateOnly dueDate,
         TodoPriority priority,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        RecurrenceSchedule? recurrence = null,
+        string? seriesId = null,
+        int? occurrenceNumber = null)
     {
         string validatedId = ValidateId(id);
         DateTimeOffset utcCreatedAt = createdAt.ToUniversalTime();
+
+        ValidateRecurrenceState(recurrence, seriesId, occurrenceNumber);
 
         return new TodoItem(
             validatedId,
@@ -78,7 +87,12 @@ public sealed class TodoItem
             description,
             dueDate,
             priority,
-            utcCreatedAt);
+            utcCreatedAt)
+        {
+            Recurrence = recurrence,
+            SeriesId = seriesId,
+            OccurrenceNumber = occurrenceNumber,
+        };
     }
 
     public static TodoItem Rehydrate(
@@ -111,6 +125,7 @@ public sealed class TodoItem
         }
 
         ValidateDeletionState(deletedAt, purgeAt);
+        ValidateRecurrenceState(recurrence, seriesId, occurrenceNumber);
 
         TodoItem todoItem = new TodoItem(
             ValidateId(id),
@@ -196,9 +211,37 @@ public sealed class TodoItem
             return false;
         }
 
+        TodoStatus previousStatus = Status;
+        DateTimeOffset utcUpdatedAt = updatedAt.ToUniversalTime();
         Status = status;
-        UpdatedAt = updatedAt.ToUniversalTime();
+        UpdatedAt = utcUpdatedAt;
+
+        if (previousStatus != TodoStatus.Completed && status == TodoStatus.Completed)
+        {
+            string? nextOccurrenceId = Recurrence is null
+                ? null
+                : Guid.NewGuid().ToString("N");
+            domainEvents.Add(
+                new TodoCompletedDomainEvent(
+                    Id,
+                    SeriesId,
+                    OccurrenceNumber,
+                    nextOccurrenceId,
+                    new TodoCompletionContext(
+                        Name,
+                        Description,
+                        DueDate,
+                        Priority,
+                        Recurrence,
+                        utcUpdatedAt)));
+        }
+
         return true;
+    }
+
+    public void ClearDomainEvents()
+    {
+        domainEvents.Clear();
     }
 
     public void SoftDelete(DateTimeOffset deletedAt)
@@ -280,6 +323,34 @@ public sealed class TodoItem
         {
             throw new DomainException(
                 "A TODO purge timestamp must be later than its deletion timestamp.");
+        }
+    }
+
+    private static void ValidateRecurrenceState(
+        RecurrenceSchedule? recurrence,
+        string? seriesId,
+        int? occurrenceNumber)
+    {
+        if (recurrence is null)
+        {
+            if (seriesId is not null || occurrenceNumber.HasValue)
+            {
+                throw new DomainException(
+                    "A non-recurring TODO cannot belong to a recurrence series.");
+            }
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(seriesId))
+        {
+            throw new DomainException("A recurring TODO requires a series identifier.");
+        }
+
+        if (occurrenceNumber is null or <= 0)
+        {
+            throw new DomainException(
+                "A recurring TODO requires a positive occurrence number.");
         }
     }
 

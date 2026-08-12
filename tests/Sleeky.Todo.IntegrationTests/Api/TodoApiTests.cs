@@ -34,7 +34,9 @@ public sealed class TodoApiTests
             return;
         }
 
-        mongoDbContainer = new MongoDbBuilder("mongo:7.0").Build();
+        mongoDbContainer = new MongoDbBuilder("mongo:7.0")
+            .WithReplicaSet("rs0")
+            .Build();
         await mongoDbContainer.StartAsync(testContext.CancellationToken);
     }
 
@@ -357,6 +359,131 @@ public sealed class TodoApiTests
     }
 
     [TestMethod]
+    public async Task CompletingRecurringTodoCreatesExactlyOneNextOccurrence()
+    {
+        (_, JsonElement prerequisite) = await CreateTodoAsync();
+        string prerequisiteId = GetTodoId(prerequisite);
+        HttpResponseMessage completedPrerequisite = await ChangeStatusAsync(
+            prerequisiteId,
+            TodoStatus.Completed,
+            version: 1);
+        completedPrerequisite.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (_, JsonElement recurring) = await CreateTodoAsync(
+            new RecurrenceRequest
+            {
+                Type = RecurrenceType.Monthly,
+                Interval = 1,
+            });
+        string recurringId = GetTodoId(recurring);
+        string seriesId = recurring.GetProperty("seriesId").GetString()
+            ?? throw new InvalidOperationException("A recurring TODO requires a series ID.");
+        HttpResponseMessage addedDependency = await AddDependencyAsync(
+            recurringId,
+            prerequisiteId,
+            version: 1);
+        addedDependency.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        HttpResponseMessage completion = await ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 2);
+        JsonElement completed = await ReadJsonAsync(completion);
+        string nextOccurrenceId = completed
+            .GetProperty("nextOccurrenceId")
+            .GetString()
+            ?? throw new InvalidOperationException(
+                "A recurring completion requires a next occurrence ID.");
+        HttpResponseMessage nextResponse = await client.GetAsync(
+            $"/api/todos/{nextOccurrenceId}");
+        JsonElement next = await ReadJsonAsync(nextResponse);
+        HttpResponseMessage repeatedCompletion = await ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 3);
+        JsonElement repeated = await ReadJsonAsync(repeatedCompletion);
+
+        completion.StatusCode.Should().Be(HttpStatusCode.OK);
+        completed.GetProperty("version").GetInt64().Should().Be(3);
+        nextResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        next.GetProperty("dueDate").GetString().Should().Be("2026-09-30");
+        next.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.NotStarted);
+        next.GetProperty("seriesId").GetString().Should().Be(seriesId);
+        next.GetProperty("occurrenceNumber").GetInt32().Should().Be(2);
+        next.GetProperty("dependencyIds").GetArrayLength().Should().Be(0);
+        repeatedCompletion.StatusCode.Should().Be(HttpStatusCode.OK);
+        repeated.GetProperty("nextOccurrenceId").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [TestMethod]
+    public async Task FailedNextOccurrenceInsertionRollsBackCompletion()
+    {
+        (_, JsonElement recurring) = await CreateTodoAsync(
+            new RecurrenceRequest
+            {
+                Type = RecurrenceType.Daily,
+                Interval = 1,
+            });
+        string recurringId = GetTodoId(recurring);
+        string seriesId = recurring.GetProperty("seriesId").GetString()
+            ?? throw new InvalidOperationException("A recurring TODO requires a series ID.");
+        IMongoCollection<BsonDocument> collection = GetTodoCollection();
+        BsonDocument duplicateOccurrence = await collection
+            .Find(new BsonDocument("_id", recurringId))
+            .FirstAsync();
+        duplicateOccurrence["_id"] = "preexisting-occurrence";
+        duplicateOccurrence["occurrenceNumber"] = 2;
+        await collection.InsertOneAsync(duplicateOccurrence);
+
+        HttpResponseMessage completion = await ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 1);
+        HttpResponseMessage currentResponse = await client.GetAsync(
+            $"/api/todos/{recurringId}");
+        JsonElement current = await ReadJsonAsync(currentResponse);
+        long seriesCount = await collection.CountDocumentsAsync(
+            new BsonDocument("seriesId", seriesId));
+
+        completion.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        currentResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        current.GetProperty("status").GetInt32()
+            .Should().Be((int)TodoStatus.NotStarted);
+        current.GetProperty("version").GetInt64().Should().Be(1);
+        seriesCount.Should().Be(2);
+    }
+
+    [TestMethod]
+    public async Task ConcurrentRecurringCompletionCreatesOneNextOccurrence()
+    {
+        (_, JsonElement recurring) = await CreateTodoAsync(
+            new RecurrenceRequest
+            {
+                Type = RecurrenceType.Weekly,
+                Interval = 1,
+            });
+        string recurringId = GetTodoId(recurring);
+        string seriesId = recurring.GetProperty("seriesId").GetString()
+            ?? throw new InvalidOperationException("A recurring TODO requires a series ID.");
+
+        Task<HttpResponseMessage> first = ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 1);
+        Task<HttpResponseMessage> second = ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 1);
+        HttpResponseMessage[] responses = await Task.WhenAll(first, second);
+        long seriesCount = await GetTodoCollection().CountDocumentsAsync(
+            new BsonDocument("seriesId", seriesId));
+
+        responses.Select(response => response.StatusCode).Should().BeEquivalentTo(
+            new[] { HttpStatusCode.OK, HttpStatusCode.Conflict });
+        seriesCount.Should().Be(2);
+    }
+
+    [TestMethod]
     public async Task InvalidRequestReturnsPredictableProblemDetails()
     {
         CreateTodoRequest request = new CreateTodoRequest
@@ -381,6 +508,32 @@ public sealed class TodoApiTests
         errors.TryGetProperty("name", out _).Should().BeTrue();
         errors.TryGetProperty("dueDate", out _).Should().BeTrue();
         errors.TryGetProperty("priority", out _).Should().BeTrue();
+    }
+
+    [TestMethod]
+    public async Task InvalidRecurrenceReturnsValidationProblem()
+    {
+        CreateTodoRequest request = new CreateTodoRequest
+        {
+            Name = "Submit report",
+            DueDate = new DateOnly(2026, 8, 31),
+            Priority = TodoPriority.High,
+            Recurrence = new RecurrenceRequest
+            {
+                Type = RecurrenceType.Custom,
+                Interval = 2,
+            },
+        };
+
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/todos",
+            request);
+        JsonElement problem = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        problem.GetProperty("errors")
+            .TryGetProperty("recurrenceUnit", out _)
+            .Should().BeTrue();
     }
 
     [TestMethod]
@@ -532,6 +685,10 @@ public sealed class TodoApiTests
         indexNames.Should().Contain("active_name_normalized_id");
         indexNames.Should().Contain("active_dependency_ids");
         indexNames.Should().Contain("purge_at");
+        indexNames.Should().Contain("unique_series_occurrence");
+        BsonDocument recurrenceIndex = indexes.Single(
+            index => index["name"] == "unique_series_occurrence");
+        recurrenceIndex["unique"].AsBoolean.Should().BeTrue();
     }
 
     private static bool ShouldRunMongoDbTests()
@@ -585,7 +742,17 @@ public sealed class TodoApiTests
         }
     }
 
-    private async Task<(HttpResponseMessage Response, JsonElement Todo)> CreateTodoAsync()
+    private IMongoCollection<BsonDocument> GetTodoCollection()
+    {
+        MongoClient mongoClient = new MongoClient(
+            mongoDbContainer!.GetConnectionString());
+        return mongoClient
+            .GetDatabase(databaseName)
+            .GetCollection<BsonDocument>("todoItems");
+    }
+
+    private async Task<(HttpResponseMessage Response, JsonElement Todo)> CreateTodoAsync(
+        RecurrenceRequest? recurrence = null)
     {
         CreateTodoRequest request = new CreateTodoRequest
         {
@@ -593,6 +760,7 @@ public sealed class TodoApiTests
             Description = "Monthly report",
             DueDate = new DateOnly(2026, 8, 31),
             Priority = TodoPriority.High,
+            Recurrence = recurrence,
         };
         HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/todos",

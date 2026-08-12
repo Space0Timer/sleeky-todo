@@ -1,4 +1,5 @@
 using Sleeky.Todo.Domain.Entities;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Documents;
 
@@ -7,11 +8,6 @@ internal static class TodoDocumentMapper
     public static TodoDocument FromDomain(TodoItem todoItem, long? version = null)
     {
         ArgumentNullException.ThrowIfNull(todoItem);
-
-        if (todoItem.Recurrence is not null)
-        {
-            throw new NotSupportedException("Recurrence persistence has not been implemented.");
-        }
 
         return new TodoDocument
         {
@@ -23,7 +19,15 @@ internal static class TodoDocumentMapper
             Status = todoItem.Status,
             Priority = todoItem.Priority,
             DependencyIds = todoItem.DependencyIds.ToList(),
-            Recurrence = null,
+            Recurrence = todoItem.Recurrence is null
+                ? null
+                : new RecurrenceDocument
+                {
+                    Type = todoItem.Recurrence.Type,
+                    Interval = todoItem.Recurrence.Interval,
+                    Unit = todoItem.Recurrence.Unit,
+                    AnchorDay = todoItem.Recurrence.AnchorDay,
+                },
             SeriesId = todoItem.SeriesId,
             OccurrenceNumber = todoItem.OccurrenceNumber,
             Version = version ?? todoItem.Version,
@@ -38,10 +42,13 @@ internal static class TodoDocumentMapper
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        if (document.Recurrence is not null)
-        {
-            throw new NotSupportedException("Recurrence persistence has not been implemented.");
-        }
+        RecurrenceSchedule? recurrence = document.Recurrence is null
+            ? null
+            : RecurrenceSchedule.Rehydrate(
+                document.Recurrence.Type,
+                document.Recurrence.Interval,
+                document.Recurrence.Unit,
+                document.Recurrence.AnchorDay);
 
         return TodoItem.Rehydrate(
             document.Id,
@@ -51,7 +58,7 @@ internal static class TodoDocumentMapper
             document.Status,
             document.Priority,
             document.DependencyIds,
-            null,
+            recurrence,
             document.SeriesId,
             document.OccurrenceNumber,
             document.Version,

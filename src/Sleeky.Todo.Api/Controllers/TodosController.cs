@@ -62,7 +62,10 @@ public sealed class TodosController : ControllerBase
             request.Name,
             request.Description,
             request.DueDate,
-            request.Priority);
+            request.Priority,
+            request.Recurrence?.Type,
+            request.Recurrence?.Interval,
+            request.Recurrence?.Unit);
         TodoDto todo = await sender.Send(command, cancellationToken);
 
         return CreatedAtAction(nameof(Get), new { id = todo.Id }, todo);

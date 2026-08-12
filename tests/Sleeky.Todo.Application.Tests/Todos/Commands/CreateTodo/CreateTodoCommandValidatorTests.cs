@@ -88,6 +88,63 @@ public sealed class CreateTodoCommandValidatorTests
             failure => failure.PropertyName == nameof(CreateTodoCommand.Priority));
     }
 
+    [TestMethod]
+    public void ValidateAcceptsCustomRecurrence()
+    {
+        CreateTodoCommand command = new CreateTodoCommand(
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Custom,
+            3,
+            RecurrenceUnit.Weeks);
+
+        ValidationResult result = validator.Validate(command);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void ValidateRejectsInvalidRecurrenceInputs()
+    {
+        CreateTodoCommand missingUnit = new CreateTodoCommand(
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Custom,
+            2);
+        CreateTodoCommand zeroInterval = new CreateTodoCommand(
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Custom,
+            0,
+            RecurrenceUnit.Days);
+        CreateTodoCommand nonStandardInterval = new CreateTodoCommand(
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Daily,
+            2);
+        CreateTodoCommand mismatchedUnit = new CreateTodoCommand(
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Weekly,
+            1,
+            RecurrenceUnit.Months);
+
+        validator.Validate(missingUnit).IsValid.Should().BeFalse();
+        validator.Validate(zeroInterval).IsValid.Should().BeFalse();
+        validator.Validate(nonStandardInterval).IsValid.Should().BeFalse();
+        validator.Validate(mismatchedUnit).IsValid.Should().BeFalse();
+    }
+
     private static CreateTodoCommand CreateCommand(
         string name = "Submit report",
         string? description = "Monthly report",

@@ -5,7 +5,8 @@ React, and TypeScript. The current vertical slice supports creating, retrieving,
 updating, soft-deleting, and restoring TODOs with validation and optimistic
 concurrency. The list API supports filters, scopes, deterministic cursor
 pagination, and blocked-state projection. Dependency mutations enforce graph
-integrity, blocked status transitions, and dependency-aware deletion.
+integrity, blocked status transitions, and dependency-aware deletion. Recurring
+completion atomically creates the next scheduled occurrence.
 
 ## Architecture
 
@@ -37,10 +38,10 @@ and trade-offs.
 
 ## Current status
 
-The CRUD, list-query, and dependency-rule slices are implemented through the
-domain, application, MongoDB, and HTTP API layers. Dependency edges can be
-added and removed, cycles are rejected, and blocked TODOs cannot enter
-`InProgress` or `Completed`.
+The CRUD, list-query, dependency-rule, and recurrence slices are implemented
+through the domain, application, MongoDB, and HTTP API layers. Recurrence
+supports daily, weekly, monthly, and custom day/week/month intervals with
+monthly anchor preservation.
 
 ## Prerequisites
 
@@ -102,7 +103,8 @@ Application handlers depend on `ITodoRepository`. Infrastructure implements that
 At startup, Infrastructure initializes compound active-record indexes for due
 date, priority, status, and normalized-name sorting, plus the retained
 soft-delete `purgeAt` index and an active-dependency lookup index. `GET /health`
-verifies that MongoDB can answer a ping.
+verifies that MongoDB can answer a ping. A unique partial series/occurrence index
+prevents duplicate recurring occurrences.
 
 The live repository and API integration tests require Docker and are opt-in.
 Each API test uses a dedicated database and drops only that database during
@@ -147,6 +149,12 @@ already linked. Direct and transitive cycles are rejected. A TODO is blocked
 when any dependency is missing, deleted, archived, or incomplete; blocked TODOs
 cannot move to `InProgress` or `Completed`. A TODO required by an active,
 non-archived dependent cannot be deleted.
+
+`POST /api/todos` accepts an optional `recurrence` object with `type`,
+`interval`, and, for custom schedules, `unit`. Completing a recurring TODO
+through the status endpoint returns `nextOccurrenceId`. The completed update
+and next-occurrence insert commit in one MongoDB transaction; the next TODO
+copies the schedule and editable details but starts without dependencies.
 
 ## Run the API
 
@@ -212,6 +220,20 @@ A deleted TODO can be restored before `purgeAt` by supplying its latest version.
 
 Permanent cleanup after `purgeAt` remains a later step. Deletion is rejected
 while an active, non-archived TODO depends on the target.
+
+## Recurring completion
+
+Recurring schedules calculate from the scheduled due date, not the day on which
+the TODO is completed. Monthly schedules retain their original anchor: a
+January 31 schedule advances to February's final day and then returns to March
+31. Leap days are used whenever the target year permits them.
+
+Each series has a stable ID and a one-based occurrence number. Entering
+`Completed` raises an in-process completion event inside a MongoDB transaction.
+The current occurrence update and next occurrence insert either both commit or
+both roll back. Optimistic version matching and the unique
+`seriesId + occurrenceNumber` index ensure concurrent requests create exactly
+one next occurrence.
 
 ## Build everything
 
