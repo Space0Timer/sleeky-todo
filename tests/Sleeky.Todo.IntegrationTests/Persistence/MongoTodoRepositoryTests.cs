@@ -40,7 +40,7 @@ public sealed class MongoTodoRepositoryTests
             return;
         }
 
-        mongoDbContainer = new MongoDbBuilder("mongo:8.0").Build();
+        mongoDbContainer = new MongoDbBuilder("mongo:7.0").Build();
         await mongoDbContainer.StartAsync(testContext.CancellationToken);
     }
 
@@ -131,6 +131,143 @@ public sealed class MongoTodoRepositoryTests
         document["createdAt"].BsonType.Should().Be(BsonType.DateTime);
     }
 
+    [TestMethod]
+    public async Task ConcurrentUpdatesWithSameVersionAllowExactlyOneWriter()
+    {
+        TodoItem todoItem = CreateTodo();
+        await repository.AddAsync(todoItem);
+        TodoItem firstWriter = await GetRequiredTodoAsync(todoItem.Id);
+        TodoItem secondWriter = await GetRequiredTodoAsync(todoItem.Id);
+        firstWriter.UpdateDetails(
+            "First writer",
+            null,
+            todoItem.DueDate,
+            TodoPriority.Low,
+            Timestamp.AddHours(1));
+        secondWriter.UpdateDetails(
+            "Second writer",
+            null,
+            todoItem.DueDate,
+            TodoPriority.Medium,
+            Timestamp.AddHours(2));
+
+        TodoItem?[] results = await Task.WhenAll(
+            repository.UpdateAsync(firstWriter, todoItem.Version),
+            repository.UpdateAsync(secondWriter, todoItem.Version));
+
+        results.Count(result => result is not null).Should().Be(1);
+        results.Count(result => result is null).Should().Be(1);
+        TodoItem winningResult = results.Single(result => result is not null)
+            ?? throw new InvalidOperationException("A concurrent update should have succeeded.");
+        winningResult.Version.Should().Be(2);
+        TodoItem persistedTodo = await GetRequiredTodoAsync(todoItem.Id);
+        persistedTodo.Version.Should().Be(2);
+        persistedTodo.Name.Should().BeOneOf("First writer", "Second writer");
+    }
+
+    [TestMethod]
+    public async Task ConcurrentUpdateAndDeleteWithSameVersionAllowExactlyOneMutation()
+    {
+        TodoItem todoItem = CreateTodo();
+        await repository.AddAsync(todoItem);
+        TodoItem updateWriter = await GetRequiredTodoAsync(todoItem.Id);
+        TodoItem deleteWriter = await GetRequiredTodoAsync(todoItem.Id);
+        updateWriter.UpdateDetails(
+            "Updated name",
+            todoItem.Description,
+            todoItem.DueDate,
+            todoItem.Priority,
+            Timestamp.AddHours(1));
+        deleteWriter.SoftDelete(Timestamp.AddHours(2));
+
+        Task<TodoItem?> updateTask = repository.UpdateAsync(
+            updateWriter,
+            todoItem.Version);
+        Task<TodoItem?> deleteTask = repository.SoftDeleteAsync(
+            deleteWriter,
+            todoItem.Version);
+        TodoItem?[] results = await Task.WhenAll(updateTask, deleteTask);
+
+        results.Count(result => result is not null).Should().Be(1);
+        results.Count(result => result is null).Should().Be(1);
+        TodoItem persistedTodo = await GetRequiredTodoAsync(
+            todoItem.Id,
+            includeDeleted: true);
+        persistedTodo.Version.Should().Be(2);
+        if (updateTask.Result is not null)
+        {
+            persistedTodo.Name.Should().Be("Updated name");
+            persistedTodo.DeletedAt.Should().BeNull();
+        }
+        else
+        {
+            persistedTodo.DeletedAt.Should().NotBeNull();
+        }
+    }
+
+    [TestMethod]
+    public async Task ConcurrentRestoresWithSameVersionAllowExactlyOneWriter()
+    {
+        TodoItem todoItem = CreateTodo();
+        await repository.AddAsync(todoItem);
+        TodoItem deleteWriter = await GetRequiredTodoAsync(todoItem.Id);
+        deleteWriter.SoftDelete(Timestamp.AddHours(1));
+        TodoItem deletedTodo = await repository.SoftDeleteAsync(
+            deleteWriter,
+            todoItem.Version)
+            ?? throw new InvalidOperationException("The setup delete should have succeeded.");
+        TodoItem firstWriter = await GetRequiredTodoAsync(
+            todoItem.Id,
+            includeDeleted: true);
+        TodoItem secondWriter = await GetRequiredTodoAsync(
+            todoItem.Id,
+            includeDeleted: true);
+        firstWriter.Restore(Timestamp.AddHours(2));
+        secondWriter.Restore(Timestamp.AddHours(3));
+
+        TodoItem?[] results = await Task.WhenAll(
+            repository.RestoreAsync(firstWriter, deletedTodo.Version),
+            repository.RestoreAsync(secondWriter, deletedTodo.Version));
+
+        results.Count(result => result is not null).Should().Be(1);
+        results.Count(result => result is null).Should().Be(1);
+        TodoItem persistedTodo = await GetRequiredTodoAsync(todoItem.Id);
+        persistedTodo.Version.Should().Be(3);
+        persistedTodo.DeletedAt.Should().BeNull();
+        persistedTodo.PurgeAt.Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task MutationRejectsDomainObjectAtDifferentVersion()
+    {
+        TodoItem todoItem = CreateTodo();
+        await repository.AddAsync(todoItem);
+        TodoItem persistedVersionTwo = TodoItem.Rehydrate(
+            todoItem.Id,
+            todoItem.Name,
+            todoItem.Description,
+            todoItem.DueDate,
+            todoItem.Status,
+            todoItem.Priority,
+            todoItem.DependencyIds,
+            todoItem.Recurrence,
+            todoItem.SeriesId,
+            todoItem.OccurrenceNumber,
+            2,
+            todoItem.CreatedAt,
+            todoItem.UpdatedAt,
+            todoItem.DeletedAt,
+            todoItem.PurgeAt);
+
+        TodoItem? result = await repository.UpdateAsync(
+            persistedVersionTwo,
+            expectedVersion: 1);
+
+        result.Should().BeNull();
+        TodoItem storedTodo = await GetRequiredTodoAsync(todoItem.Id);
+        storedTodo.Version.Should().Be(1);
+    }
+
     private static TodoItem CreateTodo()
     {
         return TodoItem.Create(
@@ -148,5 +285,13 @@ public sealed class MongoTodoRepositoryTests
             Environment.GetEnvironmentVariable("RUN_MONGODB_INTEGRATION_TESTS"),
             "true",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<TodoItem> GetRequiredTodoAsync(
+        string id,
+        bool includeDeleted = false)
+    {
+        return await repository.GetByIdAsync(id, includeDeleted)
+            ?? throw new InvalidOperationException($"TODO '{id}' should exist for the test.");
     }
 }
