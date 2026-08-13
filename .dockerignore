@@ -1,0 +1,28 @@
+# Build output and dependencies are produced inside the image rather than
+# copied from the host, which keeps the build reproducible and the context
+# small.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.yarn/
+**/playwright-report/
+**/test-results/
+artifacts/
+
+.git/
+.github/
+.agents/
+.claude/
+.config/
+.vs/
+.vscode/
+.idea/
+
+# The API image is published on its own; nothing here contributes to it.
+tests/
+docs/
+docker/
+docker-compose.yml
+**/*.user
+**/.DS_Store
