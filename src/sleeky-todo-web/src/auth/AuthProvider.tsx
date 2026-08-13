@@ -46,6 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void loadSession()
   }, [loadSession])
 
+  const endSession = useCallback(() => {
+    setAntiforgeryToken(null)
+    setUser(anonymous)
+  }, [])
+
   const signOut = useCallback(async () => {
     try {
       await logout()
@@ -58,12 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       displayName: user.displayName,
+      endSession,
       isAuthenticated: user.isAuthenticated,
       isLoading,
       signOut,
       userId: user.userId,
     }),
-    [isLoading, signOut, user],
+    [endSession, isLoading, signOut, user],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

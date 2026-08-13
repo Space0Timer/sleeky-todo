@@ -64,6 +64,37 @@ test('a mutation carries an antiforgery header', async ({ page }) => {
   expect(headers['x-csrf-token']).toBeTruthy()
 })
 
+test('a mutation still succeeds after signing out and back in', async ({
+  page,
+}) => {
+  await signIn(page, 'alice')
+  await signOut(page)
+  await signIn(page, 'alice')
+
+  // Antiforgery tokens are bound to the authenticated identity, so a token
+  // kept from before the sign-out would be rejected. Creating a TODO only
+  // succeeds if the client requested a new one for the new session.
+  await createTodo(page, 'Created after re-authentication')
+})
+
+test('an expired session sends the next mutation to the login page', async ({
+  context,
+  page,
+}) => {
+  await signIn(page, 'alice')
+
+  await context.clearCookies({ name: 'sleeky-session' })
+
+  const form = page.getByRole('group', { name: 'Create a TODO' })
+  await form.getByLabel('Name').fill('Expired session TODO')
+  await form.getByLabel('Due date').fill('2026-08-31')
+  await form.getByLabel('Priority').selectOption({ label: 'High' })
+  await form.getByRole('button', { name: 'Add TODO' }).click()
+
+  await expect(page).toHaveURL(/\/login$/)
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
+})
+
 test('two users see separate TODO lists', async ({ browser }) => {
   const aliceContext = await browser.newContext()
   const bobContext = await browser.newContext()

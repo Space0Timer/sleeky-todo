@@ -14,6 +14,7 @@ import {
   restoreTodo,
   updateTodo,
 } from './api/todos.ts'
+import { useAuth } from './auth/AuthContext.ts'
 import { CreateTodoForm } from './components/CreateTodoForm.tsx'
 import { TodoCard } from './components/TodoCard.tsx'
 import { UserMenu } from './components/UserMenu.tsx'
@@ -71,6 +72,7 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const navigate = useNavigate()
+  const { endSession } = useAuth()
 
   const captureError = useCallback((caught: unknown, affectedTodoId?: string) => {
     const apiError = caught instanceof ApiError
@@ -81,8 +83,11 @@ function App() {
       })
 
     // An expired or missing session is not a page-level error: the only useful
-    // response is to start the login flow again.
+    // response is to start the login flow again. The client's own session state
+    // has to be dropped first, or the login route sees a still-authenticated
+    // user and sends it straight back to a page every request now rejects.
     if (apiError.kind === 'unauthorized') {
+      endSession()
       void navigate('/login', { replace: true })
       return
     }
@@ -92,7 +97,7 @@ function App() {
       kind: apiError.kind,
       problem: apiError.problem,
     })
-  }, [navigate])
+  }, [endSession, navigate])
 
   const loadTodo = useCallback(async (id: string, quiet = false): Promise<Todo | null> => {
     try {
