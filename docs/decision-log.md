@@ -237,17 +237,111 @@ index on `seriesId + occurrenceNumber` is the second idempotency boundary.
 Concurrent completion therefore produces one committed completion and next
 occurrence, while the stale request returns 409.
 
-## Authentication outside the current scope
+## Cookie session with OIDC login
 
-The first vertical slice has no authentication or authorization. Adding a
-partial identity model before user ownership and access requirements are known
-would create misleading security boundaries. Until authentication is designed,
-the API is intended for local development only and must not be exposed publicly.
+Authentication is designed as OpenID Connect for login and an encrypted
+ASP.NET Core cookie for the application session. Until that slice is
+implemented the API still has no authentication and must not be exposed
+publicly.
 
-When authentication is added, TODO ownership, authorization rules, API security
-schemes, and test isolation by user must be designed together.
+Browser-held tokens were rejected. Any access or refresh token reachable from
+JavaScript is exposed to cross-site scripting, and client-side refresh adds
+rotation and storage concerns that a server-side session already solves. The
+React client therefore receives no access, ID, or refresh token, and no gateway
+or token-relay tier is introduced.
+
+The cookie handler is registered as the default challenge scheme and OpenID
+Connect is challenged only by the dedicated login endpoint. This is recorded
+because the intuitive configuration produces the opposite behavior: with
+OpenID Connect as the default challenge, an unauthenticated `fetch` receives a
+redirect to the provider rather than `401`, and the failure surfaces in the
+client as an opaque cross-origin navigation instead of a status code the client
+can act on.
+
+Sessions expire after eight hours and slide on use. Production deployments must
+persist Data Protection keys so sessions survive restarts and stay valid across
+API instances.
+
+## Internal user identity separate from the OIDC subject
+
+A user document maps the provider-owned `issuer` and `subject` pair to an
+internal `Guid` user ID, with a unique index on that pair. The OIDC subject
+remains a string, consistent with the identifier policy above, while ownership
+and indexing use the same binary UUID representation as every other
+backend-owned identifier.
+
+The indirection keeps provider identifiers out of TODO documents. Changing
+identity provider, or running more than one, becomes a mapping change rather
+than a data migration of every owned record.
+
+First login inserts the mapping, so two concurrent callbacks for a new user can
+race. The unique index is the authority: the losing insert catches the duplicate
+key error and re-reads the winner rather than failing the login.
+
+## Ownership enforced in the persistence boundary
+
+Each TODO stores an `OwnerId`, and the owner predicate is applied inside the
+shared repository and list-reader filters rather than added by each handler.
+Threading an owner argument through every query was rejected: it makes every
+current and future call site a place where the filter can be omitted, and an
+omission is a cross-tenant data leak rather than a visible bug. Handlers cannot
+forget a filter they never supply.
+
+The repository refuses to operate without an authenticated user. The retention
+purge path is the deliberate exception, since it is maintenance work that spans
+owners.
+
+Requests for another user's TODO return `404` rather than `403`, so the response
+does not confirm that the identifier exists.
+
+Sort and lookup indexes take `ownerId` as their leading key because every query
+now filters on it first. The index initializer only creates indexes, so the
+superseded index names are dropped explicitly before creation; otherwise an
+existing deployment keeps unused indexes that still cost write time. Existing
+TODO documents predate `OwnerId` and cannot be attributed to a user, so
+disposable local data is recreated rather than backfilled.
+
+## Application-only logout
+
+Logout deletes the application cookie and returns `204`. The provider's
+end-session endpoint is deliberately not called.
+
+Provider logout requires an `id_token_hint`, which would mean persisting the ID
+token in the authentication ticket purely to support sign-out, and a `fetch`
+cannot follow a redirect into a provider logout page regardless. The accepted
+trade-off is that the provider session can outlive the application session, so a
+login immediately after logout may complete without a new credential prompt.
+True single logout is a later decision if shared-device use is ever required.
+
+## Antiforgery as a global requirement
+
+Cookie authentication reintroduces cross-site request forgery, so state-changing
+requests carry an antiforgery token in a request header, validated by a global
+filter. Per-endpoint attributes were rejected for the same reason as per-handler
+ownership filters: an unprotected mutation should require a deliberate opt-out
+rather than a remembered opt-in.
+
+Antiforgery tokens are bound to the authenticated identity, so a token obtained
+before login fails validation afterwards. The client refreshes its token on
+startup, after login, and after logout. The antiforgery cookie may be readable
+by JavaScript; it is not an authentication credential, and the session cookie
+remains HttpOnly.
+
+## Local identity provider for development and browser tests
+
+Backend integration tests use a Testing-only authentication handler that stamps
+a configurable user ID claim. It exists only in the test host and is never a
+production bypass. Because every existing API test becomes unauthenticated the
+moment the controller requires authorization, this handler is built first in the
+slice rather than last.
+
+Playwright drives the real stack, so a test-only handler is not sufficient
+there. Development and browser tests run against a local provider in Compose
+with seeded users, which also keeps the two-user isolation test honest. The
+production provider then differs only by configuration.
 
 ## Deferred decisions
 
-Retention cleanup scheduling and production authentication remain deferred
-until their corresponding vertical slices.
+Retention cleanup scheduling remains deferred until its vertical slice.
+Selecting the production identity provider is the remaining authentication
+decision and is now a configuration choice rather than a design one.

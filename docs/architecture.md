@@ -40,6 +40,103 @@ This avoids loading an unbounded collection, but it also means TODOs beyond the
 first 100 candidates cannot currently be selected. A server-side dependency
 search endpoint is required before removing that limitation.
 
+## Authentication and session boundary
+
+The authentication slice is designed but not yet implemented. This section
+records the boundary that slice must produce so the ownership, transport, and
+test decisions stay consistent while it is built.
+
+Login uses OpenID Connect, and the application session is an ASP.NET Core
+encrypted cookie. The React client never receives or stores an access, ID, or
+refresh token:
+
+```text
+React /login
+  -> GET /api/auth/login
+  -> OIDC provider
+  -> /signin-oidc
+  -> resolve or create the internal user
+  -> encrypted HttpOnly session cookie
+  -> redirect to a validated local return URL
+```
+
+The cookie handler is both the default authentication scheme and the default
+challenge scheme; OpenID Connect is challenged explicitly and only by
+`GET /api/auth/login`. The challenge scheme decides what an unauthenticated API
+request receives, so this is a functional choice rather than a stylistic one.
+With OpenID Connect as the default challenge, a client `fetch` would be answered
+with a redirect to the provider instead of a status code. The cookie handler's
+redirect events are therefore replaced so API requests receive `401` and `403`
+directly, and the client treats `401` as "start the login flow" rather than
+following a cross-origin redirect it cannot complete.
+
+The session cookie carries a minimal encrypted ticket: the internal user ID, a
+display name, and authentication metadata. Provider tokens are not saved into
+the ticket, the browser, or any client-readable storage.
+
+### Development callback routing
+
+The OpenID Connect handler derives its `redirect_uri` from the incoming request,
+and its correlation cookie is written for the origin the browser is using. In
+development the browser runs on the Vite origin while the API listens on its own
+HTTPS port, so the callback paths must be proxied alongside `/api` and `/health`
+and the API must observe the client host rather than its own. Without both, the
+provider returns the browser to the API origin, where the correlation cookie
+does not exist and the post-login redirect lands outside the client application.
+
+### Antiforgery
+
+A cookie-authenticated API is exposed to cross-site request forgery, so
+state-changing requests carry an antiforgery token in a request header.
+Validation is registered as a global filter rather than per endpoint: leaving a
+mutation unprotected should require a deliberate opt-out instead of a remembered
+opt-in.
+
+Antiforgery tokens are bound to the authenticated identity, so a token issued
+before login fails validation after it. The client therefore refreshes its token
+whenever authentication state changes: on startup, after login completes, and
+after logout. The antiforgery cookie may be readable by JavaScript; the session
+cookie remains HttpOnly and is the only authentication credential.
+
+### Logout
+
+Logout validates the antiforgery token, deletes the application cookie, and
+returns `204`. It deliberately does not call the provider's end-session
+endpoint, so the provider session can outlive the application session and a
+subsequent login may complete without a new credential prompt. A `fetch` cannot
+follow a redirect into a provider logout page in any case, so the client clears
+its own state and navigates to `/login` itself.
+
+## Ownership boundary
+
+Every TODO carries an `OwnerId` holding the internal user ID, persisted as a
+standard BSON UUID like the other backend-owned identifiers. Application code
+reads the current user through an `ICurrentUser` abstraction; handlers never
+touch `HttpContext`.
+
+Ownership is enforced where the query is built rather than at each call site.
+Infrastructure injects `ICurrentUser` into the repository and list reader and
+applies the owner predicate inside the shared identifier, mutation, and list
+filters, so reads, existence checks, batch loads, dependency lookups, graph
+traversal, active-dependent checks, mutations, and cursor pages are scoped by
+construction. A future query cannot omit the filter by forgetting it, because no
+handler supplies it. The repository refuses to run without an authenticated
+user; the retention purge path is the deliberate exception, because it is a
+maintenance operation that spans owners.
+
+A TODO belonging to another user is reported as `404` rather than `403`, so the
+response does not disclose that the identifier exists.
+
+Sort and lookup indexes gain `ownerId` as their leading key, since every query
+now filters on it before any scope, sort, or dependency term. The retention
+`purgeAt` index stays owner-independent to match the purge path. The index
+initializer creates indexes but does not remove superseded ones, so the
+replaced index names are dropped explicitly before creation; otherwise an
+existing deployment would retain unused indexes that still cost write time.
+
+Recurring occurrences inherit the completed occurrence's owner through the
+domain entity, so the transactional insert requires no separate ownership rule.
+
 ## Persistence boundary
 
 Application handlers depend on the public `ITodoRepository` abstraction. Infrastructure registers `MongoTodoRepository` as its implementation:
@@ -252,8 +349,15 @@ as exceptions; the global exception handler emits the single Error event for an
 unexpected exception with its trace ID, method, and path, while its HTTP 500
 completion is a Warning.
 
+Authenticated request events are enriched with the internal user ID so audit
+events can be attributed without a second lookup. The authentication slice adds
+events for successful login, failed login, logout, and first-time user creation.
+
 Logging excludes request bodies, TODO descriptions, cursor query values, and
-MongoDB connection strings. Structured events use stable event IDs and named
+MongoDB connection strings. It also excludes provider tokens, cookie values,
+client secrets, antiforgery tokens, and the raw OIDC subject, because the
+internal user ID already identifies the actor without carrying a provider
+credential into the log stream. Structured events use stable event IDs and named
 properties rather than interpolated payloads. Code uses direct typed logger calls
 such as `this.logger.LogInformation(eventId, template, values)` so the emitting
 class and event shape remain explicit without provider-specific APIs.
