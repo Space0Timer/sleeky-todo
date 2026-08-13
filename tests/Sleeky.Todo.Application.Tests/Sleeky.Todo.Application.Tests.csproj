@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="coverlet.collector" PrivateAssets="all" />
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="MSTest" />
