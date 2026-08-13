@@ -9,4 +9,6 @@ public sealed class MongoDbSettings
     public string DatabaseName { get; init; } = string.Empty;
 
     public string TodoItemsCollectionName { get; init; } = "todoItems";
+
+    public string UsersCollectionName { get; init; } = "users";
 }

@@ -6,6 +6,7 @@ namespace Sleeky.Todo.Domain.Events;
 public sealed record TodoCompletionContext
 {
     public TodoCompletionContext(
+        Guid ownerId,
         string name,
         string? description,
         DateOnly scheduledDueDate,
@@ -13,6 +14,7 @@ public sealed record TodoCompletionContext
         RecurrenceSchedule? recurrence,
         DateTimeOffset completedAt)
     {
+        OwnerId = ownerId;
         Name = name;
         Description = description;
         ScheduledDueDate = scheduledDueDate;
@@ -20,6 +22,8 @@ public sealed record TodoCompletionContext
         Recurrence = recurrence;
         CompletedAt = completedAt;
     }
+
+    public Guid OwnerId { get; }
 
     public string Name { get; }
 

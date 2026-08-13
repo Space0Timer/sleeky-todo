@@ -1,5 +1,6 @@
 using MediatR;
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 using Sleeky.Todo.Api.Contracts.Todos;
@@ -17,6 +18,7 @@ using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 namespace Sleeky.Todo.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/todos")]
 public sealed class TodosController : ControllerBase
 {

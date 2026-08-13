@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence;
@@ -38,6 +39,9 @@ public static class InfrastructureServiceCollectionExtensions
             .Validate(
                 settings => !string.IsNullOrWhiteSpace(settings.TodoItemsCollectionName),
                 $"{MongoDbSettings.SectionName}:TodoItemsCollectionName is required.")
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.UsersCollectionName),
+                $"{MongoDbSettings.SectionName}:UsersCollectionName is required.")
             .ValidateOnStart();
 
         services.AddSingleton<IMongoClient>(serviceProvider =>
@@ -62,6 +66,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITodoTransaction, MongoTodoTransaction>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
+        services.AddScoped<IUserDirectory, MongoUserDirectory>();
         services.AddHostedService<MongoDbEnumStorageMigrator>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services

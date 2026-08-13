@@ -30,6 +30,7 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
             1,
             TestTodoFactory.CreateId("todo-2"),
             new TodoCompletionContext(
+                TestTodoFactory.OwnerId,
                 "Submit report",
                 "Monthly report",
                 TestTodoFactory.DueDate,
@@ -68,6 +69,7 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
             null,
             null,
             new TodoCompletionContext(
+                TestTodoFactory.OwnerId,
                 "Submit report",
                 null,
                 TestTodoFactory.DueDate,

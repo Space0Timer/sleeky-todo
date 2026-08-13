@@ -11,8 +11,28 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Indexes;
 
 internal sealed class MongoDbIndexInitializer : IHostedService
 {
-    private readonly IMongoCollection<TodoDocument> collection;
+    private const int IndexNotFoundErrorCode = 27;
+    private const string IndexNameField = "name";
+    private const int NamespaceNotFoundErrorCode = 26;
+
+    /// <summary>
+    /// Index names replaced by their owner-scoped equivalents. Index creation
+    /// never removes a previous definition, so an existing deployment would
+    /// otherwise keep paying write cost for indexes no query can use.
+    /// </summary>
+    private static readonly string[] SupersededTodoIndexNames =
+    [
+        "active_due_date_id",
+        "active_priority_id",
+        "active_status_id",
+        "active_name_normalized_id",
+        "active_dependency_ids",
+        "unique_series_occurrence",
+    ];
+
     private readonly ILogger<MongoDbIndexInitializer> logger;
+    private readonly IMongoCollection<TodoDocument> todoItems;
+    private readonly IMongoCollection<UserDocument> users;
 
     public MongoDbIndexInitializer(
         IMongoDatabase database,
@@ -23,62 +43,93 @@ internal sealed class MongoDbIndexInitializer : IHostedService
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
 
-        this.collection = database.GetCollection<TodoDocument>(
+        this.todoItems = database.GetCollection<TodoDocument>(
             options.Value.TodoItemsCollectionName);
+        this.users = database.GetCollection<UserDocument>(
+            options.Value.UsersCollectionName);
         this.logger = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        CreateIndexModel<TodoDocument>[] indexes =
+        await DropSupersededTodoIndexesAsync(cancellationToken);
+
+        CreateIndexModel<TodoDocument>[] todoIndexes = BuildTodoIndexes();
+        _ = await this.todoItems.Indexes.CreateManyAsync(
+            todoIndexes,
+            cancellationToken: cancellationToken);
+
+        CreateIndexModel<UserDocument>[] userIndexes = BuildUserIndexes();
+        _ = await this.users.Indexes.CreateManyAsync(
+            userIndexes,
+            cancellationToken: cancellationToken);
+
+        this.logger.LogInformation(
+            2001,
+            "Initialized {TodoIndexCount} MongoDB TODO indexes and {UserIndexCount} user indexes",
+            todoIndexes.Length,
+            userIndexes.Length);
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    private static CreateIndexModel<TodoDocument>[] BuildTodoIndexes()
+    {
+        IndexKeysDefinitionBuilder<TodoDocument> keys =
+            Builders<TodoDocument>.IndexKeys;
+
+        return
         [
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys
+                keys.Ascending(todo => todo.OwnerId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.DueDate)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "active_due_date_id",
+                    Name = "owner_active_due_date_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys
+                keys.Ascending(todo => todo.OwnerId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.Priority)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "active_priority_id",
+                    Name = "owner_active_priority_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys
+                keys.Ascending(todo => todo.OwnerId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.Status)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "active_status_id",
+                    Name = "owner_active_status_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys
+                keys.Ascending(todo => todo.OwnerId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.NameNormalized)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "active_name_normalized_id",
+                    Name = "owner_active_name_normalized_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys
+                keys.Ascending(todo => todo.OwnerId)
                     .Ascending(todo => todo.DependencyIds)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.Status),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "active_dependency_ids",
+                    Name = "owner_active_dependency_ids",
                 }),
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys.Ascending(todo => todo.PurgeAt),
+                keys.Ascending(todo => todo.PurgeAt),
                 new CreateIndexOptions<TodoDocument>
                 {
                     Name = "purge_at",
@@ -87,12 +138,12 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                         BsonType.DateTime),
                 }),
             new CreateIndexModel<TodoDocument>(
-                Builders<TodoDocument>.IndexKeys
+                keys.Ascending(todo => todo.OwnerId)
                     .Ascending(todo => todo.SeriesId)
                     .Ascending(todo => todo.OccurrenceNumber),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "unique_series_occurrence",
+                    Name = "owner_unique_series_occurrence",
                     Unique = true,
                     PartialFilterExpression = Builders<TodoDocument>.Filter.Type(
                         todo => todo.SeriesId,
@@ -102,18 +153,80 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                             BsonType.Int32),
                 }),
         ];
-
-        _ = await this.collection.Indexes.CreateManyAsync(
-            indexes,
-            cancellationToken: cancellationToken);
-        this.logger.LogInformation(
-            2001,
-            "Initialized {IndexCount} MongoDB TODO indexes",
-            indexes.Length);
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    private static CreateIndexModel<UserDocument>[] BuildUserIndexes()
     {
-        return Task.CompletedTask;
+        return
+        [
+            new CreateIndexModel<UserDocument>(
+                Builders<UserDocument>.IndexKeys
+                    .Ascending(user => user.Issuer)
+                    .Ascending(user => user.Subject),
+                new CreateIndexOptions<UserDocument>
+                {
+                    Name = "unique_user_issuer_subject",
+                    Unique = true,
+                }),
+        ];
+    }
+
+    private async Task<HashSet<string>> ListTodoIndexNamesAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using IAsyncCursor<BsonDocument> cursor = await this.todoItems.Indexes
+                .ListAsync(cancellationToken);
+            List<BsonDocument> indexes = await cursor.ToListAsync(cancellationToken);
+
+            return indexes
+                .Select(index => index
+                    .GetValue(IndexNameField, BsonString.Empty)
+                    .AsString)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        catch (MongoCommandException exception)
+            when (exception.Code == NamespaceNotFoundErrorCode)
+        {
+            // A collection that does not exist yet carries no superseded index.
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Reads the existing index names once rather than issuing a drop per
+    /// superseded name, so a started instance does not pay a failed command for
+    /// every index that earlier runs already removed.
+    /// </summary>
+    private async Task DropSupersededTodoIndexesAsync(
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> existingNames = await ListTodoIndexNamesAsync(
+            cancellationToken);
+
+        foreach (string indexName in SupersededTodoIndexNames)
+        {
+            if (!existingNames.Contains(indexName))
+            {
+                continue;
+            }
+
+            try
+            {
+                await this.todoItems.Indexes.DropOneAsync(
+                    indexName,
+                    cancellationToken);
+                this.logger.LogInformation(
+                    2002,
+                    "Dropped superseded MongoDB TODO index {IndexName}",
+                    indexName);
+            }
+            catch (MongoCommandException exception)
+                when (exception.Code == IndexNotFoundErrorCode)
+            {
+                // A concurrently starting instance removed it first.
+            }
+        }
     }
 }

@@ -58,6 +58,44 @@ h1 {
   color: #322c3d;
 }
 
+.user-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #ddd7e8;
+  gap: 0.5rem;
+}
+
+.user-menu span {
+  overflow: hidden;
+  color: #322c3d;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-page,
+.session-status {
+  display: grid;
+  max-width: 26rem;
+  margin: 6rem auto;
+  padding: 2rem;
+  border: 1px solid #e0dbe8;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 0.6rem 2rem rgb(49 37 77 / 6%);
+  gap: 1rem;
+  justify-items: start;
+}
+
+.login-page p,
+.session-status p {
+  color: #696273;
+  line-height: 1.6;
+}
+
 .create-panel,
 .todo-card,
 .error-banner,

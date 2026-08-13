@@ -18,6 +18,17 @@ public partial class Program
         {
             Log.Information("Starting Sleeky To-Do API");
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+            // The host enables these in Development only. Running them in every
+            // environment turns a missing or captive constructor dependency
+            // into a named startup failure rather than a 500 on the first
+            // request that happens to need it.
+            builder.Host.UseDefaultServiceProvider(options =>
+            {
+                options.ValidateOnBuild = true;
+                options.ValidateScopes = true;
+            });
+
             builder.Services.AddSerilog((services, configuration) => configuration
                 .ReadFrom.Configuration(builder.Configuration)
                 .ReadFrom.Services(services)
@@ -25,7 +36,7 @@ public partial class Program
 
             builder.Services.AddApplication();
             builder.Services.AddInfrastructure(builder.Configuration);
-            builder.Services.AddApi();
+            builder.Services.AddApi(builder.Configuration, builder.Environment);
 
             WebApplication app = builder.Build();
 

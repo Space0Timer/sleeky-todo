@@ -30,6 +30,7 @@ public sealed class CreateTodoCommandHandlerTests
         CreateTodoCommandHandler handler = new CreateTodoCommandHandler(
             repository,
             clock,
+            new TestCurrentUser(TestTodoFactory.OwnerId),
             NullLogger<CreateTodoCommandHandler>.Instance);
         CancellationToken cancellationToken = new CancellationTokenSource().Token;
 
@@ -41,7 +42,8 @@ public sealed class CreateTodoCommandHandlerTests
         result.Version.Should().Be(1);
         result.CreatedAt.Should().Be(TestTodoFactory.Timestamp);
         await repository.Received(1).AddAsync(
-            Arg.Is<TodoItem>(todoItem => todoItem.Id == result.Id),
+            Arg.Is<TodoItem>(todoItem => todoItem.Id == result.Id
+                && todoItem.OwnerId == TestTodoFactory.OwnerId),
             cancellationToken);
     }
 
@@ -61,6 +63,7 @@ public sealed class CreateTodoCommandHandlerTests
         CreateTodoCommandHandler handler = new CreateTodoCommandHandler(
             repository,
             clock,
+            new TestCurrentUser(TestTodoFactory.OwnerId),
             NullLogger<CreateTodoCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(command, CancellationToken.None);

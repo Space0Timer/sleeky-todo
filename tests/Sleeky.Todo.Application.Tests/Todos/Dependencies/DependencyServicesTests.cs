@@ -117,6 +117,7 @@ public sealed class DependencyServicesTests
     {
         return TodoItem.Rehydrate(
             Id(id),
+            TestTodoFactory.OwnerId,
             id,
             null,
             TestTodoFactory.DueDate,

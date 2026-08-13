@@ -134,6 +134,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             TestTodoFactory.DueDate);
         TodoItem todo = TodoItem.Create(
             TestTodoFactory.CreateId("todo-1"),
+            TestTodoFactory.OwnerId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,

@@ -2,6 +2,7 @@ using MediatR;
 
 using Microsoft.Extensions.Logging;
 
+using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
@@ -13,20 +14,24 @@ namespace Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand, TodoDto>
 {
     private readonly IClock clock;
+    private readonly ICurrentUser currentUser;
     private readonly ILogger<CreateTodoCommandHandler> logger;
     private readonly ITodoRepository todoRepository;
 
     public CreateTodoCommandHandler(
         ITodoRepository todoRepository,
         IClock clock,
+        ICurrentUser currentUser,
         ILogger<CreateTodoCommandHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
         ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(currentUser);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.todoRepository = todoRepository;
         this.clock = clock;
+        this.currentUser = currentUser;
         this.logger = logger;
     }
 
@@ -43,6 +48,7 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
             : null;
         TodoItem todoItem = TodoItem.Create(
             Guid.NewGuid(),
+            currentUser.UserId,
             request.Name,
             request.Description,
             request.DueDate,

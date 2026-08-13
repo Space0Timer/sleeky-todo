@@ -3,8 +3,34 @@ import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
+import { signIn } from './auth.ts'
+
 const execFileAsync = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
+const apiOrigin = 'http://127.0.0.1:5173'
+
+/**
+ * Requests made through the Playwright request context carry the session
+ * cookie but no antiforgery header, which the API requires for mutations.
+ */
+async function antiforgeryHeader(page: Page): Promise<Record<string, string>> {
+  const response = await page.request.get(`${apiOrigin}/api/auth/antiforgery`)
+  const token = (await response.json()) as { headerName: string; token: string }
+
+  return { [token.headerName]: token.token }
+}
+
+/** Every TODO is owner-scoped, so seeded documents need the signed-in user. */
+async function currentUserId(page: Page): Promise<string> {
+  const response = await page.request.get(`${apiOrigin}/api/auth/me`)
+  const user = (await response.json()) as { userId: string | null }
+
+  if (user.userId === null) {
+    throw new Error('The current user endpoint reported no signed-in user.')
+  }
+
+  return user.userId
+}
 
 function todoCard(page: Page, name: string): Locator {
   return page.locator('[data-testid^="todo-"]').filter({
@@ -37,9 +63,7 @@ async function createTodo(
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Keep today clear.' })).toBeVisible()
-  await expect(page.getByText('Loading TODOs…')).toHaveCount(0)
+  await signIn(page)
 })
 
 test('creates, edits, archives, soft-deletes, and restores a TODO', async ({ page }) => {
@@ -102,7 +126,8 @@ test('shows a concurrency conflict and reloads the latest version', async ({ pag
   await card.getByRole('button', { name: 'Manage' }).click()
   await expect(card.getByRole('region', { name: 'Manage UI stale TODO' })).toBeVisible()
 
-  const response = await page.request.put(`http://127.0.0.1:5173/api/todos/${id}`, {
+  const response = await page.request.put(`${apiOrigin}/api/todos/${id}`, {
+    headers: await antiforgeryHeader(page),
     data: {
       name: 'Changed by another writer',
       description: 'External change',
@@ -180,17 +205,21 @@ test('creates the next occurrence when a recurring TODO is completed', async ({ 
 })
 
 test('filters, sorts, and loads a second cursor page without duplicates', async ({ page }) => {
+  const ownerId = await currentUserId(page)
   const names = Array.from({ length: 13 }, (_, index) => (
     `UI page ${String(index).padStart(2, '0')}`
   ))
   const documents = names.map((name, index) => ({
     _id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    ownerId,
     name,
     nameNormalized: name.toLowerCase(),
     description: 'Cursor acceptance record',
     dueDate: '2027-04-19',
-    status: 'NotStarted',
-    priority: 'Low',
+    // Status and priority persist as their numeric business order, so a
+    // seeded document must match that representation to be queryable.
+    status: 0,
+    priority: 0,
     dependencyIds: [],
     recurrence: null,
     seriesId: null,
@@ -201,7 +230,7 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
     deletedAt: null,
     purgeAt: null,
   }))
-  const seedScript = `const docs=${JSON.stringify(documents)}; docs.forEach((doc) => { doc._id=UUID(doc._id); doc.createdAt=new Date(doc.createdAt); doc.updatedAt=new Date(doc.updatedAt); }); db.getSiblingDB('sleekyTodoPlaywright').todoItems.insertMany(docs);`
+  const seedScript = `const docs=${JSON.stringify(documents)}; docs.forEach((doc) => { doc._id=UUID(doc._id); doc.ownerId=UUID(doc.ownerId); doc.createdAt=new Date(doc.createdAt); doc.updatedAt=new Date(doc.updatedAt); }); db.getSiblingDB('sleekyTodoPlaywright').todoItems.insertMany(docs);`
   await execFileAsync('docker', [
     'compose',
     'exec',

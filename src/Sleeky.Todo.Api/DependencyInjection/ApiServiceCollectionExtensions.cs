@@ -1,24 +1,41 @@
 using System.Diagnostics;
 
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 
 using Serilog;
 using Serilog.Events;
 
+using Sleeky.Todo.Api.Authentication;
 using Sleeky.Todo.Api.ErrorHandling;
 
 namespace Sleeky.Todo.Api.DependencyInjection;
 
 public static class ApiServiceCollectionExtensions
 {
-    public static IServiceCollection AddApi(this IServiceCollection services)
+    public static IServiceCollection AddApi(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment environment)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(environment);
 
+        services.AddApiAuthentication(configuration, environment);
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
+
+        // AddControllersWithViews rather than AddControllers because
+        // AutoValidateAntiforgeryTokenAttribute is a filter factory that
+        // resolves its filter from the view-feature services. Under
+        // AddControllers that service is missing and every action fails while
+        // its filters are built, so antiforgery validation is registered
+        // through the framework's own implementation instead of a hand-written
+        // substitute for a security control.
         services
-            .AddControllers()
+            .AddControllersWithViews(options =>
+                options.Filters.Add<AutoValidateAntiforgeryTokenAttribute>())
             .ConfigureApiBehaviorOptions(options =>
             {
                 options.InvalidModelStateResponseFactory = context =>
@@ -39,6 +56,11 @@ public static class ApiServiceCollectionExtensions
             });
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedHost
+                | ForwardedHeaders.XForwardedProto;
+        });
 
         return services;
     }
@@ -46,6 +68,16 @@ public static class ApiServiceCollectionExtensions
     public static WebApplication UseApi(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
+
+        bool isDevelopment = app.Environment.IsDevelopment();
+
+        if (isDevelopment)
+        {
+            // The development client reaches this host through the Vite proxy,
+            // so the forwarded host and scheme decide the OpenID Connect
+            // redirect URI and the origin its correlation cookie belongs to.
+            app.UseForwardedHeaders();
+        }
 
         app.UseSerilogRequestLogging(options =>
         {
@@ -71,14 +103,37 @@ public static class ApiServiceCollectionExtensions
                 diagnosticContext.Set(
                     "TraceId",
                     Activity.Current?.Id ?? httpContext.TraceIdentifier);
+
+                string? userId = httpContext.User
+                    .FindFirst(TodoClaimTypes.UserId)?.Value;
+                if (userId is not null)
+                {
+                    diagnosticContext.Set("UserId", userId);
+                }
             };
         });
         app.UseExceptionHandler();
-        app.UseHttpsRedirection();
-        app.UseSwagger();
-        app.UseSwaggerUI();
+
+        if (!isDevelopment)
+        {
+            // Skipped in development because the proxied request arrives as
+            // plain HTTP and would be redirected out of the client origin.
+            app.UseHttpsRedirection();
+        }
+
+        if (isDevelopment)
+        {
+            // Swagger middleware runs ahead of authorization, so publishing it
+            // outside development would expose the whole API surface to
+            // anonymous callers regardless of the fallback policy.
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+
+        app.UseAuthentication();
+        app.UseAuthorization();
         app.MapControllers();
-        app.MapHealthChecks("/health");
+        app.MapHealthChecks("/health").AllowAnonymous();
 
         return app;
     }

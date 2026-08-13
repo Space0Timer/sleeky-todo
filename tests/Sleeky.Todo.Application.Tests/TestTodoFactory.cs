@@ -15,10 +15,18 @@ internal static class TestTodoFactory
         0,
         TimeSpan.Zero);
 
+    public static readonly Guid OwnerId = CreateId("owner-1");
+
     public static TodoItem Create(string id = "todo-1")
+    {
+        return Create(id, OwnerId);
+    }
+
+    public static TodoItem Create(string id, Guid ownerId)
     {
         return TodoItem.Create(
             CreateId(id),
+            ownerId,
             "Submit report",
             "Monthly report",
             DueDate,
@@ -44,6 +52,7 @@ internal static class TestTodoFactory
     {
         return TodoItem.Rehydrate(
             todoItem.Id,
+            todoItem.OwnerId,
             todoItem.Name,
             todoItem.Description,
             todoItem.DueDate,
