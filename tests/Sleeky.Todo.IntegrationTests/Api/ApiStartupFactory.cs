@@ -26,16 +26,28 @@ internal sealed class ApiStartupFactory : WebApplicationFactory<Program>
         "mongodb://localhost:27017/?serverSelectionTimeoutMS=250";
 
     private readonly string environmentName;
+    private readonly string? webRootPath;
 
     public ApiStartupFactory(
-        string environmentName = TodoApiFactory.TestingEnvironment)
+        string environmentName = TodoApiFactory.TestingEnvironment,
+        string? webRootPath = null)
     {
         this.environmentName = environmentName;
+        this.webRootPath = webRootPath;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(environmentName);
+
+        // The API project carries no wwwroot of its own; the client is copied
+        // in when the image is built. A suite that needs one points the host at
+        // a directory it prepared.
+        if (webRootPath is not null)
+        {
+            builder.UseWebRoot(webRootPath);
+        }
+
         builder.UseSetting("MongoDb:ConnectionString", UnreachableConnectionString);
         builder.UseSetting("MongoDb:DatabaseName", "sleekyTodoStartupTests");
         builder.UseSetting("MongoDb:TodoItemsCollectionName", "todoItems");
