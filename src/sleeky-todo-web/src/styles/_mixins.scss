@@ -156,6 +156,13 @@ $-text-styles: (
   border-radius: t.$radius-pill;
 }
 
+// The feedback a control gives while it is unavailable. Every button variant
+// shares it so an unavailable control never looks live, whichever one is used.
+@mixin control-disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 // A row of buttons that wraps onto a second line rather than overflowing.
 @mixin action-row {
   display: flex;

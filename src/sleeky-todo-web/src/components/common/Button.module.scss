@@ -11,8 +11,7 @@
   cursor: pointer;
 
   &:disabled {
-    opacity: 0.6;
-    cursor: wait;
+    @include m.control-disabled;
   }
 }
 
@@ -42,4 +41,8 @@
   background: transparent;
   cursor: pointer;
   color: t.$color-brand;
+
+  &:disabled {
+    @include m.control-disabled;
+  }
 }
