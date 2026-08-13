@@ -275,6 +275,9 @@ h1 {
 }
 
 .notice-banner {
+  /* An <output> element is inline by default, which would drop the padding
+     and margin below from the layout. */
+  display: block;
   margin-bottom: 1rem;
   padding: 0.85rem 1.1rem;
   border-color: #b9dec8;
