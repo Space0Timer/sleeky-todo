@@ -1,0 +1,9 @@
+@use '../../styles/tokens' as t;
+
+.empty-state {
+  padding: 1.5rem;
+  border: t.$border-width dashed t.$color-border-dashed;
+  border-radius: t.$radius-2xl;
+  color: t.$color-text-muted;
+  text-align: center;
+}

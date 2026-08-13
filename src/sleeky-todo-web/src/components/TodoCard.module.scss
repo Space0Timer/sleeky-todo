@@ -1,0 +1,144 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.todo-card {
+  @include m.surface;
+
+  padding: 1.2rem;
+
+  p {
+    @include m.typography(body);
+
+    color: t.$color-text-body;
+  }
+
+  h3 {
+    @include m.typography(heading);
+
+    margin: 0.55rem 0 0.75rem;
+    color: t.$color-text;
+  }
+
+  dl {
+    display: grid;
+    margin: 1rem 0;
+    gap: 0.55rem;
+
+    div {
+      display: grid;
+      grid-template-columns: 3rem minmax(0, 1fr);
+      gap: 0.5rem;
+    }
+  }
+
+  dt {
+    @include m.typography(label-compact);
+
+    color: t.$color-text-term;
+  }
+
+  dd {
+    @include m.typography(detail);
+
+    margin: 0;
+    color: t.$color-text-detail;
+  }
+}
+
+.todo-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.blocked-note {
+  @include m.typography(meta);
+
+  display: grid;
+  padding: 0.7rem;
+  margin: 0.75rem 0;
+  border-radius: t.$radius-md;
+  background: t.$color-blocked-surface;
+  color: t.$color-blocked-text;
+  gap: 0.2rem;
+}
+
+.todo-id {
+  @include m.truncate;
+
+  font-family: t.$font-family-mono;
+}
+
+.card-actions {
+  @include m.action-row;
+}
+
+.manage-panel {
+  display: grid;
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: t.$border-width solid t.$color-border-subtle;
+  gap: 1rem;
+
+  label {
+    @include m.field-label(label-compact, 0.35rem);
+  }
+
+  input,
+  select {
+    @include m.field(0.62rem 0.7rem, t.$radius-sm);
+
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+}
+
+.schedule-note,
+.muted {
+  @include m.typography(meta);
+
+  margin: 0;
+  color: t.$color-text-muted;
+}
+
+.dependency-manager {
+  display: grid;
+  gap: 0.6rem;
+
+  ul {
+    display: grid;
+    padding: 0;
+    margin: 0;
+    gap: 0.4rem;
+    list-style: none;
+  }
+
+  li {
+    @include m.typography(meta);
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0.6rem;
+    border-radius: t.$radius-xs;
+    background: t.$color-surface-subtle;
+    color: t.$color-text-label;
+    gap: 0.5rem;
+  }
+}
+
+.dependency-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}

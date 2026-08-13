@@ -1,0 +1,186 @@
+@use 'sass:map';
+@use 'tokens' as t;
+
+// Every text style the client uses, named for the role it plays rather than the
+// element that happens to use it. A rule reaches typography through
+// `typography()` instead of declaring font-size, font-weight, line-height, or
+// letter-spacing itself, and stylelint rejects those four properties outside
+// this file. Adding a style here is the supported way to introduce new type.
+
+// `font: inherit` belongs to the entries that need it rather than to the call
+// site: the shorthand resets the longhands that follow it, so keeping the pair
+// inside one style makes the order impossible to get wrong.
+$-text-styles: (
+  display: (
+    font-size: clamp(2.6rem, 7vw, 5.4rem),
+    line-height: 0.95,
+    letter-spacing: -0.055em,
+  ),
+  legend: (
+    font-size: 1.25rem,
+    font-weight: t.$weight-bold,
+  ),
+  title: (
+    font-size: 1.25rem,
+  ),
+  heading: (
+    font-size: 1.15rem,
+  ),
+  body: (
+    line-height: 1.6,
+  ),
+  eyebrow: (
+    font-size: 0.76rem,
+    font-weight: t.$weight-black,
+    letter-spacing: 0.14em,
+    text-transform: uppercase,
+  ),
+  note: (
+    font-size: 0.85rem,
+  ),
+  detail: (
+    font-size: 0.82rem,
+  ),
+  meta: (
+    font-size: 0.8rem,
+  ),
+  strong: (
+    font-weight: t.$weight-medium,
+  ),
+  emphasis: (
+    font-weight: t.$weight-semibold,
+  ),
+  label: (
+    font-size: 0.86rem,
+    font-weight: t.$weight-semibold,
+  ),
+  label-compact: (
+    font-size: 0.78rem,
+    font-weight: t.$weight-semibold,
+  ),
+  control: (
+    font: inherit,
+    font-size: 0.86rem,
+    font-weight: t.$weight-bold,
+  ),
+  control-compact: (
+    font: inherit,
+    font-size: 0.78rem,
+    font-weight: t.$weight-bold,
+  ),
+  tab: (
+    font: inherit,
+    font-weight: t.$weight-bold,
+  ),
+  field-value: (
+    font-weight: t.$weight-regular,
+  ),
+  badge: (
+    font-size: 0.72rem,
+    font-weight: t.$weight-bold,
+  ),
+  counter: (
+    font-size: 0.78rem,
+    font-weight: t.$weight-bold,
+  ),
+  inline-error: (
+    font-size: 0.78rem,
+    font-weight: t.$weight-medium,
+  ),
+);
+
+// Applies one named text style. Fails the build on an unknown name rather than
+// emitting nothing, so a typo surfaces at compile time instead of as silently
+// unstyled text.
+@mixin typography($name) {
+  $style: map.get($-text-styles, $name);
+
+  @if not $style {
+    @error 'Unknown text style "#{$name}". Add it to $-text-styles in styles/_mixins.scss.';
+  }
+
+  @each $property, $value in $style {
+    #{$property}: $value;
+  }
+}
+
+// Text that has to survive a container narrower than its content. The three
+// declarations only work together, which is why they are not written out at
+// call sites; stylelint rejects `text-overflow: ellipsis` outside this file.
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// The raised panel that every card, banner, and standalone page is cut from.
+@mixin surface {
+  border: t.$border-width solid t.$color-border;
+  border-radius: t.$radius-3xl;
+  background: t.$color-surface;
+  box-shadow: t.$shadow-surface;
+}
+
+// The focus treatment shared by every text input and select. Keeping it in one
+// place is what stops a new control from quietly shipping without one.
+@mixin focus-ring {
+  border-color: t.$color-focus;
+  outline: t.$border-width-focus solid t.$color-focus-ring;
+}
+
+// A text input, select, or textarea. Padding and radius vary between the form
+// panel and the filter bar, so they are parameters rather than fixed values.
+@mixin field($padding, $radius: t.$radius-md) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: $padding;
+  border: t.$border-width solid t.$color-border-field;
+  border-radius: $radius;
+  background: t.$color-surface;
+  font: inherit;
+}
+
+// A status colour is a surface and a text colour that were measured against
+// each other, so they are applied as a pair and never split.
+@mixin tone($surface, $text) {
+  background: $surface;
+  color: $text;
+}
+
+// The rounded chip used for priority, status, recurrence, and version.
+@mixin pill {
+  @include typography(badge);
+
+  display: inline-flex;
+  padding: 0.25rem 0.5rem;
+  border-radius: t.$radius-pill;
+}
+
+// A row of buttons that wraps onto a second line rather than overflowing.
+@mixin action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+// A panel that stands alone on the page instead of sitting inside the app
+// shell: the login form and the session-check placeholder.
+@mixin standalone-panel {
+  @include surface;
+
+  display: grid;
+  max-width: 26rem;
+  padding: 2rem;
+  margin: 6rem auto;
+  gap: 1rem;
+  justify-items: start;
+}
+
+// A form control's caption, which sits above the control the label wraps.
+@mixin field-label($style: label, $gap: 0.4rem) {
+  @include typography($style);
+
+  display: grid;
+  color: t.$color-text-label;
+  gap: $gap;
+}

@@ -158,7 +158,12 @@ jobs:
         run: corepack yarn install --immutable
 
       - name: Lint
-        run: corepack yarn lint
+        run: corepack yarn lint:js
+
+      # Separate from the step above so a styling failure is attributable
+      # without opening the log.
+      - name: Lint styles
+        run: corepack yarn lint:styles
 
       # Also the type check: the build script runs tsc before Vite.
       - name: Build

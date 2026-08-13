@@ -1,0 +1,49 @@
+// Document-level styling. Everything that belongs to a component lives in that
+// component's *.module.scss instead, so this file stays limited to the page
+// palette, the typeface, and element defaults that have no owning component.
+
+@use 'styles/mixins' as m;
+@use 'styles/tokens' as t;
+
+:root {
+  background: t.$color-page;
+  color: t.$color-text;
+  font-family: t.$font-family-base;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-width: 20rem;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 90% 0%, t.$color-page-glow, transparent 27rem),
+    t.$color-page;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+// The page hero. Both the app shell and the login page render one, and neither
+// owns it, so it stays a document default.
+h1 {
+  @include m.typography(display);
+
+  max-width: 12ch;
+  margin: 0.45rem 0 0.75rem;
+  color: t.$color-text-display;
+}
+
+button,
+input,
+textarea,
+select {
+  color: inherit;
+}

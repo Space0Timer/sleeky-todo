@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import {
+  todoPriority,
   todoPriorityLabels,
   todoScope,
   todoStatus,
@@ -8,10 +9,13 @@ import {
   type Todo,
   type TodoDraft,
   type TodoListItem,
+  type TodoPriority,
   type TodoScope,
   type TodoStatus,
 } from '../types/todo.ts'
+import styles from './TodoCard.module.scss'
 import { TodoForm } from './TodoForm.tsx'
+import { Badge, Button, type BadgeTone } from './common/index.ts'
 
 type TodoCardProps = {
   busy: boolean
@@ -26,6 +30,20 @@ type TodoCardProps = {
   onRestore: (todo: TodoListItem) => Promise<boolean>
   onStatus: (todo: Todo, status: TodoStatus) => Promise<Todo | null>
   onUpdate: (todo: Todo, draft: TodoDraft) => Promise<Todo | null>
+}
+
+// Rising urgency, so a high priority reads the same as a blocking problem.
+const priorityTones: Record<TodoPriority, BadgeTone> = {
+  [todoPriority.low]: 'success',
+  [todoPriority.medium]: 'warning',
+  [todoPriority.high]: 'danger',
+}
+
+const statusTones: Record<TodoStatus, BadgeTone> = {
+  [todoStatus.notStarted]: 'neutral',
+  [todoStatus.inProgress]: 'info',
+  [todoStatus.completed]: 'success',
+  [todoStatus.archived]: 'pending',
 }
 
 function formatDateTime(value: string | null): string {
@@ -143,7 +161,7 @@ export function TodoCard({
 
   if (editing && details) {
     return (
-      <article className="todo-card" data-testid={`todo-${item.id}`}>
+      <article className={styles.todoCard} data-testid={`todo-${item.id}`}>
         <TodoForm
           busy={busy}
           errors={errors}
@@ -163,27 +181,27 @@ export function TodoCard({
   }
 
   return (
-    <article className="todo-card" data-testid={`todo-${item.id}`}>
-      <div className="todo-card-heading">
+    <article className={styles.todoCard} data-testid={`todo-${item.id}`}>
+      <div className={styles.todoCardHeading}>
         <div>
-          <div className="badge-row">
-            <span className={`priority priority-${item.priority}`}>
+          <div className={styles.badgeRow}>
+            <Badge tone={priorityTones[item.priority]}>
               {todoPriorityLabels[item.priority]}
-            </span>
-            <span className={`status status-${item.status}`}>
+            </Badge>
+            <Badge tone={statusTones[item.status]}>
               {todoStatusLabels[item.status]}
-            </span>
-            {item.isRecurring && <span className="recurring">Repeats</span>}
-            {item.isBlocked && <span className="blocked">Blocked</span>}
+            </Badge>
+            {item.isRecurring && <Badge tone="accent">Repeats</Badge>}
+            {item.isBlocked && <Badge tone="danger">Blocked</Badge>}
           </div>
           <h3>{item.name}</h3>
         </div>
-        <span className="version">v{item.version}</span>
+        <Badge tone="version">v{item.version}</Badge>
       </div>
 
       {item.descriptionPreview && <p>{item.descriptionPreview}</p>}
       {item.isBlocked && (
-        <div className="blocked-note">
+        <div className={styles.blockedNote}>
           <strong>{item.incompleteDependencyCount} incomplete prerequisite(s)</strong>
           {Object.values(dependencyNames).length > 0 && (
             <span>{Object.values(dependencyNames).join(', ')}</span>
@@ -198,43 +216,43 @@ export function TodoCard({
             <div><dt>Purge</dt><dd>{formatDateTime(item.purgeAt)}</dd></div>
           </>
         )}
-        <div><dt>ID</dt><dd className="todo-id">{item.id}</dd></div>
+        <div>
+          <dt>ID</dt>
+          <dd className={styles.todoId} data-testid="todo-id">{item.id}</dd>
+        </div>
       </dl>
 
-      <div className="card-actions">
+      <div className={styles.cardActions}>
         {scope === todoScope.deleted ? (
-          <button
-            className="button primary"
+          <Button
+            variant="primary"
             disabled={busy}
-            type="button"
             onClick={() => void onRestore(item)}
           >
             Restore
-          </button>
+          </Button>
         ) : (
           <>
-            <button
-              className="button secondary"
+            <Button
+              variant="secondary"
               disabled={busy}
-              type="button"
               onClick={() => void openManager()}
             >
               {managing ? 'Refresh details' : 'Manage'}
-            </button>
-            <button
-              className="button danger"
+            </Button>
+            <Button
+              variant="danger"
               disabled={busy}
-              type="button"
               onClick={() => void onDelete(item)}
             >
               Delete
-            </button>
+            </Button>
           </>
         )}
       </div>
 
       {managing && details && (
-        <section className="manage-panel" aria-label={`Manage ${item.name}`}>
+        <section className={styles.managePanel} aria-label={`Manage ${item.name}`}>
           <label>
             Status
             <select
@@ -261,30 +279,29 @@ export function TodoCard({
           </label>
 
           {details.recurrence && (
-            <p className="schedule-note">
+            <p className={styles.scheduleNote}>
               Occurrence {details.occurrenceNumber} · every {details.recurrence.interval}{' '}
               {['day', 'week', 'month'][details.recurrence.unit]}
               {details.recurrence.interval > 1 ? 's' : ''}
             </p>
           )}
 
-          <div className="dependency-manager">
+          <div className={styles.dependencyManager}>
             <strong>Prerequisites</strong>
             {details.dependencyIds.length === 0 ? (
-              <span className="muted">None selected</span>
+              <span className={styles.muted}>None selected</span>
             ) : (
               <ul>
                 {details.dependencyIds.map((dependencyId) => (
                   <li key={dependencyId}>
                     <span>{dependencyNames[dependencyId] ?? dependencyId}</span>
-                    <button
-                      className="text-button"
+                    <Button
+                      variant="text"
                       disabled={busy}
-                      type="button"
                       onClick={() => void handleRemoveDependency(dependencyId)}
                     >
                       Remove
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -297,7 +314,7 @@ export function TodoCard({
                 onChange={(event) => setSearch(event.target.value)}
               />
             </label>
-            <div className="dependency-add-row">
+            <div className={styles.dependencyAddRow}>
               <select
                 aria-label={`Dependency for ${item.name}`}
                 value={selectedDependencyId}
@@ -308,33 +325,27 @@ export function TodoCard({
                   <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
                 ))}
               </select>
-              <button
-                className="button secondary"
+              <Button
+                variant="secondary"
                 disabled={busy || !selectedDependencyId}
-                type="button"
                 onClick={() => void handleAddDependency()}
               >
                 Add
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div className="form-actions">
-            <button
-              className="button secondary"
+          <div className={styles.cardActions}>
+            <Button
+              variant="secondary"
               disabled={busy}
-              type="button"
               onClick={() => setEditing(true)}
             >
               Edit details
-            </button>
-            <button
-              className="button secondary"
-              type="button"
-              onClick={() => setManaging(false)}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => setManaging(false)}>
               Close
-            </button>
+            </Button>
           </div>
         </section>
       )}

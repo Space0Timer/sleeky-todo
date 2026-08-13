@@ -120,7 +120,7 @@ test('shows API validation errors next to their fields', async ({ page }) => {
 
 test('shows a concurrency conflict and reloads the latest version', async ({ page }) => {
   let card = await createTodo(page, 'UI stale TODO')
-  const id = (await card.locator('.todo-id').textContent())?.trim()
+  const id = (await card.locator('[data-testid="todo-id"]').textContent())?.trim()
   expect(id).toBeTruthy()
 
   await card.getByRole('button', { name: 'Manage' }).click()

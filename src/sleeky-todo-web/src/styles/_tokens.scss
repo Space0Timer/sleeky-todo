@@ -1,0 +1,131 @@
+// The single source of truth for every colour, radius, border width, shadow,
+// font family, and weight the client draws with. Stylelint rejects a literal
+// hex, rgb(), or hsl() everywhere else, so a new colour has to be named here
+// before a rule can use it.
+
+// Names describe the role a value plays rather than the value itself, so a
+// palette change stays a change to this file alone.
+
+// Spacing is deliberately absent. The measurements this stylesheet inherited do
+// not form a scale, and naming all twenty-six of them would be a token layer in
+// appearance only. See docs/coding-standards.md for the follow-up.
+
+// Surfaces --------------------------------------------------------------------
+
+$color-page: #f7f5fa;
+$color-surface: #fff;
+$color-surface-muted: #faf9fc;
+$color-surface-subtle: #f5f2f8;
+$color-surface-control: #f8f6fb;
+$color-surface-counter: #ece8f3;
+
+// Text ------------------------------------------------------------------------
+
+$color-text: #27212f;
+$color-text-display: #1e1a29;
+$color-text-heading: #2a2432;
+$color-text-title: #282230;
+$color-text-strong: #322c3d;
+$color-text-body: #696273;
+$color-text-muted: #756e7c;
+$color-text-label: #514959;
+$color-text-detail: #504757;
+$color-text-term: #877e90;
+$color-text-control: #463d50;
+$color-text-tab: #6c6376;
+$color-text-counter: #5e556a;
+
+// Borders ---------------------------------------------------------------------
+
+$color-border: #e0dbe8;
+$color-border-soft: #ddd7e8;
+$color-border-subtle: #e3dee9;
+$color-border-tab: #dcd6e5;
+$color-border-field: #cec7d7;
+$color-border-control: #d6cfdf;
+$color-border-dashed: #d4cedd;
+
+// Brand and focus -------------------------------------------------------------
+
+$color-brand: #6548d8;
+$color-brand-strong: #4b35af;
+$color-focus: #7259d9;
+$color-focus-ring: rgb(114 89 217 / 15%);
+$color-page-glow: rgb(112 84 223 / 8%);
+
+// Status tones ----------------------------------------------------------------
+// Each tone is a surface and a text colour that reach contrast together. Apply
+// them as a pair through the `tone` mixin rather than picking one half.
+
+$color-success-surface: #e7f6ed;
+$color-success-text: #2d6d47;
+$color-warning-surface: #fff4d9;
+$color-warning-text: #855e13;
+$color-danger-surface: #ffe6e7;
+$color-danger-text: #983139;
+$color-info-surface: #e6f2ff;
+$color-info-text: #245f91;
+$color-neutral-surface: #eef0f5;
+$color-neutral-text: #4d5668;
+$color-version-surface: #f0edf5;
+$color-version-text: #5e5667;
+$color-pending-surface: #eeeaf5;
+$color-pending-text: #655676;
+$color-accent-surface: #eee9ff;
+$color-accent-text: #5840bb;
+
+// Banners and destructive controls --------------------------------------------
+
+$color-error-surface: #fff8f8;
+$color-error-border: #eab8bd;
+$color-error-text: #84242d;
+$color-error-meta: #87636a;
+$color-error-inline: #ad2935;
+$color-notice-surface: #f3fbf6;
+$color-notice-border: #b9dec8;
+$color-notice-text: #27613f;
+$color-destructive-surface: #fff1f1;
+$color-destructive-text: #9f2f38;
+$color-blocked-surface: #fff5f5;
+$color-blocked-text: #8d3038;
+
+// Shadows ---------------------------------------------------------------------
+
+$shadow-surface: 0 0.6rem 2rem rgb(49 37 77 / 6%);
+
+// Radii -----------------------------------------------------------------------
+
+$radius-xs: 0.45rem;
+$radius-sm: 0.5rem;
+$radius-md: 0.55rem;
+$radius-lg: 0.7rem;
+$radius-xl: 0.75rem;
+$radius-2xl: 0.8rem;
+$radius-3xl: 1rem;
+$radius-pill: 999px;
+$radius-circle: 50%;
+
+// Border widths ---------------------------------------------------------------
+
+$border-width: 1px;
+$border-width-tab: 3px;
+$border-width-focus: 3px;
+
+// Typefaces -------------------------------------------------------------------
+
+$font-family-base: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+$font-family-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+// Weights ---------------------------------------------------------------------
+// Inter is a variable font here, so 450 and 750 are real intermediate steps
+// rather than roundings of 400 and 700.
+
+$weight-regular: 450;
+$weight-medium: 600;
+$weight-semibold: 700;
+$weight-bold: 750;
+$weight-black: 800;
+
+// Breakpoints -----------------------------------------------------------------
+
+$breakpoint-compact: 42rem;

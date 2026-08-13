@@ -1,0 +1,45 @@
+@use '../../styles/mixins' as m;
+@use '../../styles/tokens' as t;
+
+.button {
+  @include m.typography(control);
+
+  min-height: 2.5rem;
+  padding: 0.6rem 0.9rem;
+  border: t.$border-width solid transparent;
+  border-radius: t.$radius-md;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: wait;
+  }
+}
+
+.primary {
+  background: t.$color-brand;
+  color: t.$color-surface;
+}
+
+.secondary {
+  border-color: t.$color-border-control;
+  background: t.$color-surface-control;
+  color: t.$color-text-control;
+}
+
+.danger {
+  background: t.$color-destructive-surface;
+  color: t.$color-destructive-text;
+}
+
+// A button that reads as a link: no box, used inside dense lists where a full
+// control would dominate the row it sits in.
+.text {
+  @include m.typography(control-compact);
+
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: t.$color-brand;
+}

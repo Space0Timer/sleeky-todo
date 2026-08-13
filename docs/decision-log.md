@@ -340,6 +340,73 @@ there. Development and browser tests run against a local provider in Compose
 with seeded users, which also keeps the two-user isolation test honest. The
 production provider then differs only by configuration.
 
+## SCSS rather than the indented Sass syntax
+
+Client styles are authored in SCSS. The indented `.sass` syntax was preferred on
+readability grounds and rejected on tooling grounds.
+
+The styling rules this repository intends to enforce — design tokens instead of
+literal colours, a fixed property order, shared mixins in place of repeated
+typography and truncation declarations, and no unused `@use` — are only worth
+writing down if a check can fail on them. Enforcing them requires a PostCSS
+parser that stylelint can drive, and no such parser handles the indented syntax.
+`postcss-sass` parses it but discards every Sass at-rule: a file whose `@mixin`
+body contains a literal colour and an `!important` yields an empty syntax tree
+and zero reported problems. The mixin and import rules would be unenforceable,
+and a mixin would become the one place a violation could hide. It was also last
+released in 2022. `sass-parser`, the Sass team's own PostCSS wrapper, does read
+the indented syntax correctly including mixin bodies, but is pre-1.0 and fails
+as a stylelint custom syntax in two separate places, so it cannot serve as a
+gate today.
+
+SCSS is parsed by `postcss-scss`, which the stylelint project maintains, and is
+the syntax `stylelint-scss` targets. Choosing it turns each rule above into a
+build failure rather than a convention. The accepted trade-off is braces and
+semicolons in exchange for enforcement.
+
+This is a tooling decision, not a language one. The token and mixin structure is
+independent of syntax and would convert mechanically, so `sass-parser` reaching
+1.0 with a working stylelint custom syntax is the trigger to revisit it.
+
+## Scoped class names through CSS Modules
+
+Component styles are CSS Modules named `*.module.scss`. Only `index.scss`
+remains global, and it holds document-level concerns: the `:root` palette and
+typeface, the `body` background, the heading resets, and the form-element colour
+inheritance.
+
+The stylesheet this client grew declared `.button`, `.status`, `.version`,
+`.blocked`, `.muted`, and `.priority` in a single global namespace. Names that
+generic are a collision waiting for the second component that wants a status
+chip, and the collision would be silent. The failure runs in the other direction
+too: the error banner rendered `error-${kind}`, producing `error-network` and
+`error-concurrency` classes that no rule ever defined, and nothing reported the
+dead reference. Under modules that class is a missing export rather than a
+string that quietly resolves to nothing, so the error kind is now a
+`data-error-kind` attribute, which is what it was always being used as.
+
+React has no styling system of its own, so the choice was only ever which CSS
+mechanism to use. Inline `style` was not a candidate: it cannot express the
+`:focus`, `:disabled`, `[aria-selected]`, and `@media` rules this client
+depends on. CSS Modules keeps the token and mixin layer intact, needs no runtime
+dependency, and Vite compiles it without additional configuration.
+
+`css.modules.localsConvention` is set to `camelCaseOnly` so stylesheets keep
+writing kebab-case class names, which is what the naming rule in
+docs/coding-standards.md enforces, while components read them as
+`styles.todoCard`.
+
+Sharing between modules happens through the mixins in `styles/_mixins.scss`
+rather than by importing another component's module. A module that imports a
+sibling's stylesheet reintroduces the coupling scoping was meant to remove, so
+`surface`, `field`, `focus-ring`, and `action-row` exist as mixins and each
+module names its own class.
+
+One consequence is that Playwright can no longer select a hashed class name.
+`todo-crud.spec.ts` located a TODO's identifier through `.todo-id`; that element
+now carries `data-testid="todo-id"`, which is the selector the rest of the suite
+already uses.
+
 ## Deferred decisions
 
 Retention cleanup scheduling remains deferred until its vertical slice.

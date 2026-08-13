@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { useAuth } from '../auth/AuthContext.ts'
+import styles from './UserMenu.module.scss'
 
 export function UserMenu() {
   const { displayName, signOut } = useAuth()
@@ -20,7 +21,7 @@ export function UserMenu() {
   }
 
   return (
-    <div className="user-menu">
+    <div className={styles.userMenu}>
       <span data-testid="current-user">{displayName ?? 'Signed in'}</span>
       <button
         type="button"

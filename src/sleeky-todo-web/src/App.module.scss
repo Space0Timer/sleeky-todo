@@ -1,0 +1,203 @@
+@use 'styles/mixins' as m;
+@use 'styles/tokens' as t;
+
+.app-shell {
+  width: min(72rem, calc(100% - 2rem));
+  padding: 3rem 0 5rem;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  gap: 2rem;
+
+  // The lead paragraph beside the hero, as opposed to the heading above it.
+  > div > p:last-child {
+    @include m.typography(body);
+
+    color: t.$color-text-body;
+  }
+}
+
+.eyebrow {
+  @include m.typography(eyebrow);
+
+  margin: 0;
+  color: t.$color-brand;
+}
+
+.session-note {
+  @include m.typography(note);
+
+  display: grid;
+  max-width: 15rem;
+  padding: 1rem;
+  border: t.$border-width solid t.$color-border-soft;
+  border-radius: t.$radius-xl;
+  color: t.$color-text-body;
+  gap: 0.25rem;
+
+  strong {
+    color: t.$color-text-strong;
+  }
+}
+
+.error-banner {
+  @include m.surface;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.2rem;
+  margin-bottom: 1rem;
+  border-color: t.$color-error-border;
+  background: t.$color-error-surface;
+  color: t.$color-error-text;
+  gap: 1rem;
+
+  p {
+    margin: 0.25rem 0;
+  }
+
+  small {
+    color: t.$color-error-meta;
+  }
+}
+
+.notice-banner {
+  @include m.surface;
+  @include m.typography(emphasis);
+
+  // An <output> element is inline by default, which would drop the padding and
+  // margin below from the layout.
+  display: block;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1rem;
+  border-color: t.$color-notice-border;
+  background: t.$color-notice-surface;
+  color: t.$color-notice-text;
+}
+
+.create-panel {
+  @include m.surface;
+
+  padding: clamp(1.25rem, 4vw, 2rem);
+}
+
+.scope-tabs {
+  display: flex;
+  margin-top: 2.5rem;
+  border-bottom: t.$border-width solid t.$color-border-tab;
+  gap: 0.25rem;
+}
+
+.scope-tab {
+  @include m.typography(tab);
+
+  padding: 0.8rem 1.1rem;
+  border: 0;
+  border-bottom: t.$border-width-tab solid transparent;
+  background: transparent;
+  cursor: pointer;
+  color: t.$color-text-tab;
+
+  &[aria-selected='true'] {
+    border-bottom-color: t.$color-brand;
+    color: t.$color-brand-strong;
+  }
+}
+
+.filter-panel {
+  @include m.surface;
+
+  display: grid;
+  grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  padding: 1rem;
+  margin-top: 1rem;
+  gap: 0.8rem;
+
+  label {
+    @include m.field-label(label-compact, 0.35rem);
+  }
+
+  input,
+  select {
+    @include m.field(0.62rem 0.7rem, t.$radius-sm);
+
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+}
+
+.clear-filters {
+  align-self: end;
+}
+
+.todo-section {
+  margin-top: 2.5rem;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.9rem;
+  gap: 0.65rem;
+
+  h2 {
+    @include m.typography(title);
+
+    margin: 0;
+    color: t.$color-text-heading;
+  }
+
+  // The count of items in the visible scope.
+  span {
+    @include m.typography(counter);
+
+    display: grid;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: t.$radius-circle;
+    background: t.$color-surface-counter;
+    color: t.$color-text-counter;
+    place-items: center;
+  }
+}
+
+.todo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+@media (max-width: t.$breakpoint-compact) {
+  .app-shell {
+    padding-top: 1.5rem;
+  }
+
+  .page-header,
+  .error-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .session-note {
+    max-width: none;
+  }
+
+  .filter-panel {
+    grid-template-columns: 1fr;
+  }
+}

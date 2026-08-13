@@ -1,0 +1,20 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.user-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+  border-top: t.$border-width solid t.$color-border-soft;
+  gap: 0.5rem;
+
+  // The signed-in name, which can be longer than the panel it sits in.
+  span {
+    @include m.truncate;
+    @include m.typography(strong);
+
+    color: t.$color-text-strong;
+  }
+}
