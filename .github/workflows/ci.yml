@@ -31,12 +31,17 @@ env:
 # Every job carries the same condition: a draft pull request does not run, so
 # iterating on a branch costs nothing and the suite runs once when the change is
 # marked ready. A manual run is not a pull request, so it is never gated.
+#
+# ready_for_review is named on its own because the payload for that action
+# still reports the pull request as a draft, so testing the flag alone skips
+# the very run that marking a change ready is supposed to start.
 jobs:
   backend:
     name: backend
     runs-on: ubuntu-latest
     if: >-
       github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
       || github.event.pull_request.draft == false
     steps:
       - name: Check out
@@ -119,6 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
       || github.event.pull_request.draft == false
     defaults:
       run:
@@ -163,6 +169,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
       || github.event.pull_request.draft == false
     needs: [backend, frontend]
     env:
@@ -265,6 +272,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
       || github.event.pull_request.draft == false
     needs: [backend, frontend, e2e]
     env:
