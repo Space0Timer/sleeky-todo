@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { useAuth } from '../auth/AuthContext.ts'
+import styles from './UserMenu.module.scss'
+import { Button } from './common/index.ts'
 
 export function UserMenu() {
   const { displayName, signOut } = useAuth()
@@ -20,15 +22,20 @@ export function UserMenu() {
   }
 
   return (
-    <div className="user-menu">
+    <div className={styles.userMenu}>
       <span data-testid="current-user">{displayName ?? 'Signed in'}</span>
-      <button
-        type="button"
-        onClick={() => void handleSignOut()}
+      {/*
+        The text variant rather than a filled one: this sits in a 15rem note
+        panel beside the signed-in name, where a full control would outweigh
+        the page's own actions.
+      */}
+      <Button
+        variant="text"
         disabled={isSigningOut}
+        onClick={() => void handleSignOut()}
       >
         {isSigningOut ? 'Signing out…' : 'Sign out'}
-      </button>
+      </Button>
     </div>
   )
 }

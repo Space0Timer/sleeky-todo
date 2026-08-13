@@ -4,6 +4,8 @@ import {
   todoPriority,
   type TodoDraft,
 } from '../types/todo.ts'
+import styles from './common/Form.module.scss'
+import { Button, FieldError } from './common/index.ts'
 
 type TodoFormProps = {
   busy: boolean
@@ -13,14 +15,6 @@ type TodoFormProps = {
   submitLabel: string
   onCancel?: () => void
   onSubmit: (draft: TodoDraft) => Promise<boolean>
-}
-
-function FieldError({ messages }: { messages?: string[] }) {
-  if (!messages?.length) {
-    return null
-  }
-
-  return <span className="field-error">{messages.join(' ')}</span>
 }
 
 export function TodoForm({
@@ -45,7 +39,7 @@ export function TodoForm({
   }
 
   return (
-    <form className="todo-form" onSubmit={handleSubmit} noValidate>
+    <form className={styles.todoForm} onSubmit={handleSubmit} noValidate>
       <fieldset disabled={busy}>
         <legend>{legend}</legend>
 
@@ -72,7 +66,7 @@ export function TodoForm({
           <FieldError messages={errors?.description} />
         </label>
 
-        <div className="form-row">
+        <div className={styles.formRow}>
           <label>
             Due date
             <input
@@ -102,14 +96,14 @@ export function TodoForm({
           </label>
         </div>
 
-        <div className="form-actions">
-          <button className="button primary" type="submit">
+        <div className={styles.formActions}>
+          <Button variant="primary" type="submit">
             {busy ? 'Saving…' : submitLabel}
-          </button>
+          </Button>
           {onCancel && (
-            <button className="button secondary" type="button" onClick={onCancel}>
+            <Button variant="secondary" onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
           )}
         </div>
       </fieldset>

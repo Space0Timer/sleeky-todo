@@ -1,0 +1,82 @@
+@use '../../styles/mixins' as m;
+@use '../../styles/tokens' as t;
+
+// Shared by both TODO forms. The create form and the edit form render the same
+// control structure, so the styling lives here rather than in either one.
+.todo-form {
+  fieldset {
+    display: grid;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    gap: 1rem;
+  }
+
+  legend {
+    @include m.typography(legend);
+
+    margin-bottom: 1.25rem;
+    color: t.$color-text-title;
+  }
+
+  label {
+    @include m.field-label;
+  }
+
+  input,
+  textarea,
+  select {
+    @include m.field(0.72rem 0.8rem);
+    @include m.typography(field-value);
+
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  // A checkbox sits beside its caption rather than under it. This overrides the
+  // grid label above on specificity, which is what the `!important` this
+  // replaced was standing in for.
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+
+    input {
+      width: 1rem;
+      height: 1rem;
+    }
+  }
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.form-actions {
+  @include m.action-row;
+}
+
+.recurrence-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 1rem;
+  border: t.$border-width solid t.$color-border;
+  border-radius: t.$radius-lg;
+  background: t.$color-surface-muted;
+  gap: 0.8rem;
+}
+
+@media (max-width: t.$breakpoint-compact) {
+  .form-row,
+  .recurrence-fields {
+    grid-template-columns: 1fr;
+  }
+}

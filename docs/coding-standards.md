@@ -47,6 +47,47 @@ This document defines the implementation and test standards for the repository.
 - Test observable behavior and persisted contracts, not private helper
   implementation details.
 
+## Styling
+
+Client styles are SCSS. Component styles are CSS Modules (`*.module.scss`), and
+`src/index.scss` is the only global stylesheet. See the decision log for why
+SCSS rather than the indented syntax, and why modules rather than global CSS.
+
+- Take every colour, radius, border width, shadow, typeface, and weight from
+  `src/styles/_tokens.scss`. A literal hex, `rgb()`, or `hsl()` anywhere else
+  fails the lint.
+- Apply typography with `@include m.typography(<style>)`. Declaring
+  `font-size`, `font-weight`, `line-height`, or `letter-spacing` directly fails
+  the lint; add a named style to `$-text-styles` in `styles/_mixins.scss`
+  instead.
+- Truncate text with `@include m.truncate`. The three declarations only work
+  together, so `text-overflow: ellipsis` outside the mixin fails the lint.
+- Share between modules through a mixin, never by importing another component's
+  module: `surface`, `field`, `focus-ring`, `action-row`, `standalone-panel`,
+  and `field-label` exist for this. Importing a sibling's stylesheet
+  reintroduces the coupling that scoping removes.
+- Name classes in kebab-case. Vite exposes them to components as camelCase, so
+  `.todo-card` is read as `styles.todoCard`.
+- Class names are type-checked. `yarn css-types` writes a declaration beside
+  every module, and `yarn dev` and `yarn build` run it first, so a misspelled
+  class fails the build instead of rendering an unstyled element. Those files
+  are generated and git-ignored: regenerate them, do not edit them.
+- Order a rule as `@include` first, then declarations, then nested rules.
+- Write `border: 0` rather than `border: none`, keep hex lowercase, and do not
+  use `!important`.
+- `@use` only what the file references.
+
+Declarations follow an idiomatic order: position, display and flex, box model,
+spacing, borders, background, visual, typography, layout extras, transitions.
+Within spacing, `padding` precedes `margin`.
+
+Run `yarn lint:styles`, or `yarn lint:styles:fix` to reorder properties
+automatically. Both run in CI.
+
+Spacing is a known gap. The measurements this stylesheet inherited do not form a
+scale, so they remain literals and no rule enforces them. Normalising them onto
+a real scale means accepting sub-pixel visual changes and is a separate task.
+
 ## Verification and file hygiene
 
 - Builds must pass with warnings treated as errors and StyleCop enabled.

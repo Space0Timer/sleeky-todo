@@ -1,0 +1,41 @@
+@use '../../styles/mixins' as m;
+@use '../../styles/tokens' as t;
+
+.badge {
+  @include m.pill;
+}
+
+// Tones are named for the meaning they carry rather than the field that happens
+// to use them, so a status and a priority that read the same share one entry.
+
+.success {
+  @include m.tone(t.$color-success-surface, t.$color-success-text);
+}
+
+.warning {
+  @include m.tone(t.$color-warning-surface, t.$color-warning-text);
+}
+
+.danger {
+  @include m.tone(t.$color-danger-surface, t.$color-danger-text);
+}
+
+.info {
+  @include m.tone(t.$color-info-surface, t.$color-info-text);
+}
+
+.neutral {
+  @include m.tone(t.$color-neutral-surface, t.$color-neutral-text);
+}
+
+.pending {
+  @include m.tone(t.$color-pending-surface, t.$color-pending-text);
+}
+
+.accent {
+  @include m.tone(t.$color-accent-surface, t.$color-accent-text);
+}
+
+.version {
+  @include m.tone(t.$color-version-surface, t.$color-version-text);
+}

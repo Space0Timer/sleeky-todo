@@ -2,16 +2,14 @@ import { Navigate } from 'react-router'
 
 import { buildLoginUrl } from '../api/auth.ts'
 import { useAuth } from '../auth/AuthContext.ts'
+import { Button, SessionStatus } from '../components/common/index.ts'
+import styles from './LoginPage.module.scss'
 
 export function LoginPage() {
   const { isAuthenticated, isLoading } = useAuth()
 
   if (isLoading) {
-    return (
-      <main className="session-status" aria-busy="true">
-        <p>Checking your session…</p>
-      </main>
-    )
+    return <SessionStatus />
   }
 
   if (isAuthenticated) {
@@ -25,12 +23,12 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login-page">
+    <main className={styles.loginPage}>
       <h1>Sleeky To-Do</h1>
       <p>Sign in to see the TODOs that belong to you.</p>
-      <button type="button" onClick={startLogin}>
+      <Button variant="primary" onClick={startLogin}>
         Sign in
-      </button>
+      </Button>
     </main>
   )
 }

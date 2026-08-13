@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-import './App.css'
+import styles from './App.module.scss'
 import {
   ApiError,
   addTodoDependency,
@@ -18,6 +18,7 @@ import { useAuth } from './auth/AuthContext.ts'
 import { CreateTodoForm } from './components/CreateTodoForm.tsx'
 import { TodoCard } from './components/TodoCard.tsx'
 import { UserMenu } from './components/UserMenu.tsx'
+import { Button, EmptyState } from './components/common/index.ts'
 import {
   dependencyStatus,
   sortDirection,
@@ -268,14 +269,14 @@ function App() {
     : error?.problem.title ?? 'Something went wrong.'
 
   return (
-    <main className="app-shell">
-      <header className="page-header">
+    <main className={styles.appShell}>
+      <header className={styles.pageHeader}>
         <div>
-          <p className="eyebrow">Sleeky To-Do</p>
+          <p className={styles.eyebrow}>Sleeky To-Do</p>
           <h1>Keep today clear.</h1>
           <p>Plan dependencies, repeat the work that matters, and recover safely.</p>
         </div>
-        <div className="session-note">
+        <div className={styles.sessionNote}>
           <strong>Persisted workspace</strong>
           <span>Cursor pages stay current with MongoDB and optimistic versions.</span>
           <UserMenu />
@@ -283,28 +284,24 @@ function App() {
       </header>
 
       {error && (
-        <section className={`error-banner error-${error.kind}`} role="alert">
+        <section className={styles.errorBanner} data-error-kind={error.kind} role="alert">
           <div>
             <strong>{errorTitle}</strong>
             <p>{error.problem.detail}</p>
             {error.problem.traceId && <small>Trace: {error.problem.traceId}</small>}
           </div>
           {error.kind === 'concurrency' && error.affectedTodoId && (
-            <button
-              className="button secondary"
-              type="button"
-              onClick={reloadLatestVersion}
-            >
+            <Button variant="secondary" onClick={reloadLatestVersion}>
               Reload latest version
-            </button>
+            </Button>
           )}
         </section>
       )}
 
-      {notice && <output className="notice-banner">{notice}</output>}
+      {notice && <output className={styles.noticeBanner}>{notice}</output>}
 
       {scope === todoScope.active && (
-        <section className="create-panel">
+        <section className={styles.createPanel}>
           <CreateTodoForm
             busy={busyId === 'create'}
             errors={!error?.affectedTodoId ? error?.problem.errors : undefined}
@@ -313,11 +310,11 @@ function App() {
         </section>
       )}
 
-      <div className="scope-tabs" aria-label="TODO scopes" role="tablist">
+      <div className={styles.scopeTabs} aria-label="TODO scopes" role="tablist">
         {tabs.map((tab) => (
           <button
             aria-selected={scope === tab.scope}
-            className="scope-tab"
+            className={styles.scopeTab}
             key={tab.scope}
             role="tab"
             type="button"
@@ -328,7 +325,7 @@ function App() {
         ))}
       </div>
 
-      <section className="filter-panel" aria-label="TODO filters">
+      <section className={styles.filterPanel} aria-label="TODO filters">
         <label>
           Status
           <select
@@ -431,29 +428,29 @@ function App() {
             <option value={sortDirection.descending}>Descending</option>
           </select>
         </label>
-        <button
-          className="button secondary clear-filters"
-          type="button"
+        <Button
+          variant="secondary"
+          className={styles.clearFilters}
           onClick={() => setFilters(initialFilters)}
         >
           Clear filters
-        </button>
+        </Button>
       </section>
 
       <section
-        className="todo-section"
+        className={styles.todoSection}
         aria-label={tabs.find((tab) => tab.scope === scope)?.label}
       >
-        <div className="section-heading">
+        <div className={styles.sectionHeading}>
           <h2>{tabs.find((tab) => tab.scope === scope)?.label}</h2>
           <span>{items.length}</span>
         </div>
         {loading ? (
-          <p className="empty-state">Loading TODOs…</p>
+          <EmptyState>Loading TODOs…</EmptyState>
         ) : items.length === 0 ? (
-          <p className="empty-state">No TODOs match this view.</p>
+          <EmptyState>No TODOs match this view.</EmptyState>
         ) : (
-          <div className="todo-grid">
+          <div className={styles.todoGrid}>
             {items.map((item) => (
               <TodoCard
                 key={`${item.id}:${item.version}`}
@@ -475,15 +472,14 @@ function App() {
         )}
 
         {nextCursor && (
-          <div className="load-more-row">
-            <button
-              className="button primary"
+          <div className={styles.loadMoreRow}>
+            <Button
+              variant="primary"
               disabled={loadingMore}
-              type="button"
               onClick={() => void loadMore()}
             >
               {loadingMore ? 'Loading…' : 'Load more'}
-            </button>
+            </Button>
           </div>
         )}
       </section>

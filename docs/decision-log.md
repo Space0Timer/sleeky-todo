@@ -340,6 +340,129 @@ there. Development and browser tests run against a local provider in Compose
 with seeded users, which also keeps the two-user isolation test honest. The
 production provider then differs only by configuration.
 
+## SCSS rather than the indented Sass syntax
+
+Client styles are authored in SCSS. The indented `.sass` syntax was preferred on
+readability grounds and rejected on tooling grounds.
+
+The styling rules this repository intends to enforce — design tokens instead of
+literal colours, a fixed property order, shared mixins in place of repeated
+typography and truncation declarations, and no unused `@use` — are only worth
+writing down if a check can fail on them. Enforcing them requires a PostCSS
+parser that stylelint can drive, and no such parser handles the indented syntax.
+`postcss-sass` parses it but discards every Sass at-rule: a file whose `@mixin`
+body contains a literal colour and an `!important` yields an empty syntax tree
+and zero reported problems. The mixin and import rules would be unenforceable,
+and a mixin would become the one place a violation could hide. It was also last
+released in 2022. `sass-parser`, the Sass team's own PostCSS wrapper, does read
+the indented syntax correctly including mixin bodies, but is pre-1.0 and fails
+as a stylelint custom syntax in two separate places, so it cannot serve as a
+gate today.
+
+SCSS is parsed by `postcss-scss`, which the stylelint project maintains, and is
+the syntax `stylelint-scss` targets. Choosing it turns each rule above into a
+build failure rather than a convention. The accepted trade-off is braces and
+semicolons in exchange for enforcement.
+
+This is a tooling decision, not a language one. The token and mixin structure is
+independent of syntax and would convert mechanically, so `sass-parser` reaching
+1.0 with a working stylelint custom syntax is the trigger to revisit it.
+
+## Scoped class names through CSS Modules
+
+Component styles are CSS Modules named `*.module.scss`. Only `index.scss`
+remains global, and it holds document-level concerns: the `:root` palette and
+typeface, the `body` background, the heading resets, and the form-element colour
+inheritance.
+
+The stylesheet this client grew declared `.button`, `.status`, `.version`,
+`.blocked`, `.muted`, and `.priority` in a single global namespace. Names that
+generic are a collision waiting for the second component that wants a status
+chip, and the collision would be silent. The failure runs in the other direction
+too: the error banner rendered `error-${kind}`, producing `error-network` and
+`error-concurrency` classes that no rule ever defined, and nothing reported the
+dead reference. Under modules that class is a missing export rather than a
+string that quietly resolves to nothing, so the error kind is now a
+`data-error-kind` attribute, which is what it was always being used as.
+
+React has no styling system of its own, so the choice was only ever which CSS
+mechanism to use. Inline `style` was not a candidate: it cannot express the
+`:focus`, `:disabled`, `[aria-selected]`, and `@media` rules this client
+depends on. CSS Modules keeps the token and mixin layer intact, needs no runtime
+dependency, and Vite compiles it without additional configuration.
+
+`css.modules.localsConvention` is set to `camelCaseOnly` so stylesheets keep
+writing kebab-case class names, which is what the naming rule in
+docs/coding-standards.md enforces, while components read them as
+`styles.todoCard`.
+
+Sharing between modules happens through the mixins in `styles/_mixins.scss`
+rather than by importing another component's module. A module that imports a
+sibling's stylesheet reintroduces the coupling scoping was meant to remove, so
+`surface`, `field`, `focus-ring`, and `action-row` exist as mixins and each
+module names its own class.
+
+One consequence is that Playwright can no longer select a hashed class name.
+`todo-crud.spec.ts` located a TODO's identifier through `.todo-id`; that element
+now carries `data-testid="record-id"`.
+
+The name deliberately avoids a `todo-` prefix. The suite identifies a card with
+`[data-testid^="todo-"]`, so a `todo-id` test hook inside each card matched that
+prefix as well and doubled every count the suite took.
+
+## Type-checked CSS module class names
+
+Vite types every `*.module.scss` through a single wildcard declaration whose
+members are an index signature. Under it `styles.todoCrad` compiles, renders
+`class=""`, and the element loses its styling with nothing reported at build
+time or in the browser. Scoping the class names removed the collision risk but
+left this failure untouched.
+
+A declaration generated beside each module resolves ahead of that wildcard and
+turns the same typo into `Property 'todoCradHeading' does not exist. Did you
+mean 'todoCardHeading'?`. TypeScript finds the files through
+`allowArbitraryExtensions`, which the project already enabled: an import of
+`./X.module.scss` resolves to `./X.module.d.scss.ts`.
+
+`scripts/generate-css-module-types.mjs` compiles each module with Sass before
+reading its classes rather than scanning the source, so a class that only a
+mixin or a nested block introduces is declared like any other. Names are
+camel-cased to match the `camelCaseOnly` setting in vite.config.ts, which is the
+only spelling a component can use.
+
+The declarations are generated, so they are git-ignored rather than committed,
+which keeps them from drifting from the stylesheets they describe. `yarn dev`
+and `yarn build` write them before anything reads them, Playwright inherits that
+through `yarn dev`, and CI runs an explicit step because the type-aware lint
+runs before the build.
+
+## The successor if CSS Modules is outgrown
+
+styled-components is not the fallback. It is in maintenance mode, and a runtime
+CSS-in-JS library requires every styled component to be a client component,
+which is why the ecosystem moved away from it. The cost is concrete here as
+well: stylelint cannot meaningfully parse styles inside tagged template
+literals, so adopting it would discard the property-order, token, typography,
+and truncation rules recorded above.
+
+If type-safe tokens expressed in TypeScript become a real requirement, the
+destination is a zero-runtime CSS-in-TS system such as vanilla-extract or Panda
+CSS. Both provide typed tokens and co-location without a runtime and without the
+server-component problem.
+
+Staying put is the cheaper bet because the migration cost is asymmetric. Design
+decisions are centralised in `styles/_tokens.scss`, which converts to a
+TypeScript object mechanically, and the mixins convert to functions. The reverse
+is not mechanical: styles interpolated with component logic have to be read by
+hand, and the lint layer that could inventory them is exactly what was given up.
+
+Nothing in the client presently needs a style value computed at runtime. Every
+variant is a finite set resolved to a class — eight badge tones, four button
+variants — and the remaining behaviour is `:focus`, `:disabled`,
+`[aria-selected]`, and one media query. An open-ended value, if one arrives, is
+a CSS custom property set from an inline style, which keeps the token and mixin
+layers intact.
+
 ## Deferred decisions
 
 Retention cleanup scheduling remains deferred until its vertical slice.

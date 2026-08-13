@@ -157,8 +157,18 @@ jobs:
       - name: Install
         run: corepack yarn install --immutable
 
+      # Declarations for the CSS modules are generated rather than committed,
+      # and both the type-aware lint and the build below need them on disk.
+      - name: Generate CSS module types
+        run: corepack yarn css-types
+
       - name: Lint
-        run: corepack yarn lint
+        run: corepack yarn lint:js
+
+      # Separate from the step above so a styling failure is attributable
+      # without opening the log.
+      - name: Lint styles
+        run: corepack yarn lint:styles
 
       # Also the type check: the build script runs tsc before Vite.
       - name: Build

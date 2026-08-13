@@ -16,6 +16,17 @@ const apiProxy = {
 
 export default defineConfig({
   plugins: [react()],
+  css: {
+    modules: {
+      /*
+       * Stylesheets keep kebab-case class names, which is the convention the
+       * styling rules enforce, while components read them as `styles.todoCard`.
+       * `camelCaseOnly` removes the original key rather than adding an alias,
+       * so there is one spelling per class instead of two.
+       */
+      localsConvention: 'camelCaseOnly',
+    },
+  },
   server: {
     proxy: {
       '/api': apiProxy,

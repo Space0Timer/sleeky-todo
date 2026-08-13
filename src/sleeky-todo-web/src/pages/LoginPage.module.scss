@@ -1,0 +1,12 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.login-page {
+  @include m.standalone-panel;
+
+  p {
+    @include m.typography(body);
+
+    color: t.$color-text-body;
+  }
+}

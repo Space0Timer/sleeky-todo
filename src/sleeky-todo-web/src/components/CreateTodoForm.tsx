@@ -8,6 +8,8 @@ import {
   type RecurrenceType,
   type RecurrenceUnit,
 } from '../types/todo.ts'
+import styles from './common/Form.module.scss'
+import { Button, FieldError } from './common/index.ts'
 
 type CreateTodoFormProps = {
   busy: boolean
@@ -29,12 +31,6 @@ function emptyDraft(): CreateTodoDraft {
     priority: todoPriority.medium,
     recurrence: null,
   }
-}
-
-function FieldError({ messages }: { messages?: string[] }) {
-  return messages?.length
-    ? <span className="field-error">{messages.join(' ')}</span>
-    : null
 }
 
 export function CreateTodoForm({ busy, errors, onSubmit }: CreateTodoFormProps) {
@@ -67,7 +63,7 @@ export function CreateTodoForm({ busy, errors, onSubmit }: CreateTodoFormProps) 
   }
 
   return (
-    <form className="todo-form" onSubmit={handleSubmit} noValidate>
+    <form className={styles.todoForm} onSubmit={handleSubmit} noValidate>
       <fieldset disabled={busy}>
         <legend>Create a TODO</legend>
 
@@ -94,7 +90,7 @@ export function CreateTodoForm({ busy, errors, onSubmit }: CreateTodoFormProps) 
           <FieldError messages={errors?.description} />
         </label>
 
-        <div className="form-row">
+        <div className={styles.formRow}>
           <label>
             Due date
             <input
@@ -124,7 +120,7 @@ export function CreateTodoForm({ busy, errors, onSubmit }: CreateTodoFormProps) 
           </label>
         </div>
 
-        <label className="checkbox-label">
+        <label className={styles.checkboxLabel}>
           <input
             checked={recurring}
             type="checkbox"
@@ -134,7 +130,7 @@ export function CreateTodoForm({ busy, errors, onSubmit }: CreateTodoFormProps) 
         </label>
 
         {draft.recurrence && (
-          <div className="recurrence-fields" aria-label="Recurrence schedule">
+          <div className={styles.recurrenceFields} aria-label="Recurrence schedule">
             <label>
               Frequency
               <select
@@ -194,10 +190,10 @@ export function CreateTodoForm({ busy, errors, onSubmit }: CreateTodoFormProps) 
           </div>
         )}
 
-        <div className="form-actions">
-          <button className="button primary" type="submit">
+        <div className={styles.formActions}>
+          <Button variant="primary" type="submit">
             {busy ? 'Saving…' : 'Add TODO'}
-          </button>
+          </Button>
         </div>
       </fieldset>
     </form>
