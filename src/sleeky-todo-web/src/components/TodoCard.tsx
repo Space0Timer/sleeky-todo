@@ -218,7 +218,11 @@ export function TodoCard({
         )}
         <div>
           <dt>ID</dt>
-          <dd className={styles.todoId} data-testid="todo-id">{item.id}</dd>
+          {/*
+            Not `todo-…`: that prefix identifies a card, and the browser suite
+            counts cards with [data-testid^="todo-"].
+          */}
+          <dd className={styles.todoId} data-testid="record-id">{item.id}</dd>
         </div>
       </dl>
 

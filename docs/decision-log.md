@@ -404,8 +404,11 @@ module names its own class.
 
 One consequence is that Playwright can no longer select a hashed class name.
 `todo-crud.spec.ts` located a TODO's identifier through `.todo-id`; that element
-now carries `data-testid="todo-id"`, which is the selector the rest of the suite
-already uses.
+now carries `data-testid="record-id"`.
+
+The name deliberately avoids a `todo-` prefix. The suite identifies a card with
+`[data-testid^="todo-"]`, so a `todo-id` test hook inside each card matched that
+prefix as well and doubled every count the suite took.
 
 ## Type-checked CSS module class names
 
