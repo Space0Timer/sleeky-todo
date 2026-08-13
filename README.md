@@ -56,7 +56,84 @@ the React client has a login page, protected route, and sign-out control.
 - .NET SDK 10.0.302
 - Node.js 24.19.0
 - Corepack with Yarn 4.18.0
-- Docker with Docker Compose
+- Docker with Docker Compose (daemon API 1.47 or newer, for browser and
+  integration tests)
+
+## Quick start
+
+Three terminals. The sections further down explain each piece; this is the
+shortest path to a running, signed-in application.
+
+**1. Start MongoDB and Keycloak.**
+
+```sh
+docker compose up -d
+```
+
+Both must report healthy before the API will start cleanly:
+
+```sh
+docker compose ps
+```
+
+**2. Run the API.** The first run on a machine may need
+`dotnet dev-certs https --trust`.
+
+```sh
+dotnet run --project src/Sleeky.Todo.Api --launch-profile https
+```
+
+**3. Run the React client, in a second terminal.**
+
+```sh
+cd src/sleeky-todo-web && corepack yarn install && corepack yarn dev
+```
+
+Open `http://localhost:5173`. The application redirects to `/login`; sign in as
+`alice` / `alice-password`.
+
+### Try it out
+
+- **Per-user isolation.** Create a TODO as `alice`, then open a private window
+  and sign in as `bob` / `bob-password`. Bob's list is empty. Requesting one of
+  Alice's TODOs by ID returns `404`, not `403`, so the response does not reveal
+  that the identifier exists.
+- **Dependencies and blocking.** Add a dependency between two TODOs. The
+  dependent cannot move to In progress or Completed until its prerequisite is
+  completed, and a cycle is rejected.
+- **Recurrence.** Create a TODO with Repeat enabled and complete it. The next
+  occurrence is created in the same transaction and its ID is reported.
+- **Recoverable deletion.** Delete a TODO, open the Trash tab, and restore it.
+- **Concurrency.** Open Manage on a TODO in two tabs, save in one, then save in
+  the other. The second reports a stale version and offers Reload latest
+  version rather than overwriting silently.
+- **Session handling.** Sign out and confirm the list is unreachable. Because
+  sign-out clears the application cookie only, the provider session can outlive
+  it and the next sign-in may not prompt for credentials.
+
+### Run the tests
+
+Domain and application suites need nothing running:
+
+```sh
+dotnet test
+```
+
+Repository and API integration tests start their own MongoDB container, so they
+need Docker and are opt-in. Without the variable they are skipped, and a skipped
+suite reports the same "Passed" summary as one that ran:
+
+```sh
+RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTests
+```
+
+Browser tests drive the real Keycloak login form, so `docker compose up -d` must
+be running first. They start their own API and Vite server against a dedicated
+`sleekyTodoPlaywright` database and drop it afterwards:
+
+```sh
+cd src/sleeky-todo-web && corepack yarn playwright install chromium && corepack yarn test:e2e
+```
 
 ## Local MongoDB replica set
 
