@@ -25,8 +25,16 @@ public static class ApiServiceCollectionExtensions
         services.AddApiAuthentication(configuration, environment);
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
+
+        // AddControllersWithViews rather than AddControllers because
+        // AutoValidateAntiforgeryTokenAttribute is a filter factory that
+        // resolves its filter from the view-feature services. Under
+        // AddControllers that service is missing and every action fails while
+        // its filters are built, so antiforgery validation is registered
+        // through the framework's own implementation instead of a hand-written
+        // substitute for a security control.
         services
-            .AddControllers(options =>
+            .AddControllersWithViews(options =>
                 options.Filters.Add<AutoValidateAntiforgeryTokenAttribute>())
             .ConfigureApiBehaviorOptions(options =>
             {

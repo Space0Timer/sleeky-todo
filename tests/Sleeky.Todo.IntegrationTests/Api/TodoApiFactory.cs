@@ -46,8 +46,17 @@ internal sealed class TodoApiFactory : WebApplicationFactory<Program>
             TestAuthenticationHandler.UserIdHeaderName,
             userId.ToString());
 
-        AntiforgeryTokenResponse token = await client
-            .GetFromJsonAsync<AntiforgeryTokenResponse>("/api/auth/antiforgery")
+        HttpResponseMessage tokenResponse = await client.GetAsync(
+            "/api/auth/antiforgery");
+        if (!tokenResponse.IsSuccessStatusCode)
+        {
+            string body = await tokenResponse.Content.ReadAsStringAsync();
+            throw new InvalidOperationException(
+                $"The antiforgery endpoint returned {(int)tokenResponse.StatusCode}: {body}");
+        }
+
+        AntiforgeryTokenResponse token = await tokenResponse.Content
+            .ReadFromJsonAsync<AntiforgeryTokenResponse>()
             ?? throw new InvalidOperationException(
                 "The antiforgery endpoint returned no token.");
         client.DefaultRequestHeaders.Add(token.HeaderName, token.Token);
