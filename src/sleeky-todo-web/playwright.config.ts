@@ -9,7 +9,16 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   timeout: 60_000,
   workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  // CI annotates the pull request through the github reporter, keeps JUnit for
+  // the run summary, and writes the HTML report as an artifact rather than
+  // trying to open it on a machine with no browser.
+  reporter: process.env.CI
+    ? [
+        ['github'],
+        ['junit', { outputFile: 'test-results/junit.xml' }],
+        ['html', { open: 'never' }],
+      ]
+    : 'html',
   use: {
     baseURL: 'http://127.0.0.1:5173',
     trace: 'on-first-retry',

@@ -301,7 +301,7 @@ function App() {
         </section>
       )}
 
-      {notice && <section className="notice-banner" role="status">{notice}</section>}
+      {notice && <output className="notice-banner">{notice}</output>}
 
       {scope === todoScope.active && (
         <section className="create-panel">
@@ -313,7 +313,7 @@ function App() {
         </section>
       )}
 
-      <nav className="scope-tabs" aria-label="TODO scopes" role="tablist">
+      <div className="scope-tabs" aria-label="TODO scopes" role="tablist">
         {tabs.map((tab) => (
           <button
             aria-selected={scope === tab.scope}
@@ -326,7 +326,7 @@ function App() {
             {tab.label}
           </button>
         ))}
-      </nav>
+      </div>
 
       <section className="filter-panel" aria-label="TODO filters">
         <label>

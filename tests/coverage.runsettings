@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+
+          <!--
+            The four product assemblies are listed rather than excluding the
+            test ones, so a new project is absent from the report until someone
+            decides it belongs there.
+          -->
+          <Include>[Sleeky.Todo.Api]*,[Sleeky.Todo.Application]*,[Sleeky.Todo.Domain]*,[Sleeky.Todo.Infrastructure]*</Include>
+
+          <ExcludeByAttribute>CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute,GeneratedCodeAttribute</ExcludeByAttribute>
+
+          <!--
+            Property accessors without a body carry no branch and no statement
+            worth proving, so counting them inflates the line total against
+            which every threshold is read.
+          -->
+          <SkipAutoProps>true</SkipAutoProps>
+
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

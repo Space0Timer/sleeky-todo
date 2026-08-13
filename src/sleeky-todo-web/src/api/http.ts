@@ -46,19 +46,27 @@ function buildHeaders(init?: RequestInit): HeadersInit {
   const method = (init?.method ?? 'GET').toUpperCase()
   const needsToken = mutatingMethods.has(method) && antiforgeryToken !== null
 
+  const headers = new Headers({ Accept: 'application/json' })
+
+  if (init?.body) {
+    headers.set('Content-Type', 'application/json')
+  }
+
   // Caller headers are applied before the antiforgery header so a caller
   // cannot drop cross-site request protection by supplying its own headers.
-  return {
-    Accept: 'application/json',
-    ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-    ...init?.headers,
-    ...(needsToken
-      ? {
-          [antiforgeryToken?.headerName || defaultAntiforgeryHeader]:
-            antiforgeryToken?.token ?? '',
-        }
-      : {}),
+  // They are merged through a Headers instance because RequestInit also
+  // accepts tuple arrays and Headers, and spreading either of those into an
+  // object produces numeric indices rather than header names.
+  new Headers(init?.headers).forEach((value, name) => headers.set(name, value))
+
+  if (needsToken) {
+    headers.set(
+      antiforgeryToken?.headerName || defaultAntiforgeryHeader,
+      antiforgeryToken?.token ?? '',
+    )
   }
+
+  return headers
 }
 
 export async function send<T>(path: string, init?: RequestInit): Promise<T> {
