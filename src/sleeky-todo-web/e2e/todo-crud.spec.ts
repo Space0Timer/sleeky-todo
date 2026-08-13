@@ -3,6 +3,8 @@ import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
+import { signIn } from './auth.ts'
+
 const execFileAsync = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
@@ -37,9 +39,7 @@ async function createTodo(
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Keep today clear.' })).toBeVisible()
-  await expect(page.getByText('Loading TODOs…')).toHaveCount(0)
+  await signIn(page)
 })
 
 test('creates, edits, archives, soft-deletes, and restores a TODO', async ({ page }) => {

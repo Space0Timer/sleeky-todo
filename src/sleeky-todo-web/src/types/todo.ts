@@ -168,4 +168,5 @@ export type ApiErrorKind =
   | 'domain'
   | 'concurrency'
   | 'network'
+  | 'unauthorized'
   | 'unexpected'

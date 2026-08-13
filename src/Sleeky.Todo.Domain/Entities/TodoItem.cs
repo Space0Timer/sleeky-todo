@@ -14,6 +14,7 @@ public sealed class TodoItem
 
     private TodoItem(
         Guid id,
+        Guid ownerId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -21,6 +22,7 @@ public sealed class TodoItem
         DateTimeOffset createdAt)
     {
         Id = id;
+        OwnerId = ownerId;
         SetName(name);
         Description = NormalizeDescription(description);
         DueDate = dueDate;
@@ -32,6 +34,8 @@ public sealed class TodoItem
     }
 
     public Guid Id { get; }
+
+    public Guid OwnerId { get; }
 
     public string Name { get; private set; } = string.Empty;
 
@@ -67,6 +71,7 @@ public sealed class TodoItem
 
     public static TodoItem Create(
         Guid id,
+        Guid ownerId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -77,12 +82,14 @@ public sealed class TodoItem
         int? occurrenceNumber = null)
     {
         Guid validatedId = ValidateId(id);
+        Guid validatedOwnerId = ValidateOwnerId(ownerId);
         DateTimeOffset utcCreatedAt = createdAt.ToUniversalTime();
 
         ValidateRecurrenceState(recurrence, seriesId, occurrenceNumber);
 
         return new TodoItem(
             validatedId,
+            validatedOwnerId,
             name,
             description,
             dueDate,
@@ -97,6 +104,7 @@ public sealed class TodoItem
 
     public static TodoItem Rehydrate(
         Guid id,
+        Guid ownerId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -129,6 +137,7 @@ public sealed class TodoItem
 
         TodoItem todoItem = new TodoItem(
             ValidateId(id),
+            ValidateOwnerId(ownerId),
             name,
             description,
             dueDate,
@@ -228,6 +237,7 @@ public sealed class TodoItem
                     OccurrenceNumber,
                     nextOccurrenceId,
                     new TodoCompletionContext(
+                        OwnerId,
                         Name,
                         Description,
                         DueDate,
@@ -287,6 +297,16 @@ public sealed class TodoItem
         }
 
         return id;
+    }
+
+    private static Guid ValidateOwnerId(Guid ownerId)
+    {
+        if (ownerId == Guid.Empty)
+        {
+            throw new DomainException("A TODO owner identifier is required.");
+        }
+
+        return ownerId;
     }
 
     private static string ValidateName(string name)

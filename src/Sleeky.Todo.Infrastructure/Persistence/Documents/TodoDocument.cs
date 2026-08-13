@@ -13,6 +13,10 @@ internal sealed class TodoDocument
     [BsonGuidRepresentation(GuidRepresentation.Standard)]
     public Guid Id { get; set; }
 
+    [BsonElement(MongoTodoFields.OwnerId)]
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public Guid OwnerId { get; set; }
+
     [BsonElement(MongoTodoFields.Name)]
     public string Name { get; set; } = string.Empty;
 

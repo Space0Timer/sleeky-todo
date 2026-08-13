@@ -20,6 +20,9 @@ namespace Sleeky.Todo.IntegrationTests.Persistence;
 [TestClass]
 public sealed class MongoTodoListReaderTests
 {
+    private static readonly Guid OwnerId = Id("owner-1");
+    private static readonly Guid OtherOwnerId = Id("owner-2");
+
     private static MongoDbContainer? mongoDbContainer;
 
     private IMongoCollection<BsonDocument> collection = null!;
@@ -66,7 +69,10 @@ public sealed class MongoTodoListReaderTests
         };
         collection = database.GetCollection<BsonDocument>("todoItems");
         handler = new GetTodosQueryHandler(
-            new MongoTodoListReader(database, Options.Create(settings)));
+            new MongoTodoListReader(
+                database,
+                Options.Create(settings),
+                new TestCurrentUser(OwnerId)));
     }
 
     [TestMethod]
@@ -340,7 +346,8 @@ public sealed class MongoTodoListReaderTests
         TodoStatus status = TodoStatus.NotStarted,
         TodoPriority priority = TodoPriority.Medium,
         IReadOnlyList<string>? dependencies = null,
-        bool deleted = false)
+        bool deleted = false,
+        Guid? ownerId = null)
     {
         DateTime timestamp = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         BsonValue deletedAt = deleted ? new BsonDateTime(timestamp) : BsonNull.Value;
@@ -353,6 +360,10 @@ public sealed class MongoTodoListReaderTests
             {
                 "_id",
                 new BsonBinaryData(Id(id), GuidRepresentation.Standard)
+            },
+            {
+                "ownerId",
+                new BsonBinaryData(ownerId ?? OwnerId, GuidRepresentation.Standard)
             },
             { "name", name },
             { "nameNormalized", name.ToLowerInvariant() },

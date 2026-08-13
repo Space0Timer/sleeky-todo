@@ -6,7 +6,9 @@ updating, soft-deleting, and restoring TODOs with validation and optimistic
 concurrency. The list API supports filters, scopes, deterministic cursor
 pagination, and blocked-state projection. Dependency mutations enforce graph
 integrity, blocked status transitions, and dependency-aware deletion. Recurring
-completion atomically creates the next scheduled occurrence.
+completion atomically creates the next scheduled occurrence. Every TODO belongs
+to a signed-in user: login uses OpenID Connect, and the browser session is an
+encrypted HttpOnly cookie rather than a token held by the client.
 
 ## Architecture
 
@@ -45,6 +47,10 @@ monthly anchor preservation. The React client exposes the persisted scoped
 list, filters, cursor loading, dependency management, recurring creation,
 status workflows, recoverable deletion, and explicit stale-version recovery.
 
+Authentication and per-user ownership are implemented end to end: the API
+requires an authenticated session, every TODO query is scoped to its owner, and
+the React client has a login page, protected route, and sign-out control.
+
 ## Prerequisites
 
 - .NET SDK 10.0.302
@@ -54,7 +60,8 @@ status workflows, recoverable deletion, and explicit stale-version recovery.
 
 ## Local MongoDB replica set
 
-Start MongoDB and run the idempotent replica-set initializer:
+Start MongoDB, run the idempotent replica-set initializer, and start the local
+identity provider:
 
 ```sh
 docker compose up -d
@@ -125,10 +132,51 @@ RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTest
 
 Update, delete, and restore operations use the version last read by the client. MongoDB mutations atomically match both `_id` and `version`, increment the version, and return the persisted document. If another writer has already changed the record, the mutation returns no document and the application raises a concurrency conflict.
 
+## Authentication
+
+Login uses OpenID Connect; the application session is an encrypted HttpOnly
+cookie. The React client never receives an access, ID, or refresh token.
+
+`docker compose up -d` starts a Keycloak realm at `http://localhost:8080` with
+two seeded users for local development and browser tests:
+
+| Username | Password         | Display name   |
+| -------- | ---------------- | -------------- |
+| `alice`  | `alice-password` | Alice Anderson |
+| `bob`    | `bob-password`   | Bob Baxter     |
+
+The development settings in `appsettings.Development.json` already point at that
+realm. For any other environment, set the provider and client, and keep the
+secret out of source control:
+
+```sh
+dotnet user-secrets set "Authentication:ClientSecret" "secret-value" --project src/Sleeky.Todo.Api
+```
+
+Unauthenticated API requests return `401` rather than a redirect, so the client
+can react to them. Mutations additionally require an antiforgery token supplied
+in the `X-CSRF-TOKEN` header; `GET /api/auth/antiforgery` issues one, and the
+client refreshes it whenever the authentication state changes. Sign-out clears
+the application cookie only, so the identity provider session can outlive it and
+a following sign-in may not prompt for credentials again.
+
+Every TODO carries an owner. The repository and list reader apply the owner
+filter themselves, so a request for another user's TODO returns `404` rather
+than disclosing that the identifier exists. TODO documents created before this
+change have no owner: recreate disposable local data with
+`docker compose down --volumes` followed by `docker compose up -d`.
+
+Production deployments must persist Data Protection keys so cookie sessions
+survive restarts and stay valid across API instances.
+
 ## HTTP API
 
 The API routes are:
 
+- `GET /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/auth/antiforgery`
+- `POST /api/auth/logout`
 - `GET /api/todos`
 - `POST /api/todos`
 - `GET /api/todos/{id}`
@@ -194,8 +242,12 @@ corepack yarn install
 corepack yarn dev
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api` and `/health` requests to the
-local HTTPS API, so no browser-specific CORS configuration is required.
+Open `http://localhost:5173` and sign in as one of the seeded users. Vite
+proxies `/api`, `/health`, and the OpenID Connect callback paths to the local
+HTTPS API, so no browser-specific CORS configuration is required. The proxy
+deliberately preserves the browser's origin: with the API's own host instead,
+the provider would return the browser to an origin where the login correlation
+cookie does not exist.
 
 ## Tests
 
@@ -210,6 +262,9 @@ Run the MongoDB repository and complete API integration suite with Docker:
 ```sh
 RUN_MONGODB_INTEGRATION_TESTS=true dotnet test tests/Sleeky.Todo.IntegrationTests
 ```
+
+Browser tests drive the real login flow, so Keycloak and MongoDB must be running
+first (`docker compose up -d`).
 
 Run frontend checks and browser tests:
 

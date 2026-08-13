@@ -13,6 +13,7 @@ public sealed class TodoCompletionEventTests
     private static readonly DateOnly DueDate = new DateOnly(2026, 8, 31);
     private static readonly Guid TodoId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid SeriesId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid OwnerId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly DateTimeOffset Timestamp = new DateTimeOffset(
         2026,
         8,
@@ -32,6 +33,7 @@ public sealed class TodoCompletionEventTests
             DueDate);
         TodoItem todo = TodoItem.Create(
             TodoId,
+            OwnerId,
             "Submit report",
             "Monthly report",
             DueDate,
@@ -60,6 +62,7 @@ public sealed class TodoCompletionEventTests
     {
         TodoItem todo = TodoItem.Create(
             TodoId,
+            OwnerId,
             "Submit report",
             null,
             DueDate,

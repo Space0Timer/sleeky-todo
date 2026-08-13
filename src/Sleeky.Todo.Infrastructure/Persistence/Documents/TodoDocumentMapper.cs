@@ -12,6 +12,7 @@ internal static class TodoDocumentMapper
         return new TodoDocument
         {
             Id = todoItem.Id,
+            OwnerId = todoItem.OwnerId,
             Name = todoItem.Name,
             NameNormalized = todoItem.NameNormalized,
             Description = todoItem.Description,
@@ -52,6 +53,7 @@ internal static class TodoDocumentMapper
 
         return TodoItem.Rehydrate(
             document.Id,
+            document.OwnerId,
             document.Name,
             document.Description,
             document.DueDate,

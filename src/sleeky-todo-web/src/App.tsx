@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router'
 
 import './App.css'
 import {
@@ -15,6 +16,7 @@ import {
 } from './api/todos.ts'
 import { CreateTodoForm } from './components/CreateTodoForm.tsx'
 import { TodoCard } from './components/TodoCard.tsx'
+import { UserMenu } from './components/UserMenu.tsx'
 import {
   dependencyStatus,
   sortDirection,
@@ -68,6 +70,7 @@ function App() {
   const [error, setError] = useState<UiError | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const navigate = useNavigate()
 
   const captureError = useCallback((caught: unknown, affectedTodoId?: string) => {
     const apiError = caught instanceof ApiError
@@ -76,12 +79,20 @@ function App() {
         title: 'Unable to reach the API.',
         detail: 'Check that the API and MongoDB are running.',
       })
+
+    // An expired or missing session is not a page-level error: the only useful
+    // response is to start the login flow again.
+    if (apiError.kind === 'unauthorized') {
+      void navigate('/login', { replace: true })
+      return
+    }
+
     setError({
       affectedTodoId,
       kind: apiError.kind,
       problem: apiError.problem,
     })
-  }, [])
+  }, [navigate])
 
   const loadTodo = useCallback(async (id: string, quiet = false): Promise<Todo | null> => {
     try {
@@ -262,6 +273,7 @@ function App() {
         <div className="session-note">
           <strong>Persisted workspace</strong>
           <span>Cursor pages stay current with MongoDB and optimistic versions.</span>
+          <UserMenu />
         </div>
       </header>
 

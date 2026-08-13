@@ -16,6 +16,7 @@ public sealed class TodoItemTests
     private static readonly Guid DependencyId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid OtherDependencyId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid SeriesId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+    private static readonly Guid OwnerId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
     [TestMethod]
     public void CreateSetsDefaultsAndNormalizesValues()
@@ -72,10 +73,28 @@ public sealed class TodoItemTests
     }
 
     [TestMethod]
+    public void CreateRejectsEmptyOwner()
+    {
+        Func<TodoItem> act = () => TodoItem.Create(
+            TodoId,
+            Guid.Empty,
+            "Submit Report",
+            null,
+            InitialDueDate,
+            TodoPriority.High,
+            InitialTimestamp);
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage("A TODO owner identifier is required.");
+    }
+
+    [TestMethod]
     public void CreateRejectsInvalidPriority()
     {
         Func<TodoItem> act = () => TodoItem.Create(
             TodoId,
+            OwnerId,
             "Submit Report",
             null,
             InitialDueDate,
@@ -281,6 +300,7 @@ public sealed class TodoItemTests
 
         TodoItem item = TodoItem.Rehydrate(
             TodoId,
+            OwnerId,
             "Submit Report",
             "Monthly report",
             InitialDueDate,
@@ -316,6 +336,7 @@ public sealed class TodoItemTests
     {
         Func<TodoItem> act = () => TodoItem.Rehydrate(
             TodoId,
+            OwnerId,
             "Submit Report",
             null,
             InitialDueDate,
@@ -368,6 +389,7 @@ public sealed class TodoItemTests
     {
         return TodoItem.Create(
             id ?? TodoId,
+            OwnerId,
             name,
             description,
             InitialDueDate,
@@ -381,6 +403,7 @@ public sealed class TodoItemTests
     {
         return TodoItem.Rehydrate(
             TodoId,
+            OwnerId,
             "Submit Report",
             null,
             InitialDueDate,

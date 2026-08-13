@@ -20,6 +20,12 @@ namespace Sleeky.Todo.IntegrationTests.Api;
 [TestClass]
 public sealed class TodoApiTests
 {
+    private static readonly Guid UserId =
+        Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+    private static readonly Guid OtherUserId =
+        Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
     private static MongoDbContainer? mongoDbContainer;
 
     private HttpClient client = null!;
@@ -50,7 +56,7 @@ public sealed class TodoApiTests
     }
 
     [TestInitialize]
-    public void TestInitialize()
+    public async Task TestInitialize()
     {
         if (mongoDbContainer is null)
         {
@@ -62,11 +68,7 @@ public sealed class TodoApiTests
         factory = new TodoApiFactory(
             mongoDbContainer.GetConnectionString(),
             databaseName);
-        client = factory.CreateClient(
-            new WebApplicationFactoryClientOptions
-            {
-                BaseAddress = new Uri("https://localhost"),
-            });
+        client = await factory.CreateAuthenticatedClientAsync(UserId);
     }
 
     [TestCleanup]
@@ -679,16 +681,125 @@ public sealed class TodoApiTests
             .Select(index => index["name"].AsString)
             .ToArray();
 
-        indexNames.Should().Contain("active_due_date_id");
-        indexNames.Should().Contain("active_priority_id");
-        indexNames.Should().Contain("active_status_id");
-        indexNames.Should().Contain("active_name_normalized_id");
-        indexNames.Should().Contain("active_dependency_ids");
+        indexNames.Should().Contain("owner_active_due_date_id");
+        indexNames.Should().Contain("owner_active_priority_id");
+        indexNames.Should().Contain("owner_active_status_id");
+        indexNames.Should().Contain("owner_active_name_normalized_id");
+        indexNames.Should().Contain("owner_active_dependency_ids");
         indexNames.Should().Contain("purge_at");
-        indexNames.Should().Contain("unique_series_occurrence");
+        indexNames.Should().Contain("owner_unique_series_occurrence");
+        indexNames.Should().NotContain("active_due_date_id");
+        indexNames.Should().NotContain("unique_series_occurrence");
         BsonDocument recurrenceIndex = indexes.Single(
-            index => index["name"] == "unique_series_occurrence");
+            index => index["name"] == "owner_unique_series_occurrence");
         recurrenceIndex["unique"].AsBoolean.Should().BeTrue();
+        recurrenceIndex["key"].AsBsonDocument.Names.First().Should().Be("ownerId");
+    }
+
+    [TestMethod]
+    public async Task UnauthenticatedTodoRequestReturnsUnauthorized()
+    {
+        using HttpClient anonymous = factory.CreateClient(
+            new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+            });
+
+        HttpResponseMessage response = await anonymous.GetAsync("/api/todos");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [TestMethod]
+    public async Task MutationWithoutAntiforgeryTokenIsRejected()
+    {
+        using HttpClient withoutToken = factory.CreateClient(
+            new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+            });
+        withoutToken.DefaultRequestHeaders.Add(
+            TestAuthenticationHandler.UserIdHeaderName,
+            UserId.ToString());
+
+        HttpResponseMessage response = await withoutToken.PostAsJsonAsync(
+            "/api/todos",
+            new
+            {
+                name = "Submit report",
+                dueDate = "2026-08-31",
+                priority = "High",
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [TestMethod]
+    public async Task AnotherUserCannotReadOrListThisUsersTodo()
+    {
+        (_, JsonElement created) = await CreateTodoAsync();
+        Guid todoId = created.GetProperty("id").GetGuid();
+        using HttpClient otherUser = await factory.CreateAuthenticatedClientAsync(
+            OtherUserId);
+
+        HttpResponseMessage detail = await otherUser.GetAsync($"/api/todos/{todoId}");
+        HttpResponseMessage list = await otherUser.GetAsync("/api/todos");
+
+        detail.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        list.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonDocument page = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        page.RootElement.GetProperty("items").GetArrayLength().Should().Be(0);
+    }
+
+    [TestMethod]
+    public async Task AnotherUserCannotDeleteThisUsersTodo()
+    {
+        (_, JsonElement created) = await CreateTodoAsync();
+        Guid todoId = created.GetProperty("id").GetGuid();
+        using HttpClient otherUser = await factory.CreateAuthenticatedClientAsync(
+            OtherUserId);
+
+        HttpResponseMessage response = await otherUser.SendAsync(
+            new HttpRequestMessage(HttpMethod.Delete, $"/api/todos/{todoId}")
+            {
+                Content = JsonContent.Create(new { version = 1 }),
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [TestMethod]
+    public async Task CurrentUserEndpointReportsAuthenticationState()
+    {
+        using HttpClient anonymous = factory.CreateClient(
+            new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+            });
+
+        HttpResponseMessage anonymousResponse = await anonymous.GetAsync("/api/auth/me");
+        HttpResponseMessage authenticatedResponse = await client.GetAsync("/api/auth/me");
+
+        JsonDocument anonymousBody = JsonDocument.Parse(
+            await anonymousResponse.Content.ReadAsStringAsync());
+        JsonDocument authenticatedBody = JsonDocument.Parse(
+            await authenticatedResponse.Content.ReadAsStringAsync());
+
+        anonymousBody.RootElement.GetProperty("isAuthenticated")
+            .GetBoolean().Should().BeFalse();
+        authenticatedBody.RootElement.GetProperty("isAuthenticated")
+            .GetBoolean().Should().BeTrue();
+        authenticatedBody.RootElement.GetProperty("userId")
+            .GetGuid().Should().Be(UserId);
+    }
+
+    [TestMethod]
+    public async Task LoginRejectsExternalReturnUrl()
+    {
+        HttpResponseMessage response = await client.GetAsync(
+            "/api/auth/login?returnUrl=https://attacker.example.com/steal");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [TestMethod]

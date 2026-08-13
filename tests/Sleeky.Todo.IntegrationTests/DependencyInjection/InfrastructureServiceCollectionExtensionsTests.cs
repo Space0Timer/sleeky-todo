@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.DependencyInjection;
@@ -25,6 +26,11 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
             "sleekyTodo",
             "todoItems");
         ServiceCollection services = new ServiceCollection();
+
+        // The current user is supplied by the composition root, because only
+        // the API layer can read it from the request.
+        services.AddSingleton<ICurrentUser>(
+            new TestCurrentUser(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")));
         services.AddInfrastructure(configuration);
         using ServiceProvider serviceProvider = services.BuildServiceProvider();
 
@@ -36,14 +42,18 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         IClock clock = serviceProvider.GetRequiredService<IClock>();
         ITodoRepository repository = serviceProvider.GetRequiredService<ITodoRepository>();
         ITodoTransaction transaction = serviceProvider.GetRequiredService<ITodoTransaction>();
+        IUserDirectory userDirectory = serviceProvider
+            .GetRequiredService<IUserDirectory>();
 
         settings.DatabaseName.Should().Be("sleekyTodo");
         settings.TodoItemsCollectionName.Should().Be("todoItems");
+        settings.UsersCollectionName.Should().Be("users");
         mongoClient.Should().BeOfType<MongoClient>();
         database.DatabaseNamespace.DatabaseName.Should().Be("sleekyTodo");
         clock.UtcNow.Offset.Should().Be(TimeSpan.Zero);
         repository.Should().BeOfType<MongoTodoRepository>();
         transaction.Should().NotBeNull();
+        userDirectory.Should().BeOfType<MongoUserDirectory>();
     }
 
     [TestMethod]

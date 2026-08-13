@@ -1,3 +1,4 @@
+import { send } from './http.ts'
 import {
   dependencyStatus,
   sortDirection,
@@ -5,10 +6,8 @@ import {
   todoScope,
   todoSortField,
   todoStatus,
-  type ApiErrorKind,
   type CreateTodoDraft,
   type CursorPage,
-  type ProblemDetails,
   type Todo,
   type TodoDraft,
   type TodoListItem,
@@ -52,66 +51,7 @@ const directionNames = {
   [sortDirection.descending]: 'Desc',
 }
 
-function classifyError(status: number, problem: ProblemDetails): ApiErrorKind {
-  if (status === 0) return 'network'
-  if (status === 400) return 'validation'
-  if (status === 404) return 'not-found'
-  if (status === 409 && problem.title === 'Concurrency conflict.') return 'concurrency'
-  if (status === 409) return 'domain'
-  return 'unexpected'
-}
-
-export class ApiError extends Error {
-  readonly kind: ApiErrorKind
-  readonly problem: ProblemDetails
-  readonly status: number
-
-  constructor(status: number, problem: ProblemDetails) {
-    super(problem.detail ?? problem.title ?? `Request failed with status ${status}.`)
-    this.name = 'ApiError'
-    this.problem = problem
-    this.status = status
-    this.kind = classifyError(status, problem)
-  }
-}
-
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  let response: Response
-
-  try {
-    response = await fetch(path, {
-      ...init,
-      headers: {
-        Accept: 'application/json',
-        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-        ...init?.headers,
-      },
-    })
-  } catch {
-    throw new ApiError(0, {
-      title: 'Unable to reach the API.',
-      detail: 'Check that the API and MongoDB are running.',
-    })
-  }
-
-  if (!response.ok) {
-    let problem: ProblemDetails = {}
-
-    try {
-      problem = (await response.json()) as ProblemDetails
-    } catch {
-      problem = { detail: `Request failed with status ${response.status}.` }
-    }
-
-    throw new ApiError(response.status, problem)
-  }
-
-  if (response.status === 204) {
-    return undefined as T
-  }
-
-  return (await response.json()) as T
-}
+export { ApiError } from './http.ts'
 
 export function listTodos(options: TodoListOptions): Promise<CursorPage<TodoListItem>> {
   const query = new URLSearchParams({

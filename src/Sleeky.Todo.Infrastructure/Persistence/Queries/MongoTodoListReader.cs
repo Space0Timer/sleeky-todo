@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
@@ -21,16 +22,20 @@ public sealed class MongoTodoListReader : ITodoListReader
     private const int DescriptionPreviewLength = 120;
 
     private readonly string collectionName;
+    private readonly ICurrentUser currentUser;
     private readonly IMongoCollection<TodoDocument> todoItems;
 
     public MongoTodoListReader(
         IMongoDatabase database,
-        IOptions<MongoDbSettings> settings)
+        IOptions<MongoDbSettings> settings,
+        ICurrentUser currentUser)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(currentUser);
 
         this.collectionName = settings.Value.TodoItemsCollectionName;
+        this.currentUser = currentUser;
         this.todoItems = database.GetCollection<TodoDocument>(this.collectionName);
     }
 
@@ -40,12 +45,22 @@ public sealed class MongoTodoListReader : ITodoListReader
     {
         ArgumentNullException.ThrowIfNull(criteria);
 
+        Guid ownerId = currentUser.UserId;
         IAggregateFluent<TodoDocument> filteredTodos = BuildFilteredPipeline(
             this.todoItems,
-            criteria);
+            criteria,
+            ownerId);
         IAggregateFluent<MongoTodoListRow> query = criteria.DependencyStatus.HasValue
-            ? BuildDependencyFilteredQuery(filteredTodos, criteria, this.collectionName)
-            : BuildPageFirstQuery(filteredTodos, criteria, this.collectionName);
+            ? BuildDependencyFilteredQuery(
+                filteredTodos,
+                criteria,
+                this.collectionName,
+                ownerId)
+            : BuildPageFirstQuery(
+                filteredTodos,
+                criteria,
+                this.collectionName,
+                ownerId);
         List<MongoTodoListRow> rows = await query.ToListAsync(cancellationToken);
 
         return rows.ConvertAll(ToDto);
@@ -53,11 +68,12 @@ public sealed class MongoTodoListReader : ITodoListReader
 
     private static IAggregateFluent<TodoDocument> BuildFilteredPipeline(
         IMongoCollection<TodoDocument> todoItems,
-        TodoListCriteria criteria)
+        TodoListCriteria criteria,
+        Guid ownerId)
     {
         IAggregateFluent<TodoDocument> pipeline = todoItems
             .Aggregate()
-            .Match(BuildFilter(criteria));
+            .Match(BuildFilter(criteria, ownerId));
 
         if (criteria.LastSortValue is null || criteria.LastTodoId is null)
         {
@@ -70,12 +86,14 @@ public sealed class MongoTodoListReader : ITodoListReader
     private static IAggregateFluent<MongoTodoListRow> BuildPageFirstQuery(
         IAggregateFluent<TodoDocument> pipeline,
         TodoListCriteria criteria,
-        string collectionName)
+        string collectionName,
+        Guid ownerId)
     {
         IAggregateFluent<TodoDocument> page = ApplySortAndLimit(pipeline, criteria);
         IAggregateFluent<BsonDocument> withDependencyState = AddDependencyState(
             page,
-            collectionName);
+            collectionName,
+            ownerId);
 
         return ProjectRows(withDependencyState);
     }
@@ -83,11 +101,13 @@ public sealed class MongoTodoListReader : ITodoListReader
     private static IAggregateFluent<MongoTodoListRow> BuildDependencyFilteredQuery(
         IAggregateFluent<TodoDocument> pipeline,
         TodoListCriteria criteria,
-        string collectionName)
+        string collectionName,
+        Guid ownerId)
     {
         IAggregateFluent<BsonDocument> withDependencyState = AddDependencyState(
             pipeline,
-            collectionName)
+            collectionName,
+            ownerId)
             .Match(BuildDependencyStatusFilter(criteria.DependencyStatus!.Value));
         IAggregateFluent<TodoDocument> filteredDocuments =
             withDependencyState.As<TodoDocument>();
@@ -100,11 +120,12 @@ public sealed class MongoTodoListReader : ITodoListReader
 
     private static IAggregateFluent<BsonDocument> AddDependencyState(
         IAggregateFluent<TodoDocument> pipeline,
-        string collectionName)
+        string collectionName,
+        Guid ownerId)
     {
         return pipeline
             .AppendStage(CreateStage<TodoDocument, BsonDocument>(
-                BuildCompletedDependencyLookupStage(collectionName)))
+                BuildCompletedDependencyLookupStage(collectionName, ownerId)))
             .AppendStage(CreateStage<BsonDocument, BsonDocument>(
                 BuildIncompleteDependencyCountStage()));
     }
@@ -126,10 +147,13 @@ public sealed class MongoTodoListReader : ITodoListReader
     }
 
     private static FilterDefinition<TodoDocument> BuildFilter(
-        TodoListCriteria criteria)
+        TodoListCriteria criteria,
+        Guid ownerId)
     {
         FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;
-        FilterDefinition<TodoDocument> filter = BuildScopeFilter(criteria.Scope);
+        FilterDefinition<TodoDocument> filter =
+            filters.Eq(todo => todo.OwnerId, ownerId)
+            & BuildScopeFilter(criteria.Scope);
 
         if (criteria.Status.HasValue)
         {
@@ -278,7 +302,8 @@ public sealed class MongoTodoListReader : ITodoListReader
     }
 
     private static BsonDocument BuildCompletedDependencyLookupStage(
-        string collectionName)
+        string collectionName,
+        Guid ownerId)
     {
         return new BsonDocument(
             "$lookup",
@@ -295,6 +320,12 @@ public sealed class MongoTodoListReader : ITodoListReader
                             "$match",
                             new BsonDocument
                             {
+                                {
+                                    MongoTodoFields.OwnerId,
+                                    new BsonBinaryData(
+                                        ownerId,
+                                        GuidRepresentation.Standard)
+                                },
                                 { MongoTodoFields.DeletedAt, BsonNull.Value },
                                 { MongoTodoFields.Status, (int)TodoStatus.Completed },
                             }),

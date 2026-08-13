@@ -25,7 +25,7 @@ public partial class Program
 
             builder.Services.AddApplication();
             builder.Services.AddInfrastructure(builder.Configuration);
-            builder.Services.AddApi();
+            builder.Services.AddApi(builder.Configuration, builder.Environment);
 
             WebApplication app = builder.Build();
 

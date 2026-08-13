@@ -28,10 +28,15 @@ public sealed class MongoTodoRepositoryTests
         0,
         TimeSpan.Zero);
 
+    private static readonly Guid OwnerId = Id("owner-1");
+    private static readonly Guid OtherOwnerId = Id("owner-2");
+
     private static MongoDbContainer? mongoDbContainer;
 
     private IMongoDatabase database = null!;
     private ITodoRepository repository = null!;
+    private ITodoRepository otherOwnerRepository = null!;
+    private MongoDbSettings settings = null!;
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext testContext)
@@ -68,13 +73,14 @@ public sealed class MongoTodoRepositoryTests
         MongoClient client = new MongoClient(mongoDbContainer.GetConnectionString());
         string databaseName = $"sleekyTodoTests_{Guid.NewGuid():N}";
         database = client.GetDatabase(databaseName);
-        MongoDbSettings settings = new MongoDbSettings
+        settings = new MongoDbSettings
         {
             ConnectionString = mongoDbContainer.GetConnectionString(),
             DatabaseName = databaseName,
             TodoItemsCollectionName = "todoItems",
         };
-        repository = new MongoTodoRepository(database, Options.Create(settings));
+        repository = CreateRepository(OwnerId);
+        otherOwnerRepository = CreateRepository(OtherOwnerId);
     }
 
     [TestMethod]
@@ -108,6 +114,7 @@ public sealed class MongoTodoRepositoryTests
             new DateOnly(2026, 8, 31));
         TodoItem todoItem = TodoItem.Create(
             Id("recurring"),
+            OwnerId,
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
@@ -389,6 +396,7 @@ public sealed class MongoTodoRepositoryTests
         await repository.AddAsync(todoItem);
         TodoItem persistedVersionTwo = TodoItem.Rehydrate(
             todoItem.Id,
+            todoItem.OwnerId,
             todoItem.Name,
             todoItem.Description,
             todoItem.DueDate,
@@ -413,10 +421,72 @@ public sealed class MongoTodoRepositoryTests
         storedTodo.Version.Should().Be(1);
     }
 
-    private static TodoItem CreateTodo(string id = "todo-1")
+    [TestMethod]
+    public async Task ReadsExcludeAnotherOwnersTodo()
+    {
+        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
+        await otherOwnerRepository.AddAsync(otherOwnersTodo);
+
+        TodoItem? read = await repository.GetByIdAsync(otherOwnersTodo.Id);
+        bool exists = await repository.ExistsAsync(otherOwnersTodo.Id);
+        IReadOnlyCollection<TodoItem> batch = await repository.GetByIdsAsync(
+            [otherOwnersTodo.Id]);
+
+        read.Should().BeNull();
+        exists.Should().BeFalse();
+        batch.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task MutationsCannotReachAnotherOwnersTodo()
+    {
+        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
+        await otherOwnerRepository.AddAsync(otherOwnersTodo);
+        otherOwnersTodo.UpdateDetails(
+            "Renamed by attacker",
+            null,
+            otherOwnersTodo.DueDate,
+            TodoPriority.Low,
+            Timestamp.AddHours(1));
+
+        TodoItem? updated = await repository.UpdateAsync(
+            otherOwnersTodo,
+            expectedVersion: 1);
+
+        updated.Should().BeNull();
+        TodoItem? stored = await otherOwnerRepository.GetByIdAsync(
+            otherOwnersTodo.Id);
+        stored.Should().NotBeNull();
+        stored!.Name.Should().Be("Submit report");
+        stored.Version.Should().Be(1);
+    }
+
+    [TestMethod]
+    public async Task AddRejectsTodoOwnedByAnotherUser()
+    {
+        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
+
+        Func<Task> act = () => repository.AddAsync(otherOwnersTodo);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("A TODO can only be persisted by its owner.");
+    }
+
+    [TestMethod]
+    public async Task RepositoryRefusesUnauthenticatedReads()
+    {
+        ITodoRepository anonymous = CreateRepository(Guid.Empty);
+
+        Func<Task> act = () => anonymous.GetByIdAsync(Id("todo-1"));
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    private static TodoItem CreateTodo(string id = "todo-1", Guid? ownerId = null)
     {
         return TodoItem.Create(
             Id(id),
+            ownerId ?? OwnerId,
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
@@ -437,6 +507,14 @@ public sealed class MongoTodoRepositoryTests
         byte[] bytes = System.Security.Cryptography.MD5.HashData(
             System.Text.Encoding.UTF8.GetBytes(value));
         return new Guid(bytes);
+    }
+
+    private ITodoRepository CreateRepository(Guid ownerId)
+    {
+        return new MongoTodoRepository(
+            database,
+            Options.Create(settings),
+            new TestCurrentUser(ownerId));
     }
 
     private async Task<TodoItem> GetRequiredTodoAsync(

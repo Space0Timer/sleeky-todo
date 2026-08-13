@@ -2,6 +2,7 @@ using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
@@ -12,26 +13,40 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 public sealed class MongoTodoRepository : ITodoRepository
 {
+    private readonly ICurrentUser currentUser;
     private readonly IMongoCollection<TodoDocument> todoItems;
     private readonly MongoTransactionContext transactionContext;
 
     public MongoTodoRepository(
         IMongoDatabase database,
         IOptions<MongoDbSettings> settings,
+        ICurrentUser currentUser,
         MongoTransactionContext? transactionContext = null)
     {
         ArgumentNullException.ThrowIfNull(database);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(currentUser);
 
         this.todoItems = database.GetCollection<TodoDocument>(
             settings.Value.TodoItemsCollectionName);
+        this.currentUser = currentUser;
         this.transactionContext = transactionContext ?? new MongoTransactionContext();
     }
+
+    private Guid OwnerId => currentUser.UserId;
 
     public async Task AddAsync(
         TodoItem todoItem,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(todoItem);
+
+        if (todoItem.OwnerId != OwnerId)
+        {
+            throw new InvalidOperationException(
+                "A TODO can only be persisted by its owner.");
+        }
+
         TodoDocument document = TodoDocumentMapper.FromDomain(todoItem);
         if (transactionContext.Session is null)
         {
@@ -94,8 +109,8 @@ public sealed class MongoTodoRepository : ITodoRepository
             return Array.Empty<TodoItem>();
         }
 
-        FilterDefinition<TodoDocument> filter =
-            Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
         if (!includeDeleted)
         {
             filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
@@ -113,8 +128,8 @@ public sealed class MongoTodoRepository : ITodoRepository
         Guid dependencyId,
         CancellationToken cancellationToken = default)
     {
-        FilterDefinition<TodoDocument> filter =
-            Builders<TodoDocument>.Filter.AnyEq(
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.AnyEq(
                 document => document.DependencyIds,
                 dependencyId)
             & Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null)
@@ -178,20 +193,25 @@ public sealed class MongoTodoRepository : ITodoRepository
                 "A TODO must be restored before it can be persisted as active.");
         }
 
-        FilterDefinition<TodoDocument> filter =
-            Builders<TodoDocument>.Filter.Eq(document => document.Id, todoItem.Id)
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.Eq(document => document.Id, todoItem.Id)
             & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion)
             & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);
 
         return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
     }
 
-    private static FilterDefinition<TodoDocument> BuildIdFilter(
+    private FilterDefinition<TodoDocument> BuildOwnerFilter()
+    {
+        return Builders<TodoDocument>.Filter.Eq(document => document.OwnerId, OwnerId);
+    }
+
+    private FilterDefinition<TodoDocument> BuildIdFilter(
         Guid id,
         bool includeDeleted)
     {
-        FilterDefinition<TodoDocument> filter =
-            Builders<TodoDocument>.Filter.Eq(document => document.Id, id);
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.Eq(document => document.Id, id);
 
         if (!includeDeleted)
         {
@@ -201,7 +221,7 @@ public sealed class MongoTodoRepository : ITodoRepository
         return filter;
     }
 
-    private static FilterDefinition<TodoDocument> BuildMutationFilter(
+    private FilterDefinition<TodoDocument> BuildMutationFilter(
         Guid id,
         long expectedVersion,
         bool includeDeleted)
