@@ -1,10 +1,19 @@
 name: CI
 
 on:
+  # No push trigger. A pull_request run already builds the merge of the branch
+  # with develop, so running the same suite again after the merge pays twice
+  # for one answer.
   pull_request:
     branches: [develop]
-  push:
-    branches: [develop]
+    # ready_for_review starts the run a draft skipped; without it, marking a
+    # pull request ready would need an empty commit to get an answer.
+    types: [opened, synchronize, reopened, ready_for_review]
+    # A change to prose cannot break the build, and the workflow and scripts
+    # are not in this list, so a change to CI itself still runs.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   workflow_dispatch:
 
 # A newer commit on the same branch makes the previous run's answer stale.
@@ -19,10 +28,21 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: "true"
   DOTNET_NOLOGO: "true"
 
+# Every job carries the same condition: a draft pull request does not run, so
+# iterating on a branch costs nothing and the suite runs once when the change is
+# marked ready. A manual run is not a pull request, so it is never gated.
+#
+# ready_for_review is named on its own because the payload for that action
+# still reports the pull request as a draft, so testing the flag alone skips
+# the very run that marking a change ready is supposed to start.
 jobs:
   backend:
     name: backend
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
+      || github.event.pull_request.draft == false
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -102,6 +122,10 @@ jobs:
   frontend:
     name: frontend
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
+      || github.event.pull_request.draft == false
     defaults:
       run:
         working-directory: src/sleeky-todo-web
@@ -143,6 +167,10 @@ jobs:
   e2e:
     name: e2e
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
+      || github.event.pull_request.draft == false
     needs: [backend, frontend]
     env:
       COMPOSE_PROJECT_NAME: sleeky-todo
@@ -242,6 +270,10 @@ jobs:
   docker:
     name: docker
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request'
+      || github.event.action == 'ready_for_review'
+      || github.event.pull_request.draft == false
     needs: [backend, frontend, e2e]
     env:
       COMPOSE_PROJECT_NAME: sleeky-todo
