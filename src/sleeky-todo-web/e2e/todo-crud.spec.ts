@@ -230,7 +230,30 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
     deletedAt: null,
     purgeAt: null,
   }))
-  const seedScript = `const docs=${JSON.stringify(documents)}; docs.forEach((doc) => { doc._id=UUID(doc._id); doc.ownerId=UUID(doc.ownerId); doc.createdAt=new Date(doc.createdAt); doc.updatedAt=new Date(doc.updatedAt); }); db.getSiblingDB('sleekyTodoPlaywright').todoItems.insertMany(docs);`
+  const collection = "db.getSiblingDB('sleekyTodoPlaywright').todoItems"
+
+  // A retry runs this body again while the previous attempt's documents are
+  // still present, because global teardown only drops the database once the
+  // whole run has finished. These identifiers are fixed, so insertMany would
+  // fail on a duplicate key and the retry would report that rather than
+  // whatever actually went wrong. Clearing the same identifiers first makes the
+  // seed idempotent.
+  //
+  // The delete has to follow the UUID conversion: identifiers persist as BSON
+  // UUIDs rather than strings, so matching on the string form silently removes
+  // nothing. It is scoped to these documents so that a parallel worker's data
+  // is left alone.
+  const seedScript = `
+    const docs = ${JSON.stringify(documents)};
+    docs.forEach((doc) => {
+      doc._id = UUID(doc._id);
+      doc.ownerId = UUID(doc.ownerId);
+      doc.createdAt = new Date(doc.createdAt);
+      doc.updatedAt = new Date(doc.updatedAt);
+    });
+    ${collection}.deleteMany({ _id: { $in: docs.map((doc) => doc._id) } });
+    ${collection}.insertMany(docs);
+  `
   await execFileAsync('docker', [
     'compose',
     'exec',
