@@ -123,7 +123,13 @@ public static class AuthenticationServiceCollectionExtensions
         options.UsePkce = true;
         options.SaveTokens = false;
         options.MapInboundClaims = false;
-        options.GetClaimsFromUserInfoEndpoint = true;
+
+        // The token-validated event reads the subject, issuer, and display name
+        // from the ID token and replaces the principal with the application's
+        // own. The userinfo response would arrive afterwards and re-apply the
+        // default claim actions, putting the provider subject and profile
+        // claims back into a ticket that deliberately excludes them.
+        options.GetClaimsFromUserInfoEndpoint = false;
         options.SignInScheme = AuthenticationSchemes.ApplicationCookie;
         options.Scope.Clear();
         options.Scope.Add(OpenIdConnectScope.OpenId);
