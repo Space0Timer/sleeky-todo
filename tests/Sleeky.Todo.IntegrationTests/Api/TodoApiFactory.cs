@@ -13,13 +13,21 @@ namespace Sleeky.Todo.IntegrationTests.Api;
 
 internal sealed class TodoApiFactory : WebApplicationFactory<Program>
 {
+    public const string DevelopmentEnvironment = "Development";
+    public const string TestingEnvironment = "Testing";
+
     private readonly string connectionString;
     private readonly string databaseName;
+    private readonly string environmentName;
 
-    public TodoApiFactory(string connectionString, string databaseName)
+    public TodoApiFactory(
+        string connectionString,
+        string databaseName,
+        string environmentName = TestingEnvironment)
     {
         this.connectionString = connectionString;
         this.databaseName = databaseName;
+        this.environmentName = environmentName;
     }
 
     /// <summary>
@@ -49,7 +57,7 @@ internal sealed class TodoApiFactory : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(environmentName);
         builder.UseSetting("MongoDb:ConnectionString", connectionString);
         builder.UseSetting("MongoDb:DatabaseName", databaseName);
         builder.UseSetting("MongoDb:TodoItemsCollectionName", "todoItems");

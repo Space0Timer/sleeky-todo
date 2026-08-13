@@ -46,16 +46,18 @@ function buildHeaders(init?: RequestInit): HeadersInit {
   const method = (init?.method ?? 'GET').toUpperCase()
   const needsToken = mutatingMethods.has(method) && antiforgeryToken !== null
 
+  // Caller headers are applied before the antiforgery header so a caller
+  // cannot drop cross-site request protection by supplying its own headers.
   return {
     Accept: 'application/json',
     ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+    ...init?.headers,
     ...(needsToken
       ? {
           [antiforgeryToken?.headerName || defaultAntiforgeryHeader]:
             antiforgeryToken?.token ?? '',
         }
       : {}),
-    ...init?.headers,
   }
 }
 

@@ -113,8 +113,15 @@ public static class ApiServiceCollectionExtensions
             app.UseHttpsRedirection();
         }
 
-        app.UseSwagger();
-        app.UseSwaggerUI();
+        if (isDevelopment)
+        {
+            // Swagger middleware runs ahead of authorization, so publishing it
+            // outside development would expose the whole API surface to
+            // anonymous callers regardless of the fallback policy.
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+
         app.UseAuthentication();
         app.UseAuthorization();
         app.MapControllers();

@@ -12,6 +12,7 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Indexes;
 internal sealed class MongoDbIndexInitializer : IHostedService
 {
     private const int IndexNotFoundErrorCode = 27;
+    private const string IndexNameField = "name";
     private const int NamespaceNotFoundErrorCode = 26;
 
     /// <summary>
@@ -170,11 +171,47 @@ internal sealed class MongoDbIndexInitializer : IHostedService
         ];
     }
 
+    private async Task<HashSet<string>> ListTodoIndexNamesAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using IAsyncCursor<BsonDocument> cursor = await this.todoItems.Indexes
+                .ListAsync(cancellationToken);
+            List<BsonDocument> indexes = await cursor.ToListAsync(cancellationToken);
+
+            return indexes
+                .Select(index => index
+                    .GetValue(IndexNameField, BsonString.Empty)
+                    .AsString)
+                .ToHashSet(StringComparer.Ordinal);
+        }
+        catch (MongoCommandException exception)
+            when (exception.Code == NamespaceNotFoundErrorCode)
+        {
+            // A collection that does not exist yet carries no superseded index.
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Reads the existing index names once rather than issuing a drop per
+    /// superseded name, so a started instance does not pay a failed command for
+    /// every index that earlier runs already removed.
+    /// </summary>
     private async Task DropSupersededTodoIndexesAsync(
         CancellationToken cancellationToken)
     {
+        HashSet<string> existingNames = await ListTodoIndexNamesAsync(
+            cancellationToken);
+
         foreach (string indexName in SupersededTodoIndexNames)
         {
+            if (!existingNames.Contains(indexName))
+            {
+                continue;
+            }
+
             try
             {
                 await this.todoItems.Indexes.DropOneAsync(
@@ -186,10 +223,9 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                     indexName);
             }
             catch (MongoCommandException exception)
-                when (exception.Code is IndexNotFoundErrorCode
-                    or NamespaceNotFoundErrorCode)
+                when (exception.Code == IndexNotFoundErrorCode)
             {
-                // The index is already absent, which is the required end state.
+                // A concurrently starting instance removed it first.
             }
         }
     }

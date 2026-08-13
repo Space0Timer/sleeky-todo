@@ -618,9 +618,24 @@ public sealed class TodoApiTests
     }
 
     [TestMethod]
-    public async Task SwaggerGenerationDocumentsExpectedResponses()
+    public async Task SwaggerIsNotPublishedOutsideDevelopment()
     {
         HttpResponseMessage response = await client.GetAsync("/swagger/v1/swagger.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [TestMethod]
+    public async Task SwaggerGenerationDocumentsExpectedResponses()
+    {
+        using TodoApiFactory developmentFactory = new TodoApiFactory(
+            mongoDbContainer!.GetConnectionString(),
+            databaseName,
+            TodoApiFactory.DevelopmentEnvironment);
+        using HttpClient developmentClient = developmentFactory.CreateClient();
+
+        HttpResponseMessage response = await developmentClient.GetAsync(
+            "/swagger/v1/swagger.json");
         JsonElement swagger = await ReadJsonAsync(response);
         JsonElement paths = swagger.GetProperty("paths");
 
