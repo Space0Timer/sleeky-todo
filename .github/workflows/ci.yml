@@ -345,6 +345,27 @@ jobs:
           fi
           echo "/api/auth/me answered 200."
 
+      # The client is served from this origin, so an anonymous visitor must
+      # receive the shell rather than the 401 an unmatched path would earn.
+      # This is the check that proves the image ships a usable client, not only
+      # a running API.
+      - name: Check that the client is served
+        run: |
+          body=$(mktemp)
+          status=$(curl --silent --output "$body" --write-out '%{http_code}' \
+            http://localhost:8080/)
+          if [ "$status" != "200" ]; then
+            echo "::error::/ answered $status rather than 200."
+            docker logs sleeky-todo-smoke
+            exit 1
+          fi
+          if ! grep -q '<div id="root">' "$body"; then
+            echo "::error::/ answered 200 without the client shell."
+            head -c 500 "$body"
+            exit 1
+          fi
+          echo "/ served the client shell."
+
       - name: Stop the container
         if: always()
         run: |
