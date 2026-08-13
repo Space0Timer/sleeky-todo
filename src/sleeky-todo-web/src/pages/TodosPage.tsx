@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-import styles from './App.module.scss'
 import {
   ApiError,
   addTodoDependency,
@@ -13,12 +12,12 @@ import {
   removeTodoDependency,
   restoreTodo,
   updateTodo,
-} from './api/todos.ts'
-import { useAuth } from './auth/AuthContext.ts'
-import { CreateTodoForm } from './components/CreateTodoForm.tsx'
-import { TodoCard } from './components/TodoCard.tsx'
-import { UserMenu } from './components/UserMenu.tsx'
-import { Button, EmptyState } from './components/common/index.ts'
+} from '../api/todos.ts'
+import { useAuth } from '../auth/AuthContext.ts'
+import { CreateTodoForm } from '../components/CreateTodoForm.tsx'
+import { TodoCard } from '../components/TodoCard.tsx'
+import { UserMenu } from '../components/UserMenu.tsx'
+import { Button, EmptyState } from '../components/common/index.ts'
 import {
   dependencyStatus,
   sortDirection,
@@ -35,7 +34,8 @@ import {
   type TodoListOptions,
   type TodoScope,
   type TodoStatus,
-} from './types/todo.ts'
+} from '../types/todo.ts'
+import styles from './TodosPage.module.scss'
 
 type UiError = {
   affectedTodoId?: string
@@ -60,7 +60,7 @@ const tabs: { label: string; scope: TodoScope }[] = [
   { label: 'Trash', scope: todoScope.deleted },
 ]
 
-function App() {
+export function TodosPage() {
   const [scope, setScope] = useState<TodoScope>(todoScope.active)
   const [filters, setFilters] = useState(initialFilters)
   const [items, setItems] = useState<TodoListItem[]>([])
@@ -486,5 +486,3 @@ function App() {
     </main>
   )
 }
-
-export default App

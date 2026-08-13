@@ -1,5 +1,5 @@
-@use 'styles/mixins' as m;
-@use 'styles/tokens' as t;
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
 
 .app-shell {
   width: min(72rem, calc(100% - 2rem));
