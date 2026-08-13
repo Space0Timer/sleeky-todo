@@ -407,6 +407,59 @@ One consequence is that Playwright can no longer select a hashed class name.
 now carries `data-testid="todo-id"`, which is the selector the rest of the suite
 already uses.
 
+## Type-checked CSS module class names
+
+Vite types every `*.module.scss` through a single wildcard declaration whose
+members are an index signature. Under it `styles.todoCrad` compiles, renders
+`class=""`, and the element loses its styling with nothing reported at build
+time or in the browser. Scoping the class names removed the collision risk but
+left this failure untouched.
+
+A declaration generated beside each module resolves ahead of that wildcard and
+turns the same typo into `Property 'todoCradHeading' does not exist. Did you
+mean 'todoCardHeading'?`. TypeScript finds the files through
+`allowArbitraryExtensions`, which the project already enabled: an import of
+`./X.module.scss` resolves to `./X.module.d.scss.ts`.
+
+`scripts/generate-css-module-types.mjs` compiles each module with Sass before
+reading its classes rather than scanning the source, so a class that only a
+mixin or a nested block introduces is declared like any other. Names are
+camel-cased to match the `camelCaseOnly` setting in vite.config.ts, which is the
+only spelling a component can use.
+
+The declarations are generated, so they are git-ignored rather than committed,
+which keeps them from drifting from the stylesheets they describe. `yarn dev`
+and `yarn build` write them before anything reads them, Playwright inherits that
+through `yarn dev`, and CI runs an explicit step because the type-aware lint
+runs before the build.
+
+## The successor if CSS Modules is outgrown
+
+styled-components is not the fallback. It is in maintenance mode, and a runtime
+CSS-in-JS library requires every styled component to be a client component,
+which is why the ecosystem moved away from it. The cost is concrete here as
+well: stylelint cannot meaningfully parse styles inside tagged template
+literals, so adopting it would discard the property-order, token, typography,
+and truncation rules recorded above.
+
+If type-safe tokens expressed in TypeScript become a real requirement, the
+destination is a zero-runtime CSS-in-TS system such as vanilla-extract or Panda
+CSS. Both provide typed tokens and co-location without a runtime and without the
+server-component problem.
+
+Staying put is the cheaper bet because the migration cost is asymmetric. Design
+decisions are centralised in `styles/_tokens.scss`, which converts to a
+TypeScript object mechanically, and the mixins convert to functions. The reverse
+is not mechanical: styles interpolated with component logic have to be read by
+hand, and the lint layer that could inventory them is exactly what was given up.
+
+Nothing in the client presently needs a style value computed at runtime. Every
+variant is a finite set resolved to a class — eight badge tones, four button
+variants — and the remaining behaviour is `:focus`, `:disabled`,
+`[aria-selected]`, and one media query. An open-ended value, if one arrives, is
+a CSS custom property set from an inline style, which keeps the token and mixin
+layers intact.
+
 ## Deferred decisions
 
 Retention cleanup scheduling remains deferred until its vertical slice.

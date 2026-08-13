@@ -68,6 +68,10 @@ SCSS rather than the indented syntax, and why modules rather than global CSS.
   reintroduces the coupling that scoping removes.
 - Name classes in kebab-case. Vite exposes them to components as camelCase, so
   `.todo-card` is read as `styles.todoCard`.
+- Class names are type-checked. `yarn css-types` writes a declaration beside
+  every module, and `yarn dev` and `yarn build` run it first, so a misspelled
+  class fails the build instead of rendering an unstyled element. Those files
+  are generated and git-ignored: regenerate them, do not edit them.
 - Order a rule as `@include` first, then declarations, then nested rules.
 - Write `border: 0` rather than `border: none`, keep hex lowercase, and do not
   use `!important`.

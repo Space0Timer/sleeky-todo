@@ -157,6 +157,11 @@ jobs:
       - name: Install
         run: corepack yarn install --immutable
 
+      # Declarations for the CSS modules are generated rather than committed,
+      # and both the type-aware lint and the build below need them on disk.
+      - name: Generate CSS module types
+        run: corepack yarn css-types
+
       - name: Lint
         run: corepack yarn lint:js
 

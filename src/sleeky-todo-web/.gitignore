@@ -9,6 +9,9 @@ lerna-debug.log*
 
 node_modules
 dist
+
+# Generated beside every *.module.scss by scripts/generate-css-module-types.mjs
+*.module.d.scss.ts
 dist-ssr
 playwright-report
 test-results

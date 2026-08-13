@@ -7,8 +7,9 @@
     "node": "24.19.0"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "yarn css-types && vite",
+    "build": "yarn css-types && tsc -b && vite build",
+    "css-types": "node scripts/generate-css-module-types.mjs",
     "lint": "yarn lint:js && yarn lint:styles",
     "lint:js": "oxlint --type-aware",
     "lint:styles": "stylelint \"src/**/*.scss\"",

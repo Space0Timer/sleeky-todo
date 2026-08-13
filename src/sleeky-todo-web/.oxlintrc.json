@@ -14,6 +14,7 @@
     "typescript/no-misused-promises": "warn"
   },
   "ignorePatterns": [
+    "**/*.module.d.scss.ts",
     "dist",
     "node_modules",
     "playwright-report",
