@@ -12,6 +12,9 @@
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="MSTest" />
+    <!-- Pins Testcontainers' transitive SSH.NET past GHSA-q939-rpr3-3284. Drop
+         this once Testcontainers ships a release that resolves it directly. -->
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="Testcontainers.MongoDb" />
   </ItemGroup>
 

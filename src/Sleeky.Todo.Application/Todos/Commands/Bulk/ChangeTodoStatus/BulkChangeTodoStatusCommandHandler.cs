@@ -102,16 +102,27 @@ public sealed class BulkChangeTodoStatusCommandHandler
     {
         HashSet<Guid> writtenIds = updates.Select(todoItem => todoItem.Id).ToHashSet();
 
-        return new BulkTodoResult(todos
-            .Select(todoItem => new BulkTodoResultItem(
-                todoItem.Id,
-                writtenIds.Contains(todoItem.Id) ? todoItem.Version + 1 : todoItem.Version,
-                todoItem.Status,
-                todoItem.DeletedAt,
-                nextOccurrenceIds.TryGetValue(todoItem.Id, out Guid nextOccurrenceId)
-                    ? nextOccurrenceId
-                    : null))
-            .ToArray());
+        BulkTodoResultItem[] items = todos
+            .Select(todoItem =>
+            {
+                Guid? nextOccurrenceId =
+                    nextOccurrenceIds.TryGetValue(todoItem.Id, out Guid occurrenceId)
+                        ? occurrenceId
+                        : null;
+                long version = writtenIds.Contains(todoItem.Id)
+                    ? todoItem.Version + 1
+                    : todoItem.Version;
+
+                return new BulkTodoResultItem(
+                    todoItem.Id,
+                    version,
+                    todoItem.Status,
+                    todoItem.DeletedAt,
+                    nextOccurrenceId);
+            })
+            .ToArray();
+
+        return new BulkTodoResult(items);
     }
 
     /// <summary>

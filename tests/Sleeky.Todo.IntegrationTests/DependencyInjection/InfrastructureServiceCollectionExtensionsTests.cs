@@ -51,6 +51,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         mongoClient.Should().BeOfType<MongoClient>();
         database.DatabaseNamespace.DatabaseName.Should().Be("sleekyTodo");
         clock.UtcNow.Offset.Should().Be(TimeSpan.Zero);
+
         // The implementations are internal to the infrastructure assembly, so
         // the registration is asserted by name rather than by exposing them.
         repository.GetType().Name.Should().Be("MongoTodoRepository");

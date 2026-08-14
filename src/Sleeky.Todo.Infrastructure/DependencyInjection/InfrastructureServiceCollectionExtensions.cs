@@ -53,6 +53,7 @@ public static class InfrastructureServiceCollectionExtensions
             MongoDbSettings settings = serviceProvider
                 .GetRequiredService<IOptions<MongoDbSettings>>()
                 .Value;
+
             // Command timings are diagnostics, so a host that configured no
             // logging still gets a working client rather than a resolve failure.
             ILogger commandLogger = (serviceProvider.GetService<ILoggerFactory>()

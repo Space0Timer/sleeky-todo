@@ -6,11 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
+using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Application.Abstractions.Identity;
-using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Infrastructure.DependencyInjection;
 using Sleeky.Todo.Infrastructure.Persistence;
 
@@ -74,31 +74,6 @@ public sealed class MongoTodoListReaderTests
     {
         serviceProvider?.Dispose();
         serviceProvider = null;
-    }
-
-    /// <summary>
-    /// The Mongo implementations are internal to the infrastructure assembly, so
-    /// the suite resolves the reader contract from the real registration rather
-    /// than constructing the concrete type.
-    /// </summary>
-    private ITodoListReader ResolveListReader(string databaseName)
-    {
-        Dictionary<string, string?> values = new Dictionary<string, string?>
-        {
-            [$"{MongoDbSettings.SectionName}:ConnectionString"] =
-                mongoDbContainer!.GetConnectionString(),
-            [$"{MongoDbSettings.SectionName}:DatabaseName"] = databaseName,
-            [$"{MongoDbSettings.SectionName}:TodoItemsCollectionName"] = "todoItems",
-        };
-        ServiceCollection services = new ServiceCollection();
-        services.AddSingleton<ICurrentUser>(new TestCurrentUser(OwnerId));
-        services.AddInfrastructure(new ConfigurationBuilder()
-            .AddInMemoryCollection(values)
-            .Build());
-
-        serviceProvider = services.BuildServiceProvider();
-
-        return serviceProvider.GetRequiredService<ITodoListReader>();
     }
 
     [TestMethod]
@@ -449,6 +424,31 @@ public sealed class MongoTodoListReaderTests
         byte[] bytes = System.Security.Cryptography.MD5.HashData(
             System.Text.Encoding.UTF8.GetBytes(value));
         return new Guid(bytes);
+    }
+
+    /// <summary>
+    /// The Mongo implementations are internal to the infrastructure assembly, so
+    /// the suite resolves the reader contract from the real registration rather
+    /// than constructing the concrete type.
+    /// </summary>
+    private ITodoListReader ResolveListReader(string databaseName)
+    {
+        Dictionary<string, string?> values = new Dictionary<string, string?>
+        {
+            [$"{MongoDbSettings.SectionName}:ConnectionString"] =
+                mongoDbContainer!.GetConnectionString(),
+            [$"{MongoDbSettings.SectionName}:DatabaseName"] = databaseName,
+            [$"{MongoDbSettings.SectionName}:TodoItemsCollectionName"] = "todoItems",
+        };
+        ServiceCollection services = new ServiceCollection();
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser(OwnerId));
+        services.AddInfrastructure(new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build());
+
+        serviceProvider = services.BuildServiceProvider();
+
+        return serviceProvider.GetRequiredService<ITodoListReader>();
     }
 
     private async Task<CursorPage<TodoListItemDto>> ListAsync(GetTodosQuery query)
