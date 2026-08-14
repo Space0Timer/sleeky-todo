@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
@@ -8,6 +10,7 @@ using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Diagnostics;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
 using Sleeky.Todo.Infrastructure.Persistence.Health;
 using Sleeky.Todo.Infrastructure.Persistence.Indexes;
@@ -50,8 +53,17 @@ public static class InfrastructureServiceCollectionExtensions
             MongoDbSettings settings = serviceProvider
                 .GetRequiredService<IOptions<MongoDbSettings>>()
                 .Value;
+            // Command timings are diagnostics, so a host that configured no
+            // logging still gets a working client rather than a resolve failure.
+            ILogger commandLogger = (serviceProvider.GetService<ILoggerFactory>()
+                    ?? NullLoggerFactory.Instance)
+                .CreateLogger(MongoCommandLogger.LoggerCategory);
+            MongoClientSettings clientSettings = MongoClientSettings.FromConnectionString(
+                settings.ConnectionString);
+            clientSettings.ClusterConfigurator =
+                builder => MongoCommandLogger.Configure(builder, commandLogger);
 
-            return new MongoClient(settings.ConnectionString);
+            return new MongoClient(clientSettings);
         });
         services.AddSingleton(serviceProvider =>
         {
