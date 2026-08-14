@@ -41,6 +41,7 @@ import {
   type TodoVersionReference,
 } from '../types/todo.ts'
 import styles from './TodosPage.module.scss'
+import { mergeTodoPage } from './todoPageMerge.ts'
 
 type UiError = {
   affectedTodoId?: string
@@ -188,7 +189,7 @@ export function TodosPage() {
     setError(null)
     try {
       const page = await listTodos({ ...filters, scope, cursor: nextCursor })
-      setItems((current) => [...current, ...page.items])
+      setItems((current) => mergeTodoPage(current, page.items))
       setNextCursor(page.nextCursor)
     } catch (caught) {
       captureError(caught)
