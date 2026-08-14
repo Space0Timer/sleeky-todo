@@ -1,5 +1,7 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
+import { type TodoStatus } from '../src/types/todo.ts'
+
 export const apiOrigin = 'http://127.0.0.1:5173'
 
 /**
@@ -60,6 +62,14 @@ export function selectCard(card: Locator): Promise<void> {
 }
 
 /**
+ * Cards carry their own Delete, so a toolbar action has to be reached through
+ * the toolbar rather than by name alone.
+ */
+export function bulkAction(page: Page, name: string): Locator {
+  return page.getByLabel('Bulk actions').getByRole('button', { name, exact: true })
+}
+
+/**
  * Moves a TODO behind the running page, which is how a stale version is staged:
  * the list keeps the version it loaded while the store moves on.
  */
@@ -67,7 +77,7 @@ export async function changeStatusOutOfBand(
   page: Page,
   id: string,
   version: number,
-  status: 'NotStarted' | 'InProgress' | 'Completed' | 'Archived',
+  status: TodoStatus,
 ): Promise<void> {
   const response = await page.request.put(`${apiOrigin}/api/todos/${id}/status`, {
     data: { status, version },

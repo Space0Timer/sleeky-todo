@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 
+import { todoStatus } from '../src/types/todo.ts'
 import { signIn } from './auth.ts'
 import {
+  bulkAction,
   cardId,
   changeStatusOutOfBand,
   createTodo,
@@ -21,7 +23,7 @@ test('completes several selected TODOs in one request', async ({ page }) => {
   await selectCard(second)
   await expect(page.getByTestId('bulk-selected-count')).toHaveText('2 selected')
 
-  await page.getByRole('button', { name: 'Complete', exact: true }).click()
+  await bulkAction(page, 'Complete').click()
 
   await expect(todoCard(page, 'Bulk complete one').getByText('Completed')).toBeVisible()
   await expect(todoCard(page, 'Bulk complete two').getByText('Completed')).toBeVisible()
@@ -32,7 +34,7 @@ test('selects every loaded TODO and archives them together', async ({ page }) =>
   await createTodo(page, 'Select all two')
 
   await page.getByRole('checkbox', { name: /Select loaded/ }).check()
-  await page.getByRole('button', { name: 'Archive' }).click()
+  await bulkAction(page, 'Archive').click()
 
   await expect(todoCard(page, 'Select all one')).toHaveCount(0)
   await expect(todoCard(page, 'Select all two')).toHaveCount(0)
@@ -45,12 +47,12 @@ test('selects every loaded TODO and archives them together', async ({ page }) =>
 test('unarchives a selection from the archived scope', async ({ page }) => {
   const card = await createTodo(page, 'Bulk unarchive')
   await selectCard(card)
-  await page.getByRole('button', { name: 'Archive' }).click()
+  await bulkAction(page, 'Archive').click()
   await expect(todoCard(page, 'Bulk unarchive')).toHaveCount(0)
 
   await page.getByRole('tab', { name: 'Archived' }).click()
   await selectCard(todoCard(page, 'Bulk unarchive'))
-  await page.getByRole('button', { name: 'Unarchive' }).click()
+  await bulkAction(page, 'Unarchive').click()
   await expect(todoCard(page, 'Bulk unarchive')).toHaveCount(0)
 
   await page.getByRole('tab', { name: 'Active' }).click()
@@ -60,7 +62,7 @@ test('unarchives a selection from the archived scope', async ({ page }) => {
 test('an archived TODO offers no editing, prerequisites, or completion', async ({ page }) => {
   const card = await createTodo(page, 'Frozen card')
   await selectCard(card)
-  await page.getByRole('button', { name: 'Archive' }).click()
+  await bulkAction(page, 'Archive').click()
 
   await page.getByRole('tab', { name: 'Archived' }).click()
   const archived = todoCard(page, 'Frozen card')
@@ -85,9 +87,9 @@ test('the delete dialog reports a TODO that changed since it was selected', asyn
   await selectCard(drifting)
 
   // Move it behind the page, so the list still holds the version it loaded.
-  await changeStatusOutOfBand(page, driftingId, 1, 'InProgress')
+  await changeStatusOutOfBand(page, driftingId, 1, todoStatus.inProgress)
 
-  await page.getByRole('button', { name: 'Delete' }).click()
+  await bulkAction(page, 'Delete').click()
   const dialog = page.getByRole('dialog', { name: 'Confirm bulk deletion' })
 
   await expect(dialog.getByText(/1 changed since you selected them/)).toBeVisible()
@@ -109,9 +111,9 @@ test('a stale selection is repaired and retried', async ({ page }) => {
 
   // Archiving behind the page makes the held version stale and blocks the
   // completion the toolbar is about to attempt.
-  await changeStatusOutOfBand(page, secondId, 1, 'Archived')
+  await changeStatusOutOfBand(page, secondId, 1, todoStatus.archived)
 
-  await page.getByRole('button', { name: 'Complete', exact: true }).click()
+  await bulkAction(page, 'Complete').click()
 
   // The silent retry re-reads versions and resends, so the batch reaches the
   // rule that actually forbids it rather than stopping at the stale version.

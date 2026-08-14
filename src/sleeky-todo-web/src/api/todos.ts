@@ -129,9 +129,11 @@ export function bulkChangeTodoStatus(
   status: TodoStatus,
   items: TodoVersionReference[],
 ): Promise<BulkTodoResult> {
+  // Enum names belong in query strings; a JSON body carries the numeric value,
+  // which is what the single-item status route already sends.
   return send<BulkTodoResult>('/api/todos/status', {
     method: 'PUT',
-    body: JSON.stringify({ status: statusNames[status], items }),
+    body: JSON.stringify({ status, items }),
   })
 }
 
