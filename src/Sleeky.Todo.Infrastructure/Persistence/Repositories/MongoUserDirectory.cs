@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Options;
-
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
@@ -8,7 +6,7 @@ using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-public sealed class MongoUserDirectory : IUserDirectory
+internal sealed class MongoUserDirectory : IUserDirectory
 {
     private const int DuplicateKeyErrorCode = 11000;
 
@@ -16,16 +14,13 @@ public sealed class MongoUserDirectory : IUserDirectory
     private readonly IMongoCollection<UserDocument> users;
 
     public MongoUserDirectory(
-        IMongoDatabase database,
-        IOptions<MongoDbSettings> settings,
+        IMongoCollection<UserDocument> users,
         IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(database);
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(users);
         ArgumentNullException.ThrowIfNull(clock);
 
-        this.users = database.GetCollection<UserDocument>(
-            settings.Value.UsersCollectionName);
+        this.users = users;
         this.clock = clock;
     }
 

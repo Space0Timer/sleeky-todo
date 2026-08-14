@@ -1,14 +1,12 @@
 using FluentAssertions;
 
-using Microsoft.Extensions.Options;
-
 using MongoDB.Bson;
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
 using Sleeky.Todo.Infrastructure.Persistence.Queries;
 
 using Testcontainers.MongoDb;
@@ -61,17 +59,10 @@ public sealed class MongoTodoListReaderTests
         string databaseName = $"sleekyTodoListTests_{Guid.NewGuid():N}";
         IMongoDatabase database = new MongoClient(mongoDbContainer.GetConnectionString())
             .GetDatabase(databaseName);
-        MongoDbSettings settings = new MongoDbSettings
-        {
-            ConnectionString = mongoDbContainer.GetConnectionString(),
-            DatabaseName = databaseName,
-            TodoItemsCollectionName = "todoItems",
-        };
         collection = database.GetCollection<BsonDocument>("todoItems");
         handler = new GetTodosQueryHandler(
             new MongoTodoListReader(
-                database,
-                Options.Create(settings),
+                database.GetCollection<TodoDocument>("todoItems"),
                 new TestCurrentUser(OwnerId)));
     }
 

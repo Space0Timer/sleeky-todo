@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Options;
-
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
@@ -12,7 +10,7 @@ using Sleeky.Todo.Infrastructure.Persistence.Transactions;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-public sealed class MongoTodoRepository : ITodoRepository
+internal sealed class MongoTodoRepository : ITodoRepository
 {
     private const int WriteConflictErrorCode = 112;
 
@@ -21,17 +19,14 @@ public sealed class MongoTodoRepository : ITodoRepository
     private readonly MongoTransactionContext transactionContext;
 
     public MongoTodoRepository(
-        IMongoDatabase database,
-        IOptions<MongoDbSettings> settings,
+        IMongoCollection<TodoDocument> todoItems,
         ICurrentUser currentUser,
         MongoTransactionContext? transactionContext = null)
     {
-        ArgumentNullException.ThrowIfNull(database);
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(todoItems);
         ArgumentNullException.ThrowIfNull(currentUser);
 
-        this.todoItems = database.GetCollection<TodoDocument>(
-            settings.Value.TodoItemsCollectionName);
+        this.todoItems = todoItems;
         this.currentUser = currentUser;
         this.transactionContext = transactionContext ?? new MongoTransactionContext();
     }

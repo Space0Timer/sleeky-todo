@@ -8,6 +8,7 @@ using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
 using Sleeky.Todo.Infrastructure.Persistence.Health;
 using Sleeky.Todo.Infrastructure.Persistence.Indexes;
 using Sleeky.Todo.Infrastructure.Persistence.Migrations;
@@ -61,6 +62,12 @@ public static class InfrastructureServiceCollectionExtensions
 
             return mongoClient.GetDatabase(settings.DatabaseName);
         });
+        services.AddSingleton(serviceProvider => ResolveCollection<TodoDocument>(
+            serviceProvider,
+            settings => settings.TodoItemsCollectionName));
+        services.AddSingleton(serviceProvider => ResolveCollection<UserDocument>(
+            serviceProvider,
+            settings => settings.UsersCollectionName));
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<MongoTransactionContext>();
         services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
@@ -74,6 +81,18 @@ public static class InfrastructureServiceCollectionExtensions
             .AddCheck<MongoDbHealthCheck>("mongodb");
 
         return services;
+    }
+
+    private static IMongoCollection<TDocument> ResolveCollection<TDocument>(
+        IServiceProvider serviceProvider,
+        Func<MongoDbSettings, string> selectCollectionName)
+    {
+        MongoDbSettings settings = serviceProvider
+            .GetRequiredService<IOptions<MongoDbSettings>>()
+            .Value;
+        IMongoDatabase database = serviceProvider.GetRequiredService<IMongoDatabase>();
+
+        return database.GetCollection<TDocument>(selectCollectionName(settings));
     }
 
     private static bool IsValidConnectionString(string connectionString)

@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -35,18 +34,16 @@ internal sealed class MongoDbIndexInitializer : IHostedService
     private readonly IMongoCollection<UserDocument> users;
 
     public MongoDbIndexInitializer(
-        IMongoDatabase database,
-        IOptions<MongoDbSettings> options,
+        IMongoCollection<TodoDocument> todoItems,
+        IMongoCollection<UserDocument> users,
         ILogger<MongoDbIndexInitializer> logger)
     {
-        ArgumentNullException.ThrowIfNull(database);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(todoItems);
+        ArgumentNullException.ThrowIfNull(users);
         ArgumentNullException.ThrowIfNull(logger);
 
-        this.todoItems = database.GetCollection<TodoDocument>(
-            options.Value.TodoItemsCollectionName);
-        this.users = database.GetCollection<UserDocument>(
-            options.Value.UsersCollectionName);
+        this.todoItems = todoItems;
+        this.users = users;
         this.logger = logger;
     }
 

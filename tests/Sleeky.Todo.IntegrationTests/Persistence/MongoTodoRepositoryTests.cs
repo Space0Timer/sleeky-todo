@@ -1,7 +1,5 @@
 using FluentAssertions;
 
-using Microsoft.Extensions.Options;
-
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -11,6 +9,7 @@ using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.ValueObjects;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
 using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 using Testcontainers.MongoDb;
@@ -605,8 +604,7 @@ public sealed class MongoTodoRepositoryTests
     private ITodoRepository CreateRepository(Guid ownerId)
     {
         return new MongoTodoRepository(
-            database,
-            Options.Create(settings),
+            database.GetCollection<TodoDocument>(settings.TodoItemsCollectionName),
             new TestCurrentUser(ownerId));
     }
 

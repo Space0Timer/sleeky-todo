@@ -1,11 +1,11 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 using MongoDB.Bson;
 using MongoDB.Driver;
 
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Migrations;
 
@@ -31,17 +31,20 @@ internal sealed class MongoDbEnumStorageMigrator : IHostedService
     private readonly IMongoCollection<BsonDocument> collection;
     private readonly ILogger<MongoDbEnumStorageMigrator> logger;
 
+    /// <summary>
+    /// Rewrites stored enum representations, so it reads the TODO collection as
+    /// raw BSON rather than through <see cref="TodoDocument"/>, whose mapping is
+    /// exactly what the migration is repairing.
+    /// </summary>
     public MongoDbEnumStorageMigrator(
-        IMongoDatabase database,
-        IOptions<MongoDbSettings> options,
+        IMongoCollection<TodoDocument> todoItems,
         ILogger<MongoDbEnumStorageMigrator> logger)
     {
-        ArgumentNullException.ThrowIfNull(database);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(todoItems);
         ArgumentNullException.ThrowIfNull(logger);
 
-        this.collection = database.GetCollection<BsonDocument>(
-            options.Value.TodoItemsCollectionName);
+        this.collection = todoItems.Database.GetCollection<BsonDocument>(
+            todoItems.CollectionNamespace.CollectionName);
         this.logger = logger;
     }
 
