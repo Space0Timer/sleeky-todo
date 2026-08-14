@@ -102,9 +102,19 @@ automatically.
 
 The numeric `version` field is the sole concurrency token; `updatedAt` is not used for concurrency. Clients send the version they last read with every mutable request.
 
-MongoDB mutations atomically filter by TODO ID and expected version, write version `N + 1`, and return the persisted document. A missing match indicates a stale write, which the application represents as `ConcurrencyConflictException`. The API maps this known exception to HTTP 409 Problem Details.
+MongoDB mutations atomically filter by TODO ID and expected version, write version `N + 1`, and return the persisted document. A missing match indicates a stale write, which the repository reports by throwing `ConcurrencyConflictException`. The expected version is the aggregate's own `version`; no domain method mutates it, so callers do not pass it alongside the aggregate.
 
 This design avoids locks and prevents lost updates. Concurrent integration tests verify that exactly one mutation succeeds when two writers submit update, delete, or restore operations using the same version.
+
+## Transaction boundary
+
+Operations that must write more than one document run through `ITransactionExecutor.ExecuteAsync`, which takes the work as a lambda, commits when it returns, and aborts when it throws. Scoping the boundary this way means no caller can forget to commit or roll back, and repository calls made inside the operation join the transaction through the scoped session context.
+
+The name is deliberate: this is not a unit of work. Nothing is tracked, deferred, or coordinated, and repository writes stay immediate, so responses are read back from the server rather than predicted. Calling it `IUnitOfWork` would promise the change tracking and `SaveChanges` semantics the design does not have.
+
+Conflicts are reported where their detail is known. The repository throws `ConcurrencyConflictException` carrying the TODO ID and expected version, because it issued the filter. The executor throws `TransactionConflictException` without an identifier, because an aborted transaction does not say which document lost. The API maps both to 409, which always means "re-run the read-modify-write" — deliberately including transient cluster events such as a primary stepdown, which are surfaced to the client rather than retried server-side.
+
+Schema and data bootstrap is excluded from this boundary. MongoDB forbids index creation and removal inside a transaction, hosted services run before the request pipeline exists, and the initializers are idempotent, so there is nothing to roll back.
 
 ## Ninety-day recoverable deletion
 

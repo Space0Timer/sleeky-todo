@@ -45,9 +45,7 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
 
         TodoItem restoredTodoItem = await todoRepository.RestoreAsync(
             todoItem,
-            request.Version,
-            cancellationToken)
-            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+            cancellationToken);
 
         this.logger.LogInformation(
             1107,

@@ -44,9 +44,7 @@ public sealed class RemoveDependencyCommandHandler
 
         TodoItem updatedTodo = await todoRepository.UpdateAsync(
             todoItem,
-            request.Version,
-            cancellationToken)
-            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+            cancellationToken);
 
         this.logger.LogInformation(
             1105,

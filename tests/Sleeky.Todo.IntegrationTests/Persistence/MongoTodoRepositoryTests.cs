@@ -6,6 +6,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
+using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.ValueObjects;
@@ -175,7 +176,7 @@ public sealed class MongoTodoRepositoryTests
         bool hasActiveDependent = await repository.HasActiveDependentsAsync(
             prerequisite.Id);
         _ = dependent.ChangeStatus(TodoStatus.Archived, Timestamp.AddHours(2));
-        _ = await repository.UpdateAsync(dependent, expectedVersion: 1);
+        _ = await repository.UpdateAsync(dependent);
         bool hasActiveDependentAfterArchive = await repository.HasActiveDependentsAsync(
             prerequisite.Id);
 
@@ -210,12 +211,9 @@ public sealed class MongoTodoRepositoryTests
         DateTimeOffset deletedAt = Timestamp.AddDays(1);
         deleteWriter.SoftDelete(deletedAt);
 
-        TodoItem? deletedTodo = await repository.SoftDeleteAsync(
-            deleteWriter,
-            expectedVersion: 1);
+        TodoItem deletedTodo = await repository.SoftDeleteAsync(deleteWriter);
 
-        deletedTodo.Should().NotBeNull();
-        deletedTodo!.Version.Should().Be(2);
+        deletedTodo.Version.Should().Be(2);
         deletedTodo.DeletedAt.Should().Be(deletedAt);
         deletedTodo.PurgeAt.Should().Be(deletedAt.AddDays(90));
         (await repository.GetByIdAsync(todoItem.Id)).Should().BeNull();
@@ -228,12 +226,9 @@ public sealed class MongoTodoRepositoryTests
             includeDeleted: true);
         DateTimeOffset restoredAt = deletedAt.AddDays(30);
         restoreWriter.Restore(restoredAt);
-        TodoItem? restoredTodo = await repository.RestoreAsync(
-            restoreWriter,
-            expectedVersion: 2);
+        TodoItem restoredTodo = await repository.RestoreAsync(restoreWriter);
 
-        restoredTodo.Should().NotBeNull();
-        restoredTodo!.Version.Should().Be(3);
+        restoredTodo.Version.Should().Be(3);
         restoredTodo.DeletedAt.Should().BeNull();
         restoredTodo.PurgeAt.Should().BeNull();
         restoredTodo.UpdatedAt.Should().Be(restoredAt);
@@ -249,9 +244,9 @@ public sealed class MongoTodoRepositoryTests
         deletedTodo.SoftDelete(Timestamp.AddDays(1));
 
         Func<Task> persistActiveAsDeleted = async () =>
-            await repository.SoftDeleteAsync(activeTodo, activeTodo.Version);
+            await repository.SoftDeleteAsync(activeTodo);
         Func<Task> persistDeletedAsRestored = async () =>
-            await repository.RestoreAsync(deletedTodo, deletedTodo.Version);
+            await repository.RestoreAsync(deletedTodo);
 
         await persistActiveAsDeleted.Should()
             .ThrowAsync<InvalidOperationException>()
@@ -305,8 +300,8 @@ public sealed class MongoTodoRepositoryTests
             Timestamp.AddHours(2));
 
         TodoItem?[] results = await Task.WhenAll(
-            repository.UpdateAsync(firstWriter, todoItem.Version),
-            repository.UpdateAsync(secondWriter, todoItem.Version));
+            TryWriteAsync(repository.UpdateAsync(firstWriter)),
+            TryWriteAsync(repository.UpdateAsync(secondWriter)));
 
         results.Count(result => result is not null).Should().Be(1);
         results.Count(result => result is null).Should().Be(1);
@@ -333,12 +328,10 @@ public sealed class MongoTodoRepositoryTests
             Timestamp.AddHours(1));
         deleteWriter.SoftDelete(Timestamp.AddHours(2));
 
-        Task<TodoItem?> updateTask = repository.UpdateAsync(
-            updateWriter,
-            todoItem.Version);
-        Task<TodoItem?> deleteTask = repository.SoftDeleteAsync(
-            deleteWriter,
-            todoItem.Version);
+        Task<TodoItem?> updateTask = TryWriteAsync(
+            repository.UpdateAsync(updateWriter));
+        Task<TodoItem?> deleteTask = TryWriteAsync(
+            repository.SoftDeleteAsync(deleteWriter));
         TodoItem?[] results = await Task.WhenAll(updateTask, deleteTask);
 
         results.Count(result => result is not null).Should().Be(1);
@@ -364,10 +357,7 @@ public sealed class MongoTodoRepositoryTests
         await repository.AddAsync(todoItem);
         TodoItem deleteWriter = await GetRequiredTodoAsync(todoItem.Id);
         deleteWriter.SoftDelete(Timestamp.AddHours(1));
-        TodoItem deletedTodo = await repository.SoftDeleteAsync(
-            deleteWriter,
-            todoItem.Version)
-            ?? throw new InvalidOperationException("The setup delete should have succeeded.");
+        _ = await repository.SoftDeleteAsync(deleteWriter);
         TodoItem firstWriter = await GetRequiredTodoAsync(
             todoItem.Id,
             includeDeleted: true);
@@ -378,8 +368,8 @@ public sealed class MongoTodoRepositoryTests
         secondWriter.Restore(Timestamp.AddHours(3));
 
         TodoItem?[] results = await Task.WhenAll(
-            repository.RestoreAsync(firstWriter, deletedTodo.Version),
-            repository.RestoreAsync(secondWriter, deletedTodo.Version));
+            TryWriteAsync(repository.RestoreAsync(firstWriter)),
+            TryWriteAsync(repository.RestoreAsync(secondWriter)));
 
         results.Count(result => result is not null).Should().Be(1);
         results.Count(result => result is null).Should().Be(1);
@@ -412,11 +402,9 @@ public sealed class MongoTodoRepositoryTests
             todoItem.DeletedAt,
             todoItem.PurgeAt);
 
-        TodoItem? result = await repository.UpdateAsync(
-            persistedVersionTwo,
-            expectedVersion: 1);
+        Func<Task> act = async () => await repository.UpdateAsync(persistedVersionTwo);
 
-        result.Should().BeNull();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
         TodoItem storedTodo = await GetRequiredTodoAsync(todoItem.Id);
         storedTodo.Version.Should().Be(1);
     }
@@ -449,11 +437,9 @@ public sealed class MongoTodoRepositoryTests
             TodoPriority.Low,
             Timestamp.AddHours(1));
 
-        TodoItem? updated = await repository.UpdateAsync(
-            otherOwnersTodo,
-            expectedVersion: 1);
+        Func<Task> act = async () => await repository.UpdateAsync(otherOwnersTodo);
 
-        updated.Should().BeNull();
+        await act.Should().ThrowAsync<ConcurrencyConflictException>();
         TodoItem? stored = await otherOwnerRepository.GetByIdAsync(
             otherOwnersTodo.Id);
         stored.Should().NotBeNull();
@@ -500,6 +486,23 @@ public sealed class MongoTodoRepositoryTests
             Environment.GetEnvironmentVariable("RUN_MONGODB_INTEGRATION_TESTS"),
             "true",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Repository writes now report a lost optimistic-concurrency race by
+    /// throwing, so tests that race two writers translate the loser back into a
+    /// null result to assert that exactly one of them won.
+    /// </summary>
+    private static async Task<TodoItem?> TryWriteAsync(Task<TodoItem> write)
+    {
+        try
+        {
+            return await write;
+        }
+        catch (ConcurrencyConflictException)
+        {
+            return null;
+        }
     }
 
     private static Guid Id(string value)

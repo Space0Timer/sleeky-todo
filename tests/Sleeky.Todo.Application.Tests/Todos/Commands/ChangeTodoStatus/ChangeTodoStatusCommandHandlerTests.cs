@@ -41,7 +41,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             repository,
             evaluator,
             clock,
-            new ImmediateTodoTransaction(),
+            new ImmediateTransactionExecutor(),
             new IgnoringDomainEventDispatcher(),
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
@@ -54,7 +54,6 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             .WithMessage($"A blocked TODO cannot move to {status}.");
         await repository.DidNotReceiveWithAnyArgs().UpdateAsync(
             default!,
-            default,
             default);
     }
 
@@ -73,13 +72,13 @@ public sealed class ChangeTodoStatusCommandHandlerTests
                 Arg.Any<IEnumerable<Guid>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new TodoDependencyState(0));
-        repository.UpdateAsync(todo, 1, Arg.Any<CancellationToken>())
+        repository.UpdateAsync(todo, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todo, 2));
         ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
             repository,
             evaluator,
             clock,
-            new ImmediateTodoTransaction(),
+            new ImmediateTransactionExecutor(),
             new IgnoringDomainEventDispatcher(),
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
@@ -105,7 +104,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             repository,
             evaluator,
             clock,
-            new ImmediateTodoTransaction(),
+            new ImmediateTransactionExecutor(),
             new IgnoringDomainEventDispatcher(),
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
@@ -120,7 +119,6 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         await stale.Should().ThrowAsync<ConcurrencyConflictException>();
         await repository.DidNotReceiveWithAnyArgs().UpdateAsync(
             default!,
-            default,
             default);
     }
 
@@ -146,8 +144,8 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         ITodoDependencyEvaluator evaluator = Substitute.For<ITodoDependencyEvaluator>();
         IClock clock = Substitute.For<IClock>();
-        CompletingTodoTransaction transaction = new CompletingTodoTransaction();
-        RecordingLogger logger = new RecordingLogger(() => transaction.Completed);
+        CompletingTransactionExecutor transactionExecutor = new CompletingTransactionExecutor();
+        RecordingLogger logger = new RecordingLogger(() => transactionExecutor.Completed);
         clock.UtcNow.Returns(TestTodoFactory.Timestamp.AddDays(1));
         repository.GetByIdAsync(todo.Id, false, Arg.Any<CancellationToken>())
             .Returns(todo);
@@ -155,13 +153,13 @@ public sealed class ChangeTodoStatusCommandHandlerTests
                 Arg.Any<IEnumerable<Guid>>(),
                 Arg.Any<CancellationToken>())
             .Returns(new TodoDependencyState(0));
-        repository.UpdateAsync(todo, 1, Arg.Any<CancellationToken>())
+        repository.UpdateAsync(todo, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todo, 2));
         ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
             repository,
             evaluator,
             clock,
-            transaction,
+            transactionExecutor,
             new IgnoringDomainEventDispatcher(),
             logger);
 
@@ -169,7 +167,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             new ChangeTodoStatusCommand(todo.Id, TodoStatus.Completed, 1),
             CancellationToken.None);
 
-        transaction.Completed.Should().BeTrue();
+        transactionExecutor.Completed.Should().BeTrue();
         LogEntry entry = logger.Entries.Should()
             .ContainSingle(candidate => candidate.EventId == 1101)
             .Which;

@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
@@ -37,7 +38,6 @@ public sealed class RestoreTodoCommandHandlerTests
         exception.ResourceId.Should().Be(todoId);
         await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
             default!,
-            default,
             default);
     }
 
@@ -53,7 +53,7 @@ public sealed class RestoreTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         repository
-            .RestoreAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
+            .RestoreAsync(todoItem, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
@@ -70,7 +70,6 @@ public sealed class RestoreTodoCommandHandlerTests
             Arg.Any<CancellationToken>());
         await repository.Received(1).RestoreAsync(
             todoItem,
-            command.Version,
             Arg.Any<CancellationToken>());
     }
 
@@ -91,7 +90,6 @@ public sealed class RestoreTodoCommandHandlerTests
         await act.Should().ThrowAsync<ConcurrencyConflictException>();
         await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
             default!,
-            default,
             default);
     }
 
@@ -106,8 +104,11 @@ public sealed class RestoreTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         repository
-            .RestoreAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
-            .Returns((TodoItem?)null);
+            .RestoreAsync(todoItem, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ConcurrencyConflictException(
+                "TODO",
+                todoItem.Id,
+                todoItem.Version));
         RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
@@ -136,7 +137,6 @@ public sealed class RestoreTodoCommandHandlerTests
             .WithMessage("Only a deleted TODO can be restored.");
         await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
             default!,
-            default,
             default);
     }
 
@@ -160,7 +160,6 @@ public sealed class RestoreTodoCommandHandlerTests
             .WithMessage("The TODO retention period has expired.");
         await repository.DidNotReceiveWithAnyArgs().RestoreAsync(
             default!,
-            default,
             default);
     }
 

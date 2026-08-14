@@ -1,3 +1,4 @@
+using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 
 namespace Sleeky.Todo.Application.Abstractions.Persistence;
@@ -27,18 +28,20 @@ public interface ITodoRepository
         Guid dependencyId,
         CancellationToken cancellationToken = default);
 
-    Task<TodoItem?> UpdateAsync(
+    /// <summary>
+    /// Persists the aggregate, expecting the version it was loaded at. Throws
+    /// <see cref="ConcurrencyConflictException"/> when the stored version has
+    /// moved on.
+    /// </summary>
+    Task<TodoItem> UpdateAsync(
         TodoItem todoItem,
-        long expectedVersion,
         CancellationToken cancellationToken = default);
 
-    Task<TodoItem?> SoftDeleteAsync(
+    Task<TodoItem> SoftDeleteAsync(
         TodoItem todoItem,
-        long expectedVersion,
         CancellationToken cancellationToken = default);
 
-    Task<TodoItem?> RestoreAsync(
+    Task<TodoItem> RestoreAsync(
         TodoItem todoItem,
-        long expectedVersion,
         CancellationToken cancellationToken = default);
 }

@@ -4,6 +4,7 @@ using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
+using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
@@ -150,24 +151,26 @@ public sealed class MongoTodoRepository : ITodoRepository
         return count > 0;
     }
 
-    public Task<TodoItem?> UpdateAsync(
+    public Task<TodoItem> UpdateAsync(
         TodoItem todoItem,
-        long expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(todoItem);
+
         FilterDefinition<TodoDocument> filter = BuildMutationFilter(
             todoItem.Id,
-            expectedVersion,
+            todoItem.Version,
             includeDeleted: false);
 
-        return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
+        return ReplaceAsync(todoItem, filter, cancellationToken);
     }
 
-    public Task<TodoItem?> SoftDeleteAsync(
+    public Task<TodoItem> SoftDeleteAsync(
         TodoItem todoItem,
-        long expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(todoItem);
+
         if (todoItem.DeletedAt is null || todoItem.PurgeAt is null)
         {
             throw new InvalidOperationException(
@@ -176,17 +179,18 @@ public sealed class MongoTodoRepository : ITodoRepository
 
         FilterDefinition<TodoDocument> filter = BuildMutationFilter(
             todoItem.Id,
-            expectedVersion,
+            todoItem.Version,
             includeDeleted: false);
 
-        return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
+        return ReplaceAsync(todoItem, filter, cancellationToken);
     }
 
-    public Task<TodoItem?> RestoreAsync(
+    public Task<TodoItem> RestoreAsync(
         TodoItem todoItem,
-        long expectedVersion,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(todoItem);
+
         if (todoItem.DeletedAt is not null || todoItem.PurgeAt is not null)
         {
             throw new InvalidOperationException(
@@ -195,10 +199,10 @@ public sealed class MongoTodoRepository : ITodoRepository
 
         FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
             & Builders<TodoDocument>.Filter.Eq(document => document.Id, todoItem.Id)
-            & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion)
+            & Builders<TodoDocument>.Filter.Eq(document => document.Version, todoItem.Version)
             & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);
 
-        return ReplaceAsync(todoItem, expectedVersion, filter, cancellationToken);
+        return ReplaceAsync(todoItem, filter, cancellationToken);
     }
 
     private FilterDefinition<TodoDocument> BuildOwnerFilter()
@@ -230,17 +234,16 @@ public sealed class MongoTodoRepository : ITodoRepository
             & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion);
     }
 
-    private async Task<TodoItem?> ReplaceAsync(
+    /// <summary>
+    /// Replaces the stored document only while it still carries the version the
+    /// aggregate was loaded at, so a concurrent writer cannot be overwritten.
+    /// </summary>
+    private async Task<TodoItem> ReplaceAsync(
         TodoItem todoItem,
-        long expectedVersion,
         FilterDefinition<TodoDocument> filter,
         CancellationToken cancellationToken)
     {
-        if (todoItem.Version != expectedVersion)
-        {
-            return null;
-        }
-
+        long expectedVersion = todoItem.Version;
         long nextVersion = checked(expectedVersion + 1);
         TodoDocument replacement = TodoDocumentMapper.FromDomain(todoItem, nextVersion);
         FindOneAndReplaceOptions<TodoDocument> options = new FindOneAndReplaceOptions<TodoDocument>
@@ -261,7 +264,7 @@ public sealed class MongoTodoRepository : ITodoRepository
                 cancellationToken);
 
         return persistedDocument is null
-            ? null
+            ? throw new ConcurrencyConflictException("TODO", todoItem.Id, expectedVersion)
             : TodoDocumentMapper.ToDomain(persistedDocument);
     }
 }

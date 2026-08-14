@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
@@ -29,7 +30,7 @@ public sealed class UpdateTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         repository
-            .UpdateAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
+            .UpdateAsync(todoItem, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         UpdateTodoCommand command = new UpdateTodoCommand(
             todoItem.Id,
@@ -51,7 +52,6 @@ public sealed class UpdateTodoCommandHandlerTests
         result.Version.Should().Be(2);
         await repository.Received(1).UpdateAsync(
             todoItem,
-            command.Version,
             Arg.Any<CancellationToken>());
     }
 
@@ -77,7 +77,6 @@ public sealed class UpdateTodoCommandHandlerTests
         await act.Should().ThrowAsync<NotFoundException>();
         await repository.DidNotReceiveWithAnyArgs().UpdateAsync(
             default!,
-            default,
             default);
     }
 
@@ -104,7 +103,6 @@ public sealed class UpdateTodoCommandHandlerTests
         exception.ExpectedVersion.Should().Be(command.Version);
         await repository.DidNotReceiveWithAnyArgs().UpdateAsync(
             default!,
-            default,
             default);
     }
 
@@ -119,8 +117,11 @@ public sealed class UpdateTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         repository
-            .UpdateAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
-            .Returns((TodoItem?)null);
+            .UpdateAsync(todoItem, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ConcurrencyConflictException(
+                "TODO",
+                todoItem.Id,
+                todoItem.Version));
         UpdateTodoCommand command = CreateCommand(todoItem.Id, todoItem.Version);
         UpdateTodoCommandHandler handler = new UpdateTodoCommandHandler(
             repository,

@@ -23,27 +23,27 @@ public sealed class ChangeTodoStatusCommandHandler
     private readonly ITodoDependencyEvaluator dependencyEvaluator;
     private readonly ILogger<ChangeTodoStatusCommandHandler> logger;
     private readonly ITodoRepository todoRepository;
-    private readonly ITodoTransaction todoTransaction;
+    private readonly ITransactionExecutor transactionExecutor;
 
     public ChangeTodoStatusCommandHandler(
         ITodoRepository todoRepository,
         ITodoDependencyEvaluator dependencyEvaluator,
         IClock clock,
-        ITodoTransaction todoTransaction,
+        ITransactionExecutor transactionExecutor,
         IDomainEventDispatcher domainEventDispatcher,
         ILogger<ChangeTodoStatusCommandHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
         ArgumentNullException.ThrowIfNull(dependencyEvaluator);
         ArgumentNullException.ThrowIfNull(clock);
-        ArgumentNullException.ThrowIfNull(todoTransaction);
+        ArgumentNullException.ThrowIfNull(transactionExecutor);
         ArgumentNullException.ThrowIfNull(domainEventDispatcher);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.todoRepository = todoRepository;
         this.dependencyEvaluator = dependencyEvaluator;
         this.clock = clock;
-        this.todoTransaction = todoTransaction;
+        this.transactionExecutor = transactionExecutor;
         this.domainEventDispatcher = domainEventDispatcher;
         this.logger = logger;
     }
@@ -75,7 +75,6 @@ public sealed class ChangeTodoStatusCommandHandler
             .SingleOrDefault();
         TodoItem updatedTodo = await PersistStatusChangeAsync(
             todoItem,
-            request,
             completionEvent,
             cancellationToken);
 
@@ -124,25 +123,25 @@ public sealed class ChangeTodoStatusCommandHandler
         throw new DomainException($"A blocked TODO cannot move to {status}.");
     }
 
-    private async Task<TodoItem> PersistStatusChangeAsync(
+    /// <summary>
+    /// A completion may also insert the next recurring occurrence, so those two
+    /// writes share a transaction. Every other status change is a single write.
+    /// </summary>
+    private Task<TodoItem> PersistStatusChangeAsync(
         TodoItem todoItem,
-        ChangeTodoStatusCommand request,
         TodoCompletedDomainEvent? completionEvent,
         CancellationToken cancellationToken)
     {
         if (completionEvent is null)
         {
-            return await PersistAsync(todoItem, request, cancellationToken);
+            return todoRepository.UpdateAsync(todoItem, cancellationToken);
         }
 
-        return await todoTransaction.ExecuteAsync(
-            request.Id,
-            request.Version,
+        return transactionExecutor.ExecuteAsync(
             async transactionCancellationToken =>
             {
-                TodoItem persistedTodo = await PersistAsync(
+                TodoItem persistedTodo = await todoRepository.UpdateAsync(
                     todoItem,
-                    request,
                     transactionCancellationToken);
                 await domainEventDispatcher.DispatchAsync(
                     todoItem.DomainEvents,
@@ -150,17 +149,5 @@ public sealed class ChangeTodoStatusCommandHandler
                 return persistedTodo;
             },
             cancellationToken);
-    }
-
-    private async Task<TodoItem> PersistAsync(
-        TodoItem todoItem,
-        ChangeTodoStatusCommand request,
-        CancellationToken cancellationToken)
-    {
-        return await todoRepository.UpdateAsync(
-            todoItem,
-            request.Version,
-            cancellationToken)
-            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
     }
 }

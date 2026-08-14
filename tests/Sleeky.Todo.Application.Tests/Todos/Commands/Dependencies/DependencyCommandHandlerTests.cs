@@ -38,7 +38,7 @@ public sealed class DependencyCommandHandlerTests
                 dependency.Id,
                 Arg.Any<CancellationToken>())
             .Returns(false);
-        repository.UpdateAsync(source, 1, Arg.Any<CancellationToken>())
+        repository.UpdateAsync(source, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(source, 2));
         AddDependencyCommandHandler handler = new AddDependencyCommandHandler(
             repository,
@@ -55,7 +55,6 @@ public sealed class DependencyCommandHandlerTests
         result.UpdatedAt.Should().Be(updatedAt);
         await repository.Received(1).UpdateAsync(
             source,
-            1,
             Arg.Any<CancellationToken>());
     }
 
@@ -140,7 +139,7 @@ public sealed class DependencyCommandHandlerTests
         IClock clock = Substitute.For<IClock>();
         repository.GetByIdAsync(source.Id, false, Arg.Any<CancellationToken>())
             .Returns(source);
-        repository.UpdateAsync(source, 1, Arg.Any<CancellationToken>())
+        repository.UpdateAsync(source, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(source, 2));
         RemoveDependencyCommandHandler handler = new RemoveDependencyCommandHandler(
             repository,
