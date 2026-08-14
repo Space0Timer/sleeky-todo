@@ -64,9 +64,8 @@ index-backed; see the decision log.
 
 ## Authentication and session boundary
 
-The authentication slice is designed but not yet implemented. This section
-records the boundary that slice must produce so the ownership, transport, and
-test decisions stay consistent while it is built.
+This section records the boundary the authentication slice holds, because the
+ownership, transport, and test decisions all rest on it.
 
 Login uses OpenID Connect, and the application session is an ASP.NET Core
 encrypted cookie. The React client never receives or stores an access, ID, or
@@ -557,7 +556,8 @@ configuration-driven Serilog pipeline after dependency injection is available.
 One HTTP completion event records method, path, status, duration, request ID,
 and trace ID. A MediatR behavior records the application request type and
 successful handling duration, and Infrastructure records successful MongoDB
-index initialization. Successful health-check completion events are reduced to
+index initialization and each startup migration that changed data. Successful
+health-check completion events are reduced to
 Debug, while unhealthy health checks remain Warning events. A recurring TODO
 completion records the series, completed TODO, and newly created TODO identifiers
 only after the transaction commits. Successful TODO create, update, status,
@@ -591,8 +591,10 @@ class and event shape remain explicit without provider-specific APIs.
 
 Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
-repository and health check, and initializes MongoDB indexes through a hosted
-service. This keeps `Program.cs` limited to composition and application startup.
+repository and health check, and runs its schema and data bootstrap through
+hosted services: the enum migration, the search-token backfill, and index
+initialization, in that registration order. This keeps `Program.cs` limited to
+composition and application startup.
 
 `AddAssistant` binds provider options without validating them on start: an
 application-level API key is optional, and a deployment where every user brings

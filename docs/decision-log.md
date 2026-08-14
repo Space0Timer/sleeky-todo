@@ -39,11 +39,15 @@ observed version and refreshes the list after success. A stale-version response
 is shown explicitly and requires a Reload Latest Version action, preserving the
 same no-silent-overwrite rule as the API.
 
-The dependency selector loads at most 100 active TODO projections ordered by
-name and searches within that bounded set. This keeps browser memory and network
-work bounded without adding a new API contract, at the cost of not exposing
-candidates beyond that first page. Server-side dependency search is the chosen
-follow-up if larger datasets must be supported.
+The dependency selector originally loaded at most 100 active TODO projections
+ordered by name and searched within that bounded set, which kept browser memory
+and network work bounded without a new API contract but left every candidate
+beyond that first page unreachable. That follow-up has since been taken: the
+selector sends what is typed to the list endpoint and the server matches it, so
+the reachable set is the whole collection rather than one page. Only the
+predicates the server cannot know stay in the client — the card excludes itself
+and the prerequisites it already has. The matching semantics are recorded under
+"Token-prefix search over stored search tokens".
 
 ## MongoDB
 
@@ -283,8 +287,8 @@ or persistence code to Serilog. Static Serilog access is restricted to bootstrap
 fatal startup reporting, and shutdown flushing in `Program.cs`.
 
 The logging pipeline produces a condensed HTTP completion event, trace context,
-MediatR request timing, index-initialization events, and a post-commit event when
-a recurring completion creates its next TODO. Successful TODO mutations emit
+MediatR request timing, index-initialization and startup-migration events, and a
+post-commit event when a recurring completion creates its next TODO. Successful TODO mutations emit
 Information audit events through direct typed `ILogger<T>` calls with stable
 event IDs and structured placeholders. Logging records identifiers, versions,
 and operational metadata, not request bodies, descriptions, cursor values, or
@@ -376,10 +380,9 @@ occurrence, while the stale request returns 409.
 
 ## Cookie session with OIDC login
 
-Authentication is designed as OpenID Connect for login and an encrypted
-ASP.NET Core cookie for the application session. Until that slice is
-implemented the API still has no authentication and must not be exposed
-publicly.
+Login is OpenID Connect and the application session is an encrypted ASP.NET
+Core cookie. Every TODO route requires an authenticated user, and a request
+without a valid session is answered with `401` rather than a redirect.
 
 Browser-held tokens were rejected. Any access or refresh token reachable from
 JavaScript is exposed to cross-site scripting, and client-side refresh adds
