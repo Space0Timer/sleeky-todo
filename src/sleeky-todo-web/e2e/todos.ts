@@ -87,6 +87,42 @@ export async function changeStatusOutOfBand(
   expect(response.ok()).toBeTruthy()
 }
 
+/**
+ * Reads a TODO's stored version through the selection probe, which reports
+ * soft-deleted TODOs, so a version can be staged from the trash as well.
+ */
+export async function currentVersion(page: Page, id: string): Promise<number> {
+  const response = await page.request.get(`${apiOrigin}/api/todos/selection?id=${id}`)
+  const selection = (await response.json()) as {
+    items: { id: string; version: number }[]
+  }
+  const found = selection.items.find((item) => item.id === id)
+
+  if (found === undefined) {
+    throw new Error(`The TODO ${id} did not resolve through the selection probe.`)
+  }
+
+  return found.version
+}
+
+/**
+ * Restores a TODO behind the running page, which is how a restore conflict is
+ * staged: the trash keeps the version it loaded while the store moves on and
+ * the document stops being deleted.
+ */
+export async function restoreOutOfBand(
+  page: Page,
+  id: string,
+  version: number,
+): Promise<void> {
+  const response = await page.request.post(`${apiOrigin}/api/todos/${id}/restore`, {
+    data: { version },
+    headers: await antiforgeryHeader(page),
+  })
+
+  expect(response.ok()).toBeTruthy()
+}
+
 export async function cardId(card: Locator): Promise<string> {
   return (await card.getByTestId('record-id').innerText()).trim()
 }

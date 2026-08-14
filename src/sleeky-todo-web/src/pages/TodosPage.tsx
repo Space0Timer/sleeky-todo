@@ -292,13 +292,14 @@ export function TodosPage() {
   }
 
   async function runBulk(operation: BulkOperation, selection?: TodoVersionReference[]) {
-    const sent = selection ?? bulk.buildSelection()
     setError(null)
     setNotice(null)
 
+    // The summary is counted against what the batch actually sent rather than
+    // what was selected, because a silent retry resends re-read versions.
     const outcome = await bulk.run(operation, selection)
     if (outcome.kind === 'done') {
-      const summary = bulk.finish(outcome.result, sent)
+      const summary = bulk.finish(outcome.result, outcome.sent)
       const parts = [`${summary.changed} updated`]
       if (summary.unchanged > 0) parts.push(`${summary.unchanged} already up to date`)
       if (summary.occurrences > 0) {
@@ -321,9 +322,11 @@ export function TodosPage() {
     setPendingDelete(bulk.buildSelection())
   }
 
+  // The dialog stays open until the request settles, so it can disable its own
+  // actions and report progress rather than vanishing while the batch runs.
   async function confirmBulkDelete(selection: TodoVersionReference[]) {
-    setPendingDelete(null)
     await runBulk({ kind: 'delete' }, selection)
+    setPendingDelete(null)
   }
 
   const errorTitle = error?.kind === 'concurrency'

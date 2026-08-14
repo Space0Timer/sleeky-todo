@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
   ApiError,
@@ -27,8 +27,13 @@ export type BulkRepair = {
   vanishedCount: number
 }
 
+/**
+ * A completed batch carries the selection it was sent with, because a silent
+ * retry resends re-read versions and the summary counts what changed by
+ * comparing the versions that went out with the ones that came back.
+ */
 type BulkOutcome =
-  | { kind: 'done'; result: BulkTodoResult }
+  | { kind: 'done'; result: BulkTodoResult; sent: TodoVersionReference[] }
   | { kind: 'repair'; repair: BulkRepair }
   | { kind: 'failed'; error: unknown }
 
@@ -63,6 +68,27 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
     setSelectedIds(new Set())
     setRepair(null)
   }, [])
+
+  /**
+   * A filter change reloads the list underneath a live selection, which can
+   * drop selected TODOs out of view. The count reads from the selection while
+   * an action reads from what is on screen, so without pruning the toolbar
+   * offers to act on more than it would send. Pruning to what is loaded keeps
+   * the two equal and leaves the still-visible part of the selection intact.
+   *
+   * Paging only appends, so this never fires on "load more". The identity
+   * check keeps a reload that changed nothing from queuing a render.
+   */
+  useEffect(() => {
+    setSelectedIds((current) => {
+      if (current.size === 0) return current
+
+      const loaded = new Set(items.map((item) => item.id))
+      const next = new Set([...current].filter((id) => loaded.has(id)))
+
+      return next.size === current.size ? current : next
+    })
+  }, [items])
 
   const toggle = useCallback((id: string) => {
     setSelectedIds((current) => {
@@ -136,7 +162,7 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
     selection: TodoVersionReference[],
   ): Promise<BulkOutcome> => {
     try {
-      return { kind: 'done', result: await send(operation, selection) }
+      return { kind: 'done', result: await send(operation, selection), sent: selection }
     } catch (caught) {
       if (!(caught instanceof ApiError)) return { kind: 'failed', error: caught }
 
@@ -161,6 +187,17 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
   }, [describeRepair, hydrate, send])
 
   /**
+   * A silent retry is confined to status changes. They are idempotent, an
+   * already-satisfied item is a no-op that echoes its version unchanged, and
+   * the domain guards reject the transitions that would be wrong, so a retry
+   * either converges on the user's intent or fails loudly with the real reason.
+   *
+   * Deletion and restoration are the batches whose intent can invert while the
+   * world moves: a TODO archived as junk may have been reopened elsewhere, and
+   * a conflicted restore means someone has already restored it. Both return to
+   * the user. Restoration would also fail its second attempt anyway, because
+   * the write asserts the stored document is still deleted.
+   *
    * Retrying a shrunken selection would act on a subset the user never chose,
    * so a silent retry runs only when every identifier is still resolvable.
    */
@@ -175,7 +212,7 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
     setRepair(null)
     try {
       const first = await attempt(operation, selection)
-      if (first.kind !== 'repair' || operation.kind === 'delete') {
+      if (first.kind !== 'repair' || operation.kind !== 'status') {
         if (first.kind === 'repair') setRepair(first.repair)
         return first
       }

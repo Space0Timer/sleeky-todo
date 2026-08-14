@@ -7,6 +7,8 @@ import {
   cardId,
   changeStatusOutOfBand,
   createTodo,
+  currentVersion,
+  restoreOutOfBand,
   selectCard,
   todoCard,
 } from './todos.ts'
@@ -142,4 +144,55 @@ test('a stale selection is repaired and retried', async ({ page }) => {
     /archived|out of date/i,
   )
   await expect(todoCard(page, 'Repair one').getByText('Not started')).toBeVisible()
+})
+
+test('a conflicted restore is not retried silently', async ({ page }) => {
+  const card = await createTodo(page, 'Restore conflict')
+  const id = await cardId(card)
+
+  await selectCard(card)
+  await bulkAction(page, 'Delete').click()
+  await page.getByRole('dialog', { name: 'Confirm bulk deletion' })
+    .getByRole('button', { name: 'Delete' }).click()
+  await expect(todoCard(page, 'Restore conflict')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Trash' }).click()
+  await selectCard(todoCard(page, 'Restore conflict'))
+
+  // Restoring behind the page inverts the intent the trash is holding: the
+  // TODO is already back, and the version the list carries has moved on.
+  await restoreOutOfBand(page, id, await currentVersion(page, id))
+
+  // The batch route is counted rather than the outcome, because a retry would
+  // fail the same way it did the first time and report the same banner.
+  let attempts = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/api/todos/restore')) {
+      attempts += 1
+    }
+  })
+
+  await bulkAction(page, 'Restore').click()
+
+  await expect(page.getByRole('alert')).toContainText(/out of date/i)
+  expect(attempts).toBe(1)
+})
+
+test('a filter that hides a selected TODO drops it from the count', async ({ page }) => {
+  await createTodo(page, 'Filter staying')
+  const leaving = await createTodo(page, 'Filter leaving')
+
+  await leaving.getByRole('button', { name: 'Manage' }).click()
+  await leaving.getByLabel('Status for Filter leaving').selectOption({ label: 'In progress' })
+  await expect(todoCard(page, 'Filter leaving').getByText('In progress')).toBeVisible()
+
+  await selectCard(todoCard(page, 'Filter staying'))
+  await selectCard(todoCard(page, 'Filter leaving'))
+  await expect(page.getByTestId('bulk-selected-count')).toHaveText('2 selected')
+
+  // The count reads from the selection while an action reads from what is on
+  // screen, so a filter that drops a selected TODO has to drop it from both.
+  await page.getByLabel('Status filter').selectOption({ label: 'Not started' })
+  await expect(todoCard(page, 'Filter leaving')).toHaveCount(0)
+  await expect(page.getByTestId('bulk-selected-count')).toHaveText('1 selected')
 })
