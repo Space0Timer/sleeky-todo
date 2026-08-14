@@ -91,6 +91,28 @@ public sealed class TodoToolsetTests
         }
     }
 
+    /// <summary>
+    /// A parameter with no default is required in the generated schema, and the
+    /// binder throws when a call omits one — which the loop reports to the model
+    /// as a generic failure naming nothing. Every optional filter must therefore
+    /// be optional in the schema, or asking for "everything due this week"
+    /// fails because it named no status.
+    /// </summary>
+    [TestMethod]
+    public void CreateRequiresOnlyWhatATodoCannotBeReadOrMadeWithout()
+    {
+        IReadOnlyList<AITool> toolset = TodoToolset.Create(BuildTools());
+
+        Required(toolset, TodoToolNames.GetTodos).Should().BeEmpty();
+        Required(toolset, TodoToolNames.CreateTodo)
+            .Should().BeEquivalentTo("name", "dueDate", "priority");
+        Required(toolset, TodoToolNames.ChangeTodoStatus)
+            .Should().BeEquivalentTo("status", "ids");
+        Required(toolset, TodoToolNames.DeleteTodos).Should().BeEquivalentTo("ids");
+        Required(toolset, TodoToolNames.RestoreTodos).Should().BeEquivalentTo("ids");
+        Required(toolset, TodoToolNames.GetTodoSelection).Should().BeEquivalentTo("ids");
+    }
+
     [TestMethod]
     public void CreateDescribesWhenToCallEachTool()
     {
@@ -98,6 +120,15 @@ public sealed class TodoToolsetTests
         {
             tool.Description.Should().Contain("Call this");
         }
+    }
+
+    private static IEnumerable<string> Required(IReadOnlyList<AITool> toolset, string name)
+    {
+        JsonElement schema = Find(toolset, name).JsonSchema;
+
+        return schema.TryGetProperty("required", out JsonElement required)
+            ? required.EnumerateArray().Select(value => value.GetString()!)
+            : Array.Empty<string>();
     }
 
     private static AIFunction Find(IReadOnlyList<AITool> toolset, string name)

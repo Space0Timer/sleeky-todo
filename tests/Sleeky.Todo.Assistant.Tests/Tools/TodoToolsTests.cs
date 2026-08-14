@@ -9,6 +9,7 @@ using NSubstitute;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
+using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Tests.Turns;
@@ -256,17 +257,152 @@ public sealed class TodoToolsTests
     {
         Harness harness = new Harness();
 
-        object outcome = await harness.Tools.GetTodosAsync(
-            null,
-            null,
-            null,
-            null,
-            null,
-            limit: 500,
-            CancellationToken.None);
+        object outcome = await harness.Tools.GetTodosAsync(limit: 500);
 
         outcome.Should().BeOfType<ToolFailure>()
             .Which.Error.Should().Contain("limit");
+    }
+
+    [TestMethod]
+    public async Task CreateRecordsTheNewVersionSoItCanBeWrittenToNext()
+    {
+        Harness harness = new Harness();
+        harness.StageCreate(TestTodo.At(First, 1, "Renew passport"));
+
+        object outcome = await harness.Tools.CreateTodoAsync(
+            "Renew passport",
+            "2026-09-30",
+            "High",
+            "Before the trip",
+            cancellationToken: CancellationToken.None);
+
+        outcome.Should().BeOfType<TodoSummary>().Which.Version.Should().Be(1);
+        harness.Created!.Name.Should().Be("Renew passport");
+        harness.Created.DueDate.Should().Be(new DateOnly(2026, 9, 30));
+        harness.Created.Priority.Should().Be(TodoPriority.High);
+        harness.Ledger
+            .TryBind(new[] { First }, out IReadOnlyCollection<BulkTodoItemRequest> bound, out _)
+            .Should().BeTrue();
+        bound.Single().Version.Should().Be(1);
+        harness.Events.Types().Should().Contain(TurnEventType.TodosChanged);
+    }
+
+    [TestMethod]
+    public async Task CreatePassesARecurrenceThroughToTheCommand()
+    {
+        Harness harness = new Harness();
+        harness.StageCreate(TestTodo.At(First, 1));
+
+        await harness.Tools.CreateTodoAsync(
+            "Water the plants",
+            "2026-09-01",
+            "Low",
+            description: null,
+            "Custom",
+            recurrenceInterval: 3,
+            "Days",
+            CancellationToken.None);
+
+        harness.Created!.RecurrenceType.Should().Be(RecurrenceType.Custom);
+        harness.Created.RecurrenceInterval.Should().Be(3);
+        harness.Created.RecurrenceUnit.Should().Be(RecurrenceUnit.Days);
+    }
+
+    /// <summary>
+    /// Seven parameters, four of which are parsed. Each has to come back naming
+    /// what was wrong rather than throwing, because a thrown tool exception
+    /// reaches the model as a generic failure it cannot diagnose.
+    /// </summary>
+    [TestMethod]
+    public async Task CreateReportsWhicheverFieldItCouldNotRead()
+    {
+        Harness harness = new Harness();
+        harness.StageCreate(TestTodo.At(First, 1));
+
+        object badDate = await harness.Tools.CreateTodoAsync("x", "the thirtieth", "High");
+        object badPriority = await harness.Tools.CreateTodoAsync("x", "2026-09-30", "Urgent");
+        object badRecurrence = await harness.Tools.CreateTodoAsync(
+            "x",
+            "2026-09-30",
+            "High",
+            recurrenceType: "Fortnightly",
+            recurrenceInterval: 2);
+        object badUnit = await harness.Tools.CreateTodoAsync(
+            "x",
+            "2026-09-30",
+            "High",
+            recurrenceType: "Custom",
+            recurrenceInterval: 2,
+            recurrenceUnit: "Fortnights");
+
+        badDate.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("dueDate");
+        badPriority.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("priority");
+        badRecurrence.Should().BeOfType<ToolFailure>()
+            .Which.Error.Should().Contain("recurrenceType");
+        badUnit.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("recurrenceUnit");
+        harness.Created.Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task RestoreBindsTheVersionsTheModelReadFromTheTrash()
+    {
+        Harness harness = new Harness();
+        harness.Ledger.Record(First, 4);
+        harness.Policy
+            .RestoreAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Applied(First, 5, TodoStatus.NotStarted, deleted: false));
+
+        object outcome = await harness.Tools.RestoreTodosAsync(
+            new[] { First.ToString() },
+            CancellationToken.None);
+
+        outcome.Should().BeOfType<TodoWriteOutcome>();
+        await harness.Policy.Received(1).RestoreAsync(
+            Arg.Is<IReadOnlyCollection<BulkTodoItemRequest>>(items =>
+                items.Single().Id == First && items.Single().Version == 4),
+            Arg.Any<CancellationToken>());
+        harness.Events.Types().Should().Contain(TurnEventType.TodosChanged);
+    }
+
+    [TestMethod]
+    public async Task RestoreRefusesSomethingNeverReadFromTheTrash()
+    {
+        Harness harness = new Harness();
+
+        object outcome = await harness.Tools.RestoreTodosAsync(
+            new[] { First.ToString() },
+            CancellationToken.None);
+
+        outcome.Should().BeOfType<ToolFailure>()
+            .Which.Error.Should().Contain("Read them first");
+        await harness.Policy.DidNotReceiveWithAnyArgs().RestoreAsync(default!, default);
+    }
+
+    /// <summary>
+    /// A recurring completion creates an occurrence nobody named, so the client
+    /// is told to look at it as well as at what it asked to change.
+    /// </summary>
+    [TestMethod]
+    public async Task AWriteReportsAnOccurrenceItCreatedAlongTheWay()
+    {
+        Guid occurrence = TestTodo.Id("next-occurrence");
+        Harness harness = new Harness();
+        harness.Ledger.Record(First, 5);
+        harness.Policy
+            .ChangeStatusAsync(Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(new BulkTodoResult(new[]
+            {
+                new BulkTodoResultItem(First, 6, TodoStatus.Completed, null, occurrence),
+            }));
+
+        await harness.Tools.ChangeTodoStatusAsync(
+            "Completed",
+            new[] { First.ToString() },
+            CancellationToken.None);
+
+        TodoChangeNotice? notice =
+            harness.Events.Single<TodoChangeNotice>(TurnEventType.TodosChanged);
+        notice!.Ids.Should().BeEquivalentTo(new[] { First, occurrence });
     }
 
     [TestMethod]
@@ -342,11 +478,24 @@ public sealed class TodoToolsTests
 
         public bool Halted { get; private set; }
 
+        public CreateTodoCommand? Created { get; private set; }
+
         public void StageSelection(params TodoDto[] found)
         {
             this.Sender
                 .Send(Arg.Any<IRequest<TodoSelection>>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(new TodoSelection(found)));
+        }
+
+        public void StageCreate(TodoDto created)
+        {
+            this.Sender
+                .Send(Arg.Any<IRequest<TodoDto>>(), Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    this.Created = (CreateTodoCommand)call.Arg<IRequest<TodoDto>>();
+                    return Task.FromResult(created);
+                });
         }
 
         private sealed class StubTurnController : ITurnController

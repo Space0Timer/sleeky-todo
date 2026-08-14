@@ -66,18 +66,18 @@ public sealed class TodoTools
 
     public async Task<object> GetTodosAsync(
         [Description("Only TODOs with this status: NotStarted, InProgress, Completed, or Archived.")]
-        string? status,
+        string? status = null,
         [Description("Only TODOs with this priority: Low, Medium, or High.")]
-        string? priority,
+        string? priority = null,
         [Description("Which shelf to read: Active (the default), Archived, or Deleted for the trash. Restoring needs Deleted.")]
-        string? scope,
+        string? scope = null,
         [Description("Only TODOs due on or after this ISO date, such as 2026-08-14.")]
-        string? dueFrom,
+        string? dueFrom = null,
         [Description("Only TODOs due on or before this ISO date, such as 2026-08-14.")]
-        string? dueTo,
+        string? dueTo = null,
         [Description("How many to return, at most 100. Defaults to 50.")]
-        int? limit,
-        CancellationToken cancellationToken)
+        int? limit = null,
+        CancellationToken cancellationToken = default)
     {
         TodoStatus? parsedStatus = null;
         TodoPriority? parsedPriority = null;
@@ -164,7 +164,7 @@ public sealed class TodoTools
     public async Task<object> GetTodoSelectionAsync(
         [Description("The identifiers to look up, at most 100. Ones that no longer exist are left out of the answer rather than failing it.")]
         string[] ids,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (!TodoToolParsing.TryParseIds(ids, out Guid[]? parsed, out string? error))
         {
@@ -188,19 +188,19 @@ public sealed class TodoTools
     public async Task<object> CreateTodoAsync(
         [Description("What the TODO is called.")]
         string name,
-        [Description("Optional longer detail.")]
-        string? description,
         [Description("When it is due, as an ISO date such as 2026-08-14.")]
         string dueDate,
         [Description("Low, Medium, or High.")]
         string priority,
+        [Description("Optional longer detail.")]
+        string? description = null,
         [Description("Set only for a repeating TODO: Daily, Weekly, Monthly, or Custom.")]
-        string? recurrenceType,
+        string? recurrenceType = null,
         [Description("How many units between occurrences. Required with a Custom recurrence.")]
-        int? recurrenceInterval,
+        int? recurrenceInterval = null,
         [Description("The unit a Custom recurrence counts in: Days, Weeks, or Months.")]
-        string? recurrenceUnit,
-        CancellationToken cancellationToken)
+        string? recurrenceUnit = null,
+        CancellationToken cancellationToken = default)
     {
         if (!TodoToolParsing.TryParseDate(dueDate, "dueDate", out DateOnly parsedDueDate, out string? error))
         {
@@ -262,7 +262,7 @@ public sealed class TodoTools
         string status,
         [Description("The TODOs to change, at most 100, all of which must have been read in this conversation.")]
         string[] ids,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (!TodoToolParsing.TryParseEnum(status, "status", out TodoStatus parsedStatus, out string? error))
         {
@@ -294,7 +294,7 @@ public sealed class TodoTools
     public async Task<object> DeleteTodosAsync(
         [Description("The TODOs to propose deleting, at most 100.")]
         string[] ids,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (!TodoToolParsing.TryParseIds(ids, out Guid[]? parsed, out string? error))
         {
@@ -344,7 +344,7 @@ public sealed class TodoTools
     public async Task<object> RestoreTodosAsync(
         [Description("The deleted TODOs to restore, at most 100, all of which must have been read in this conversation with scope Deleted.")]
         string[] ids,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         if (!this.TryBind(ids, out IReadOnlyCollection<BulkTodoItemRequest>? items, out string? error))
         {
