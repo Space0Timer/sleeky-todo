@@ -92,6 +92,8 @@ public sealed class BulkTodoValidatorTests
     [TestMethod]
     [DataRow(TodoStatus.Completed)]
     [DataRow(TodoStatus.Archived)]
+    [DataRow(TodoStatus.NotStarted)]
+    [DataRow(TodoStatus.InProgress)]
     public void SupportedBulkStatusesAreAccepted(TodoStatus status)
     {
         BulkChangeTodoStatusCommand command = new BulkChangeTodoStatusCommand(
@@ -103,12 +105,10 @@ public sealed class BulkTodoValidatorTests
     }
 
     [TestMethod]
-    [DataRow(TodoStatus.NotStarted)]
-    [DataRow(TodoStatus.InProgress)]
-    public void UnsupportedBulkStatusIsRejected(TodoStatus status)
+    public void UnknownBulkStatusIsRejected()
     {
         BulkChangeTodoStatusCommand command = new BulkChangeTodoStatusCommand(
-            status,
+            (TodoStatus)99,
             [new BulkTodoItemRequest(TestTodoFactory.CreateId("todo-1"), 1)]);
 
         ValidationResult result = new BulkChangeTodoStatusCommandValidator()
@@ -117,7 +117,7 @@ public sealed class BulkTodoValidatorTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle()
             .Which.ErrorMessage.Should()
-            .Be("A bulk status change must target Completed or Archived.");
+            .Be("A bulk status change must target a known status.");
     }
 
     private static ValidationResult Validate(IReadOnlyCollection<BulkTodoItemRequest> items)

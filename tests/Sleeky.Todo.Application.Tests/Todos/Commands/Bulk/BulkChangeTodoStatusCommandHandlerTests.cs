@@ -223,6 +223,70 @@ public sealed class BulkChangeTodoStatusCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// Batch membership satisfies a dependency only when the batch completes it.
+    /// A batch moving to <see cref="TodoStatus.InProgress"/> leaves the
+    /// prerequisite short of completion, so it must block rather than reuse the
+    /// exemption that lets a prerequisite and dependent complete together.
+    /// </summary>
+    [TestMethod]
+    public async Task PrerequisiteInsideTheBatchStillBlocksAMoveToInProgress()
+    {
+        TodoItem prerequisite = TestTodoFactory.Create("prerequisite");
+        TodoItem dependent = TestTodoFactory.Create("dependent");
+        dependent.AddDependency(prerequisite.Id, TestTodoFactory.Timestamp);
+        StageLoad(prerequisite, dependent);
+
+        Func<Task> act = () => HandleAsync(
+            TodoStatus.InProgress,
+            Select(prerequisite, dependent));
+
+        await act.Should()
+            .ThrowAsync<DomainException>()
+            .WithMessage("A blocked TODO cannot move to InProgress.");
+        await AssertNoWriteAsync();
+    }
+
+    [TestMethod]
+    public async Task MoveToInProgressAcceptsACompletedDependencyOutsideTheBatch()
+    {
+        TodoItem prerequisite = TestTodoFactory.Create("prerequisite");
+        _ = prerequisite.ChangeStatus(TodoStatus.Completed, TestTodoFactory.Timestamp);
+        TodoItem dependent = TestTodoFactory.Create("dependent");
+        dependent.AddDependency(prerequisite.Id, TestTodoFactory.Timestamp);
+        StageLoad(dependent);
+        StageDependencies(prerequisite);
+
+        BulkTodoResult result = await HandleAsync(
+            TodoStatus.InProgress,
+            Select(dependent));
+
+        result.Items.Should().ContainSingle()
+            .Which.Status.Should().Be(TodoStatus.InProgress);
+        capturedUpdates.Should().ContainSingle();
+    }
+
+    [TestMethod]
+    public async Task UnarchivingIgnoresDependencyState()
+    {
+        TodoItem prerequisite = TestTodoFactory.Create("prerequisite");
+        TodoItem archived = TestTodoFactory.Create("archived");
+        archived.AddDependency(prerequisite.Id, TestTodoFactory.Timestamp);
+        _ = archived.ChangeStatus(TodoStatus.Archived, TestTodoFactory.Timestamp);
+        StageLoad(archived);
+
+        BulkTodoResult result = await HandleAsync(
+            TodoStatus.NotStarted,
+            Select(archived));
+
+        result.Items.Should().ContainSingle()
+            .Which.Status.Should().Be(TodoStatus.NotStarted);
+        await repository.DidNotReceive().GetByIdsAsync(
+            Arg.Any<IEnumerable<Guid>>(),
+            true,
+            Arg.Any<CancellationToken>());
+    }
+
     private static TodoItem CreateRecurring(string id, string seriesId)
     {
         RecurrenceSchedule recurrence = RecurrenceSchedule.Create(

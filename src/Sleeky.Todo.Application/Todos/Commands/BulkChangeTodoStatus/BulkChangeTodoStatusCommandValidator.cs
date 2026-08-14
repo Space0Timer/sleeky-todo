@@ -10,11 +10,9 @@ public sealed class BulkChangeTodoStatusCommandValidator
 {
     public BulkChangeTodoStatusCommandValidator()
     {
-        // Reopening and unarchiving stay single-item until a client needs them
-        // in bulk; widening this rule is all that would be required.
         RuleFor(command => command.Status)
-            .Must(status => status is TodoStatus.Completed or TodoStatus.Archived)
-            .WithMessage("A bulk status change must target Completed or Archived.");
+            .IsInEnum()
+            .WithMessage("A bulk status change must target a known status.");
 
         RuleFor(command => command.Items)
             .ValidBulkSelection();

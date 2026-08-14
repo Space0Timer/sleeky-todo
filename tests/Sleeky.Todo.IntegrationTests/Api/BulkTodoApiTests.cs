@@ -309,15 +309,35 @@ public sealed class BulkTodoApiTests
     }
 
     [TestMethod]
-    public async Task AnUnsupportedBulkStatusIsRejected()
+    public async Task AnUnknownBulkStatusIsRejected()
     {
         JsonElement todo = await CreateTodoAsync();
 
         HttpResponseMessage response = await ChangeStatusesAsync(
-            TodoStatus.InProgress,
+            (TodoStatus)99,
             Select(todo));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [TestMethod]
+    public async Task ArchivedTodosAreUnarchivedInBulk()
+    {
+        JsonElement todo = await CreateTodoAsync();
+        HttpResponseMessage archiveResponse = await ChangeStatusesAsync(
+            TodoStatus.Archived,
+            Select(todo));
+        archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        HttpResponseMessage response = await ChangeStatusesAsync(
+            TodoStatus.NotStarted,
+            [new BulkTodoSelectionItem { Id = Guid.Parse(GetId(todo)), Version = 2 }]);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement body = await ReadJsonAsync(response);
+        JsonElement item = body.GetProperty("items").EnumerateArray().Single();
+        item.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.NotStarted);
+        item.GetProperty("version").GetInt64().Should().Be(3);
     }
 
     private static bool ShouldRunMongoDbTests()

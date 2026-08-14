@@ -51,9 +51,12 @@ public sealed class BulkChangeTodoStatusCommandHandler
             request.Items,
             cancellationToken);
 
-        if (request.Status == TodoStatus.Completed)
+        if (request.Status is TodoStatus.Completed or TodoStatus.InProgress)
         {
-            await EnsureDependenciesAllowCompletionAsync(todos, cancellationToken);
+            await EnsureDependenciesAllowTransitionAsync(
+                todos,
+                request.Status,
+                cancellationToken);
         }
 
         List<TodoItem> updates = new List<TodoItem>(todos.Count);
@@ -113,22 +116,34 @@ public sealed class BulkChangeTodoStatusCommandHandler
     }
 
     /// <summary>
-    /// A dependency is satisfied when it is already completed or is part of this
-    /// batch, which lets a prerequisite and its dependent complete together. Any
-    /// selected TODO that cannot reach <see cref="TodoStatus.Completed"/> fails
-    /// the batch on its own, so batch membership is a safe guarantee.
+    /// A dependency is satisfied only when it is completed. Completing the batch
+    /// completes every dependency inside it, so membership is itself a guarantee
+    /// and a prerequisite may be completed alongside its dependent. Any other
+    /// target leaves the selection short of <see cref="TodoStatus.Completed"/>,
+    /// so a dependency inside the batch blocks the transition instead of
+    /// satisfying it.
     /// </summary>
-    private async Task EnsureDependenciesAllowCompletionAsync(
+    private async Task EnsureDependenciesAllowTransitionAsync(
         IReadOnlyList<TodoItem> todos,
+        TodoStatus status,
         CancellationToken cancellationToken)
     {
         HashSet<Guid> selectedIds = todos.Select(todoItem => todoItem.Id).ToHashSet();
-        Guid[] externalDependencyIds = todos
-            .Where(todoItem => todoItem.Status != TodoStatus.Completed)
+        Guid[] dependencyIds = todos
+            .Where(todoItem => todoItem.Status != status)
             .SelectMany(todoItem => todoItem.DependencyIds)
-            .Where(dependencyId => !selectedIds.Contains(dependencyId))
             .Distinct()
             .ToArray();
+        Guid[] externalDependencyIds = dependencyIds
+            .Where(dependencyId => !selectedIds.Contains(dependencyId))
+            .ToArray();
+
+        if (status != TodoStatus.Completed
+            && externalDependencyIds.Length != dependencyIds.Length)
+        {
+            throw new DomainException($"A blocked TODO cannot move to {status}.");
+        }
+
         if (externalDependencyIds.Length == 0)
         {
             return;
@@ -147,8 +162,7 @@ public sealed class BulkChangeTodoStatusCommandHandler
 
         if (blocked)
         {
-            throw new DomainException(
-                $"A blocked TODO cannot move to {TodoStatus.Completed}.");
+            throw new DomainException($"A blocked TODO cannot move to {status}.");
         }
     }
 
