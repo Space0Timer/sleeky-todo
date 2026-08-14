@@ -46,6 +46,9 @@ public static class InfrastructureServiceCollectionExtensions
             .Validate(
                 settings => !string.IsNullOrWhiteSpace(settings.UsersCollectionName),
                 $"{MongoDbSettings.SectionName}:UsersCollectionName is required.")
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.AssistantSettingsCollectionName),
+                $"{MongoDbSettings.SectionName}:AssistantSettingsCollectionName is required.")
             .ValidateOnStart();
 
         services.AddSingleton<IMongoClient>(serviceProvider =>
@@ -81,12 +84,16 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(serviceProvider => ResolveCollection<UserDocument>(
             serviceProvider,
             settings => settings.UsersCollectionName));
+        services.AddSingleton(serviceProvider => ResolveCollection<AssistantSettingsDocument>(
+            serviceProvider,
+            settings => settings.AssistantSettingsCollectionName));
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<MongoTransactionContext>();
         services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
         services.AddScoped<IUserDirectoryRepository, MongoUserDirectoryRepository>();
+        services.AddScoped<IAssistantSettingsRepository, MongoAssistantSettingsRepository>();
         services.AddHostedService<MongoDbEnumStorageMigrator>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services

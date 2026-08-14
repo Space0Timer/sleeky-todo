@@ -11,4 +11,6 @@ public sealed class MongoDbSettings
     public string TodoItemsCollectionName { get; init; } = "todoItems";
 
     public string UsersCollectionName { get; init; } = "users";
+
+    public string AssistantSettingsCollectionName { get; init; } = "assistantSettings";
 }

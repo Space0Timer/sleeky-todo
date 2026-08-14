@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Sleeky.Todo.Application\Sleeky.Todo.Application.csproj" />
+    <ProjectReference Include="..\Sleeky.Todo.Assistant\Sleeky.Todo.Assistant.csproj" />
     <ProjectReference Include="..\Sleeky.Todo.Infrastructure\Sleeky.Todo.Infrastructure.csproj" />
   </ItemGroup>
 
