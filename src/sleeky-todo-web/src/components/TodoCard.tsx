@@ -20,9 +20,13 @@ import { Badge, Button, type BadgeTone } from './common/index.ts'
 type TodoCardProps = {
   busy: boolean
   candidates: TodoListItem[]
+  drifted?: boolean
   errors?: Record<string, string[]>
   item: TodoListItem
   scope: TodoScope
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelected?: (id: string) => void
   onAddDependency: (todo: Todo, dependencyId: string) => Promise<Todo | null>
   onDelete: (todo: TodoListItem) => Promise<boolean>
   onLoad: (id: string, quiet?: boolean) => Promise<Todo | null>
@@ -57,15 +61,19 @@ function formatDateTime(value: string | null): string {
 export function TodoCard({
   busy,
   candidates,
+  drifted = false,
   errors,
   item,
   scope,
+  selectable = false,
+  selected = false,
   onAddDependency,
   onDelete,
   onLoad,
   onRemoveDependency,
   onRestore,
   onStatus,
+  onToggleSelected,
   onUpdate,
 }: TodoCardProps) {
   const [details, setDetails] = useState<Todo | null>(null)
@@ -80,6 +88,11 @@ export function TodoCard({
     && !details?.dependencyIds.includes(candidate.id)
     && candidate.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
   )), [candidates, details?.dependencyIds, item.id, search])
+
+  // An archived TODO is frozen in the domain: editing it, changing its
+  // dependencies, or completing it are rejected. Only the transitions that
+  // unarchive it, and deletion, remain.
+  const frozen = item.status === todoStatus.archived
 
   useEffect(() => {
     if (!item.isBlocked || scope === todoScope.deleted) return
@@ -161,7 +174,10 @@ export function TodoCard({
 
   if (editing && details) {
     return (
-      <article className={styles.todoCard} data-testid={`todo-${item.id}`}>
+      <article
+      className={drifted ? `${styles.todoCard} ${styles.drifted}` : styles.todoCard}
+      data-testid={`todo-${item.id}`}
+    >
         <TodoForm
           busy={busy}
           errors={errors}
@@ -181,10 +197,24 @@ export function TodoCard({
   }
 
   return (
-    <article className={styles.todoCard} data-testid={`todo-${item.id}`}>
+    <article
+      className={drifted ? `${styles.todoCard} ${styles.drifted}` : styles.todoCard}
+      data-testid={`todo-${item.id}`}
+    >
       <div className={styles.todoCardHeading}>
         <div>
           <div className={styles.badgeRow}>
+            {selectable && (
+              <label className={styles.selectBox}>
+                <input
+                  checked={selected}
+                  disabled={busy}
+                  type="checkbox"
+                  onChange={() => onToggleSelected?.(item.id)}
+                />
+                <span className={styles.visuallyHidden}>Select {item.name}</span>
+              </label>
+            )}
             <Badge tone={priorityTones[item.priority]}>
               {todoPriorityLabels[item.priority]}
             </Badge>
@@ -267,18 +297,20 @@ export function TodoCard({
                 Number(event.target.value) as TodoStatus,
               )}
             >
-              {Object.entries(todoStatusLabels).map(([value, label]) => (
-                <option
-                  key={value}
-                  disabled={item.isBlocked && (
-                    Number(value) === todoStatus.inProgress
-                    || Number(value) === todoStatus.completed
-                  )}
-                  value={value}
-                >
-                  {label}
-                </option>
-              ))}
+              {Object.entries(todoStatusLabels)
+                .filter(([value]) => !frozen || Number(value) !== todoStatus.completed)
+                .map(([value, label]) => (
+                  <option
+                    key={value}
+                    disabled={item.isBlocked && (
+                      Number(value) === todoStatus.inProgress
+                      || Number(value) === todoStatus.completed
+                    )}
+                    value={value}
+                  >
+                    {label}
+                  </option>
+                ))}
             </select>
           </label>
 
@@ -290,6 +322,14 @@ export function TodoCard({
             </p>
           )}
 
+          {frozen && (
+            <p className={styles.scheduleNote}>
+              Archived TODOs are frozen. Unarchive to edit details or change
+              prerequisites.
+            </p>
+          )}
+
+          {!frozen && (
           <div className={styles.dependencyManager}>
             <strong>Prerequisites</strong>
             {details.dependencyIds.length === 0 ? (
@@ -338,15 +378,18 @@ export function TodoCard({
               </Button>
             </div>
           </div>
+          )}
 
           <div className={styles.cardActions}>
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={() => setEditing(true)}
-            >
-              Edit details
-            </Button>
+            {!frozen && (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setEditing(true)}
+              >
+                Edit details
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => setManaging(false)}>
               Close
             </Button>

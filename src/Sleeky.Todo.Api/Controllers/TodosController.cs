@@ -17,6 +17,7 @@ using Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
 using Sleeky.Todo.Application.Todos.Commands.UpdateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
+using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 
 namespace Sleeky.Todo.Api.Controllers;
 
@@ -76,6 +77,24 @@ public sealed class TodosController : ControllerBase
         TodoDto todo = await sender.Send(command, cancellationToken);
 
         return CreatedAtAction(nameof(Get), new { id = todo.Id }, todo);
+    }
+
+    /// <summary>
+    /// Reports the current state of specific TODOs. Identifiers that no longer
+    /// resolve are absent from the response rather than failing it, so a client
+    /// holding a stale selection can discover what changed and what vanished.
+    /// </summary>
+    [HttpGet("selection")]
+    [ProducesResponseType<TodoSelection>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<TodoSelection>> GetSelection(
+        [FromQuery(Name = "id")] Guid[] ids,
+        CancellationToken cancellationToken)
+    {
+        TodoSelection selection = await sender.Send(
+            new GetTodoSelectionQuery(ids ?? Array.Empty<Guid>()),
+            cancellationToken);
+        return Ok(selection);
     }
 
     [HttpGet("{id:guid}")]

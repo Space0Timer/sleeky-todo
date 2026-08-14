@@ -14,10 +14,13 @@ import {
   updateTodo,
 } from '../api/todos.ts'
 import { useAuth } from '../auth/AuthContext.ts'
+import { BulkDeleteDialog } from '../components/BulkDeleteDialog.tsx'
+import { BulkToolbar } from '../components/BulkToolbar.tsx'
 import { CreateTodoForm } from '../components/CreateTodoForm.tsx'
 import { TodoCard } from '../components/TodoCard.tsx'
 import { UserMenu } from '../components/UserMenu.tsx'
 import { Button, EmptyState } from '../components/common/index.ts'
+import { useBulkActions, type BulkOperation } from '../hooks/useBulkActions.ts'
 import {
   dependencyStatus,
   sortDirection,
@@ -34,6 +37,7 @@ import {
   type TodoListOptions,
   type TodoScope,
   type TodoStatus,
+  type TodoVersionReference,
 } from '../types/todo.ts'
 import styles from './TodosPage.module.scss'
 
@@ -72,8 +76,15 @@ export function TodosPage() {
   const [error, setError] = useState<UiError | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [pendingDelete, setPendingDelete] = useState<TodoVersionReference[] | null>(null)
   const navigate = useNavigate()
   const { endSession } = useAuth()
+
+  const reloadList = useCallback(() => {
+    setRefreshKey((current) => current + 1)
+  }, [])
+
+  const bulk = useBulkActions({ items, onRefresh: reloadList })
 
   const captureError = useCallback((caught: unknown, affectedTodoId?: string) => {
     const apiError = caught instanceof ApiError
@@ -142,9 +153,24 @@ export function TodosPage() {
     return () => { cancelled = true }
   }, [refreshKey])
 
-  function reloadList() {
-    setRefreshKey((current) => current + 1)
-  }
+  // Returning to the tab is when another tab's edits are most likely to have
+  // landed. Refreshing then keeps versions fresh, but only while nothing is
+  // selected: a selection resolves its versions from what is on screen, so
+  // changing the list underneath one would send versions the user never saw.
+  useEffect(() => {
+    function revalidate() {
+      if (document.visibilityState !== 'visible') return
+      if (bulk.selectedCount > 0 || bulk.bulkBusy || busyId !== null) return
+      reloadList()
+    }
+
+    window.addEventListener('focus', revalidate)
+    document.addEventListener('visibilitychange', revalidate)
+    return () => {
+      window.removeEventListener('focus', revalidate)
+      document.removeEventListener('visibilitychange', revalidate)
+    }
+  }, [busyId, bulk.bulkBusy, bulk.selectedCount, reloadList])
 
   function selectScope(nextScope: TodoScope) {
     setScope(nextScope)
@@ -152,6 +178,7 @@ export function TodosPage() {
     setNextCursor(null)
     setNotice(null)
     setError(null)
+    bulk.clearSelection()
   }
 
   async function loadMore() {
@@ -264,6 +291,41 @@ export function TodosPage() {
     reloadList()
   }
 
+  async function runBulk(operation: BulkOperation, selection?: TodoVersionReference[]) {
+    const sent = selection ?? bulk.buildSelection()
+    setError(null)
+    setNotice(null)
+
+    const outcome = await bulk.run(operation, selection)
+    if (outcome.kind === 'done') {
+      const summary = bulk.finish(outcome.result, sent)
+      const parts = [`${summary.changed} updated`]
+      if (summary.unchanged > 0) parts.push(`${summary.unchanged} already up to date`)
+      if (summary.occurrences > 0) {
+        parts.push(`${summary.occurrences} recurring occurrence(s) created`)
+      }
+      setNotice(`${parts.join(', ')}.`)
+      return
+    }
+
+    // A repair is not an error banner: the selection survives so the user can
+    // review the highlighted cards and retry, which the toolbar still offers.
+    if (outcome.kind === 'failed' && outcome.error !== null) {
+      captureError(outcome.error)
+    }
+  }
+
+  function requestBulkDelete() {
+    setError(null)
+    setNotice(null)
+    setPendingDelete(bulk.buildSelection())
+  }
+
+  async function confirmBulkDelete(selection: TodoVersionReference[]) {
+    setPendingDelete(null)
+    await runBulk({ kind: 'delete' }, selection)
+  }
+
   const errorTitle = error?.kind === 'concurrency'
     ? 'This TODO was changed by another user.'
     : error?.problem.title ?? 'Something went wrong.'
@@ -295,6 +357,15 @@ export function TodosPage() {
               Reload latest version
             </Button>
           )}
+        </section>
+      )}
+
+      {bulk.repair && (
+        <section className={styles.errorBanner} data-error-kind="concurrency" role="alert">
+          <div>
+            <strong>The selection is out of date.</strong>
+            <p>{bulk.repair.message}</p>
+          </div>
         </section>
       )}
 
@@ -445,6 +516,18 @@ export function TodosPage() {
           <h2>{tabs.find((tab) => tab.scope === scope)?.label}</h2>
           <span>{items.length}</span>
         </div>
+        <BulkToolbar
+          busy={bulk.bulkBusy || busyId !== null}
+          loadedCount={items.length}
+          overLimit={bulk.overLimit}
+          scope={scope}
+          selectedCount={bulk.selectedCount}
+          selectedStatuses={bulk.selectedStatuses}
+          onDelete={requestBulkDelete}
+          onSelectLoaded={bulk.selectLoaded}
+          onStatus={(status) => void runBulk({ kind: 'status', status })}
+        />
+
         {loading ? (
           <EmptyState>Loading TODOs…</EmptyState>
         ) : items.length === 0 ? (
@@ -454,17 +537,21 @@ export function TodosPage() {
             {items.map((item) => (
               <TodoCard
                 key={`${item.id}:${item.version}`}
-                busy={busyId === item.id}
+                busy={busyId === item.id || bulk.bulkBusy}
                 candidates={dependencyCandidates}
+                drifted={bulk.repair?.driftedIds.includes(item.id) ?? false}
                 errors={error?.affectedTodoId === item.id ? error.problem.errors : undefined}
                 item={item}
                 scope={scope}
+                selectable={scope !== todoScope.deleted}
+                selected={bulk.selectedIds.has(item.id)}
                 onAddDependency={handleAddDependency}
                 onDelete={handleDelete}
                 onLoad={loadTodo}
                 onRemoveDependency={handleRemoveDependency}
                 onRestore={handleRestore}
                 onStatus={handleStatus}
+                onToggleSelected={bulk.toggle}
                 onUpdate={handleUpdate}
               />
             ))}
@@ -483,6 +570,15 @@ export function TodosPage() {
           </div>
         )}
       </section>
+
+      {pendingDelete && (
+        <BulkDeleteDialog
+          busy={bulk.bulkBusy}
+          selection={pendingDelete}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={(selection) => void confirmBulkDelete(selection)}
+        />
+      )}
     </main>
   )
 }

@@ -108,6 +108,31 @@ export type CursorPage<T> = {
   nextCursor: string | null
 }
 
+/**
+ * The outcome of one selected TODO. `version` is unchanged for an item that
+ * needed no write, so comparing it with the version sent distinguishes a real
+ * transition from a no-op.
+ */
+export type BulkTodoResultItem = {
+  id: string
+  version: number
+  status: TodoStatus
+  deletedAt: string | null
+  nextOccurrenceId: string | null
+}
+
+export type BulkTodoResult = {
+  items: BulkTodoResultItem[]
+}
+
+/** Found-only: identifiers that no longer resolve are absent, not reported. */
+export type TodoSelection = {
+  items: Todo[]
+}
+
+/** A batch applies in full or not at all, and the server caps it at this size. */
+export const maximumBulkSelection = 100
+
 export const todoScope = {
   active: 0,
   archived: 1,
