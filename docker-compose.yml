@@ -47,6 +47,15 @@ services:
       - "8080:8080"
     volumes:
       - ./docker/keycloak:/opt/keycloak/data/import:ro
+    # Development mode keeps its state in an embedded H2 database, which by
+    # default lives on the container's writable layer. H2 takes file locks, and
+    # on Docker Desktop for macOS those can fail outright with "Resource
+    # deadlock avoided", leaving the server unable to start at all. The realm is
+    # re-imported on every boot, so this state is disposable: putting it on a
+    # tmpfs both fixes the locking and keeps it from outliving the container.
+    # uid 1000 is the keycloak user, which owns the directory it mounts over.
+    tmpfs:
+      - /opt/keycloak/data/h2:uid=1000,gid=0,mode=0770
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080"]
       interval: 5s
