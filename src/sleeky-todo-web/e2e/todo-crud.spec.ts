@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 import { signIn } from './auth.ts'
+import { databaseName } from './database-name.ts'
+import { resetOwnedData } from './database.ts'
 import {
   antiforgeryHeader,
   apiOrigin,
@@ -17,6 +19,7 @@ const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
 test.beforeEach(async ({ page }) => {
   await signIn(page)
+  await resetOwnedData(page)
 })
 
 test('creates, edits, archives, soft-deletes, and restores a TODO', async ({ page }) => {
@@ -183,7 +186,7 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
     deletedAt: null,
     purgeAt: null,
   }))
-  const collection = "db.getSiblingDB('sleekyTodoPlaywright').todoItems"
+  const collection = `db.getSiblingDB('${databaseName}').todoItems`
 
   // A retry runs this body again while the previous attempt's documents are
   // still present, because global teardown only drops the database once the

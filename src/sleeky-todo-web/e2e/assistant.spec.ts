@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import { signIn } from './auth.ts'
+import { resetOwnedData } from './database.ts'
 import { apiOrigin } from './todos.ts'
 
 /**
@@ -12,6 +13,7 @@ import { apiOrigin } from './todos.ts'
  */
 test.beforeEach(async ({ page }) => {
   await signIn(page)
+  await resetOwnedData(page)
 })
 
 test('the assistant panel asks for a provider before it can help', async ({ page }) => {

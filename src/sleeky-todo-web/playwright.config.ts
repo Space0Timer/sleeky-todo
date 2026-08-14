@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+import { databaseName } from './e2e/database-name.ts'
+
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/global-setup.ts',
@@ -8,7 +10,11 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   timeout: 60_000,
-  workers: process.env.CI ? 1 : undefined,
+  // One worker everywhere, not just in CI. Every spec shares one database, so
+  // running files in parallel would let one test's cleanup reach into another's
+  // data — and a local run that behaves differently from CI is how an ordering
+  // bug reaches CI in the first place.
+  workers: 1,
   // CI annotates the pull request through the github reporter, keeps JUnit for
   // the run summary, and writes the HTML report as an artifact rather than
   // trying to open it on a machine with no browser.
@@ -39,7 +45,7 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         ...process.env,
-        MongoDb__DatabaseName: 'sleekyTodoPlaywright',
+        MongoDb__DatabaseName: databaseName,
       },
     },
     {

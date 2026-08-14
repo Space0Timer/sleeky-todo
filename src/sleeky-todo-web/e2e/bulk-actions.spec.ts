@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { todoStatus } from '../src/types/todo.ts'
 import { signIn } from './auth.ts'
+import { resetOwnedData } from './database.ts'
 import {
   bulkAction,
   cardId,
@@ -15,6 +16,7 @@ import {
 
 test.beforeEach(async ({ page }) => {
   await signIn(page)
+  await resetOwnedData(page)
 })
 
 test('completes several selected TODOs in one request', async ({ page }) => {
@@ -206,11 +208,8 @@ test('a filter that hides a selected TODO drops it from the count', async ({ pag
  * retries to status changes.
  */
 test('a deletion that loses the race after the dialog opened is not retried', async ({ page }) => {
-  // Due early on purpose. The list holds one page of twelve sorted by due date
-  // and the suite shares a database, so a TODO created with the default date
-  // lands on the second page once enough specs have run before this one.
-  const stable = await createTodo(page, 'Late drift stable', { dueDate: '2026-01-01' })
-  const drifting = await createTodo(page, 'Late drift moving', { dueDate: '2026-01-02' })
+  const stable = await createTodo(page, 'Late drift stable')
+  const drifting = await createTodo(page, 'Late drift moving')
   const driftingId = await cardId(drifting)
 
   await selectCard(stable)
