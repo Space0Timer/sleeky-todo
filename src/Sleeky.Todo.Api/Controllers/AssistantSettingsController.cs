@@ -54,12 +54,24 @@ public sealed class AssistantSettingsController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Model))
         {
             ModelState.AddModelError(nameof(request.Model), "A model is required.");
+        }
+
+        if (!Enum.TryParse(request.Provider, out AssistantProvider provider)
+            || !Enum.IsDefined(provider))
+        {
+            ModelState.AddModelError(
+                nameof(request.Provider),
+                $"Provider must be one of: {string.Join(", ", Enum.GetNames<AssistantProvider>())}.");
+        }
+
+        if (!ModelState.IsValid)
+        {
             return ValidationProblem(ModelState);
         }
 
         await settings.SaveAsync(
             new AssistantSettingsInput(
-                request.Provider,
+                provider,
                 request.BaseUrl,
                 request.Model,
                 request.ApiKey),

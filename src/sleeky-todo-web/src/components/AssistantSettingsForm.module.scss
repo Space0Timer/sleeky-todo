@@ -1,0 +1,55 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+// The browser's own fieldset chrome is reset the same way the TODO forms reset
+// theirs; the element is here for the grouping it gives assistive technology,
+// not for the box it draws.
+.form {
+  display: grid;
+  padding: 0;
+  border: 0;
+  gap: 0.7rem;
+}
+
+// A legend sits outside the fieldset's grid, so its spacing is its own rather
+// than the container's gap. The eyebrow style keeps it reading as the group's
+// heading instead of competing with the field label directly under it.
+.legend {
+  @include m.typography(eyebrow);
+
+  padding: 0;
+  margin-bottom: 0.55rem;
+  color: t.$color-text-muted;
+}
+
+.field {
+  @include m.field-label;
+
+  input,
+  select {
+    @include m.field(0.5rem 0.65rem);
+  }
+}
+
+.note {
+  @include m.typography(detail);
+
+  margin: 0;
+  color: t.$color-text-muted;
+}
+
+.status {
+  @include m.typography(detail);
+
+  padding: 0.5rem 0.65rem;
+  margin: 0;
+  border-radius: t.$radius-md;
+  background: t.$color-surface-subtle;
+  color: t.$color-text-strong;
+}
+
+.actions {
+  @include m.action-row;
+
+  justify-content: flex-end;
+}

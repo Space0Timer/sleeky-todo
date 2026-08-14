@@ -144,7 +144,7 @@ public sealed class AssistantApiTests
             "/api/assistant/settings",
             new SaveAssistantSettingsRequest
             {
-                Provider = AssistantProvider.Anthropic,
+                Provider = nameof(AssistantProvider.Anthropic),
                 Model = "claude-sonnet-5",
                 ApiKey = secret,
             });
@@ -175,7 +175,7 @@ public sealed class AssistantApiTests
             "/api/assistant/settings",
             new SaveAssistantSettingsRequest
             {
-                Provider = AssistantProvider.Anthropic,
+                Provider = nameof(AssistantProvider.Anthropic),
                 Model = "claude-sonnet-5",
                 ApiKey = secret,
             });

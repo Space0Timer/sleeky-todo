@@ -196,3 +196,44 @@ test('a filter that hides a selected TODO drops it from the count', async ({ pag
   await expect(todoCard(page, 'Filter leaving')).toHaveCount(0)
   await expect(page.getByTestId('bulk-selected-count')).toHaveText('1 selected')
 })
+
+/**
+ * The gap the delete path leaves open. The existing drift test moves a version
+ * before the dialog opens, so the dialog hydrates and displays the moved
+ * version and the batch succeeds. This moves it *after* hydration, which is the
+ * only way to make a deletion actually lose the version race — and the only
+ * thing standing between that and a silent retry is the rule that confines
+ * retries to status changes.
+ */
+test('a deletion that loses the race after the dialog opened is not retried', async ({ page }) => {
+  const stable = await createTodo(page, 'Late drift stable')
+  const drifting = await createTodo(page, 'Late drift moving')
+  const driftingId = await cardId(drifting)
+
+  await selectCard(stable)
+  await selectCard(drifting)
+  await bulkAction(page, 'Delete').click()
+
+  // Wait for the dialog to finish reading, so the versions it is holding are
+  // the ones about to go stale rather than ones it never had.
+  const dialog = page.getByRole('dialog', { name: 'Confirm bulk deletion' })
+  await expect(dialog.getByText(/unchanged since you selected them/)).toBeVisible()
+
+  await changeStatusOutOfBand(page, driftingId, 1, todoStatus.inProgress)
+
+  let attempts = 0
+  page.on('request', (request) => {
+    if (request.method() === 'DELETE' && request.url().endsWith('/api/todos')) {
+      attempts += 1
+    }
+  })
+
+  await dialog.getByRole('button', { name: 'Delete' }).click()
+
+  await expect(page.getByRole('alert')).toContainText(/out of date/i)
+  expect(attempts).toBe(1)
+
+  // All or nothing: the batch was abandoned, so neither TODO was deleted.
+  await expect(todoCard(page, 'Late drift stable')).toHaveCount(1)
+  await expect(todoCard(page, 'Late drift moving')).toHaveCount(1)
+})

@@ -14,6 +14,7 @@ import {
   updateTodo,
 } from '../api/todos.ts'
 import { useAuth } from '../auth/AuthContext.ts'
+import { AssistantPanel } from '../components/AssistantPanel.tsx'
 import { BulkDeleteDialog } from '../components/BulkDeleteDialog.tsx'
 import { BulkToolbar } from '../components/BulkToolbar.tsx'
 import { CreateTodoForm } from '../components/CreateTodoForm.tsx'
@@ -383,6 +384,12 @@ export function TodosPage() {
           />
         </section>
       )}
+
+      {/*
+        The assistant refreshes the list through the same callback the bulk
+        toolbar uses, because its writes are the same writes.
+      */}
+      <AssistantPanel onTodosChanged={reloadList} />
 
       <div className={styles.scopeTabs} aria-label="TODO scopes" role="tablist">
         {tabs.map((tab) => (
