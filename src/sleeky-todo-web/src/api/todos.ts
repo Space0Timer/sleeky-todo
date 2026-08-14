@@ -144,6 +144,13 @@ export function bulkDeleteTodos(items: TodoVersionReference[]): Promise<BulkTodo
   })
 }
 
+export function bulkRestoreTodos(items: TodoVersionReference[]): Promise<BulkTodoResult> {
+  return send<BulkTodoResult>('/api/todos/restore', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
+}
+
 /**
  * Reads the current state of exactly these TODOs without touching list state,
  * so a conflict path can diff a stale selection against the server without

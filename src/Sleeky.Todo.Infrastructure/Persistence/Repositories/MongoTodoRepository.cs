@@ -246,7 +246,8 @@ internal sealed class MongoTodoRepository : ITodoRepository
     public async Task SaveBatchAsync(
         IReadOnlyCollection<TodoItem> updates,
         IReadOnlyCollection<TodoItem> inserts,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool expectDeleted = false)
     {
         ArgumentNullException.ThrowIfNull(updates);
         ArgumentNullException.ThrowIfNull(inserts);
@@ -264,7 +265,7 @@ internal sealed class MongoTodoRepository : ITodoRepository
         {
             EnsureOwned(todoItem);
             writes.Add(new ReplaceOneModel<TodoDocument>(
-                BuildMutationFilter(todoItem.Id, todoItem.Version, includeDeleted: false),
+                BuildBatchMutationFilter(todoItem.Id, todoItem.Version, expectDeleted),
                 TodoDocumentMapper.FromDomain(
                     todoItem,
                     checked(todoItem.Version + 1))));
@@ -358,6 +359,27 @@ internal sealed class MongoTodoRepository : ITodoRepository
     {
         return BuildIdFilter(id, includeDeleted)
             & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion);
+    }
+
+    /// <summary>
+    /// A restoring batch asserts the stored document is deleted, exactly as the
+    /// single-item restore does, so a document someone else already restored
+    /// fails the batch instead of being written over.
+    /// </summary>
+    private FilterDefinition<TodoDocument> BuildBatchMutationFilter(
+        Guid id,
+        long expectedVersion,
+        bool expectDeleted)
+    {
+        if (!expectDeleted)
+        {
+            return BuildMutationFilter(id, expectedVersion, includeDeleted: false);
+        }
+
+        return BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.Eq(document => document.Id, id)
+            & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion)
+            & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);
     }
 
     /// <summary>

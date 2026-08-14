@@ -524,6 +524,7 @@ export function TodosPage() {
           selectedCount={bulk.selectedCount}
           selectedStatuses={bulk.selectedStatuses}
           onDelete={requestBulkDelete}
+          onRestore={() => void runBulk({ kind: 'restore' })}
           onSelectLoaded={bulk.selectLoaded}
           onStatus={(status) => void runBulk({ kind: 'status', status })}
         />
@@ -543,7 +544,7 @@ export function TodosPage() {
                 errors={error?.affectedTodoId === item.id ? error.problem.errors : undefined}
                 item={item}
                 scope={scope}
-                selectable={scope !== todoScope.deleted}
+                selectable
                 selected={bulk.selectedIds.has(item.id)}
                 onAddDependency={handleAddDependency}
                 onDelete={handleDelete}

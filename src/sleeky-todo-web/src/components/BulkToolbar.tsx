@@ -16,6 +16,7 @@ type BulkToolbarProps = {
   selectedStatuses: Set<TodoStatus>
   scope: TodoScope
   onDelete: () => void
+  onRestore: () => void
   onSelectLoaded: (select: boolean) => void
   onStatus: (status: TodoStatus) => void
 }
@@ -28,13 +29,10 @@ export function BulkToolbar({
   selectedStatuses,
   scope,
   onDelete,
+  onRestore,
   onSelectLoaded,
   onStatus,
 }: BulkToolbarProps) {
-  // Trash offers no batch: bulk delete is meaningless there and restoring in
-  // bulk has no endpoint yet.
-  if (scope === todoScope.deleted) return null
-
   const allLoadedSelected = loadedCount > 0 && selectedCount === loadedCount
   const disabled = busy || selectedCount === 0 || overLimit
 
@@ -98,9 +96,19 @@ export function BulkToolbar({
           </Button>
         )}
 
-        <Button variant="danger" disabled={disabled} onClick={onDelete}>
-          Delete
-        </Button>
+        {/*
+          Trash offers recovery only. Deletion there would mean purging, which
+          the retention window owns rather than the user.
+        */}
+        {scope === todoScope.deleted ? (
+          <Button variant="primary" disabled={disabled} onClick={onRestore}>
+            Restore
+          </Button>
+        ) : (
+          <Button variant="danger" disabled={disabled} onClick={onDelete}>
+            Delete
+          </Button>
+        )}
       </div>
 
       {overLimit && (

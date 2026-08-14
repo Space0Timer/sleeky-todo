@@ -161,6 +161,16 @@ The list route cannot answer this. Its scope defaults to Active, so a TODO that 
 
 The read is found-only. Identifiers that no longer resolve are absent from the response rather than failing it, which is the opposite of the batch loader, where a missing identifier fails the whole request as 404. The two differ because their jobs differ: a write must refuse to act on a selection it cannot fully honour, while a probe exists precisely to report what is no longer there.
 
+Soft-deleted TODOs still resolve. The trash lists them and a selection there is restorable, so hiding them would leave a conflict in that scope permanently unrepairable — the probe would report every selected TODO as vanished. Only what is purged, or owned by someone else, is absent. `deletedAt` on each item tells the caller which state it is in.
+
+## Restoring in bulk
+
+Restoration is the one batch whose selection is deleted by definition, which the write path did not anticipate. Three separate places filtered soft-deleted documents out by default: the batch loader, the selection probe, and the batch write's own filter, whose `deletedAt == null` clause matched nothing and reported the miss as a concurrency conflict. Each now states what it expects rather than assuming an active document.
+
+The batch write asserts the stored document *is* deleted, exactly as the single-item restore does, so a TODO that someone else already restored fails the batch instead of being written over. There is no dependency gate: a restored TODO blocks nothing, and its own prerequisites are evaluated when it next changes status.
+
+The trash offers restoration and no deletion, because deleting from there would mean purging, which the retention window owns rather than the user.
+
 ## Retrying a conflicted batch without asking
 
 A batch that fails on a stale version is retried once, silently, for status changes only, using versions read through the selection endpoint. This loosens the rule that a conflict always returns to the user, and it is safe for exactly this family: a status change is idempotent server-side, already-satisfied items are no-ops that echo their version unchanged, and the domain guards reject the transitions that would be wrong, so a retry either converges on the user's intent or fails loudly with the real reason. The retry commits only if the store still matches the state it was read from, so it can never write against state nobody saw.

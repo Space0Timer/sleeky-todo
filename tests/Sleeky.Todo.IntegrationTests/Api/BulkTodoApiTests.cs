@@ -371,8 +371,13 @@ public sealed class BulkTodoApiTests
         SelectedIds(body).Should().Equal(Id(first), Id(second));
     }
 
+    /// <summary>
+    /// A soft-deleted TODO still resolves. The trash lists it and a selection
+    /// there is restorable, so a client repairing that selection has to be able
+    /// to read it; only what is purged or owned by someone else is absent.
+    /// </summary>
     [TestMethod]
-    public async Task ADeletedTodoIsAbsentFromTheSelection()
+    public async Task ADeletedTodoIsStillReportedBySelectionWithItsDeletion()
     {
         JsonElement survivor = await CreateTodoAsync();
         JsonElement removed = await CreateTodoAsync();
@@ -385,7 +390,9 @@ public sealed class BulkTodoApiTests
         JsonElement body = await ReadJsonAsync(response);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        SelectedIds(body).Should().Equal(Id(survivor));
+        SelectedIds(body).Should().Equal(Id(removed), Id(survivor));
+        body.GetProperty("items").EnumerateArray().First()
+            .GetProperty("deletedAt").ValueKind.Should().NotBe(JsonValueKind.Null);
     }
 
     [TestMethod]
@@ -412,6 +419,31 @@ public sealed class BulkTodoApiTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         ValidationMessages(problem).Should()
             .Contain("A TODO can only be selected once.");
+    }
+
+    [TestMethod]
+    public async Task BulkRestoreReturnsEveryDeletedTodoToTheActiveList()
+    {
+        JsonElement first = await CreateTodoAsync();
+        JsonElement second = await CreateTodoAsync();
+        (await DeleteManyAsync(Select(first, second))).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/todos/restore",
+            new BulkRestoreTodosRequest
+            {
+                Items =
+                [
+                    new BulkTodoSelectionItem { Id = Id(first), Version = 2 },
+                    new BulkTodoSelectionItem { Id = Id(second), Version = 2 },
+                ],
+            });
+        JsonElement body = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        body.GetProperty("items").EnumerateArray().Should()
+            .OnlyContain(item => item.GetProperty("deletedAt").ValueKind == JsonValueKind.Null);
     }
 
     private static bool ShouldRunMongoDbTests()

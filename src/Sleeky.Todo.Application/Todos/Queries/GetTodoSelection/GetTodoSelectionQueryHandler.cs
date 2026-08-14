@@ -22,9 +22,13 @@ public sealed class GetTodoSelectionQueryHandler
         GetTodoSelectionQuery request,
         CancellationToken cancellationToken)
     {
+        // Soft-deleted TODOs are reported: they still exist, the trash lists
+        // them, and a selection there has to be diffable like any other. Only
+        // what is purged or owned by someone else is absent.
         IReadOnlyCollection<TodoItem> loaded = await todoRepository.GetByIdsAsync(
             request.Ids,
-            cancellationToken: cancellationToken);
+            includeDeleted: true,
+            cancellationToken);
         Dictionary<Guid, TodoItem> todosById = loaded.ToDictionary(todoItem => todoItem.Id);
 
         TodoDto[] items = request.Ids

@@ -78,6 +78,27 @@ test('an archived TODO offers no editing, prerequisites, or completion', async (
   await expect(status.getByRole('option', { name: 'Not started' })).toHaveCount(1)
 })
 
+test('restores a selection from the trash', async ({ page }) => {
+  const first = await createTodo(page, 'Bulk restore one')
+  const second = await createTodo(page, 'Bulk restore two')
+
+  await selectCard(first)
+  await selectCard(second)
+  await bulkAction(page, 'Delete').click()
+  await page.getByRole('dialog', { name: 'Confirm bulk deletion' })
+    .getByRole('button', { name: 'Delete' }).click()
+  await expect(todoCard(page, 'Bulk restore one')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Trash' }).click()
+  await page.getByRole('checkbox', { name: /Select loaded/ }).check()
+  await bulkAction(page, 'Restore').click()
+  await expect(todoCard(page, 'Bulk restore one')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Active' }).click()
+  await expect(todoCard(page, 'Bulk restore one')).toHaveCount(1)
+  await expect(todoCard(page, 'Bulk restore two')).toHaveCount(1)
+})
+
 test('the delete dialog reports a TODO that changed since it was selected', async ({ page }) => {
   const stable = await createTodo(page, 'Delete stable')
   const drifting = await createTodo(page, 'Delete drifting')

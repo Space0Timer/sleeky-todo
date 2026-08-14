@@ -9,6 +9,7 @@ using Sleeky.Todo.Application.Todos.Commands.AddDependency;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.Bulk.DeleteTodos;
+using Sleeky.Todo.Application.Todos.Commands.Bulk.RestoreTodos;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
@@ -228,6 +229,22 @@ public sealed class TodosController : ControllerBase
     {
         BulkTodoResult result = await sender.Send(
             new BulkChangeTodoStatusCommand(request.Status, ToSelection(request.Items)),
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    [HttpPost("restore")]
+    [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BulkTodoResult>> RestoreMany(
+        BulkRestoreTodosRequest request,
+        CancellationToken cancellationToken)
+    {
+        BulkTodoResult result = await sender.Send(
+            new BulkRestoreTodosCommand(ToSelection(request.Items)),
             cancellationToken);
 
         return Ok(result);

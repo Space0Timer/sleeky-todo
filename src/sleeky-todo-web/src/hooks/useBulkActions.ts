@@ -4,6 +4,7 @@ import {
   ApiError,
   bulkChangeTodoStatus,
   bulkDeleteTodos,
+  bulkRestoreTodos,
   lookupTodoSelection,
 } from '../api/todos.ts'
 import {
@@ -18,6 +19,7 @@ import {
 export type BulkOperation =
   | { kind: 'status'; status: TodoStatus }
   | { kind: 'delete' }
+  | { kind: 'restore' }
 
 export type BulkRepair = {
   driftedIds: string[]
@@ -83,9 +85,11 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
   const send = useCallback((
     operation: BulkOperation,
     selection: TodoVersionReference[],
-  ): Promise<BulkTodoResult> => (operation.kind === 'delete'
-    ? bulkDeleteTodos(selection)
-    : bulkChangeTodoStatus(operation.status, selection)), [])
+  ): Promise<BulkTodoResult> => {
+    if (operation.kind === 'delete') return bulkDeleteTodos(selection)
+    if (operation.kind === 'restore') return bulkRestoreTodos(selection)
+    return bulkChangeTodoStatus(operation.status, selection)
+  }, [])
 
   /**
    * Reads the selection's current state without touching the list, so the
