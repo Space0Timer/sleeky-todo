@@ -12,6 +12,7 @@ using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
+using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Tests.Turns;
 using Sleeky.Todo.Assistant.Tools;
@@ -262,6 +263,60 @@ public sealed class TodoToolsTests
 
         outcome.Should().BeOfType<ToolFailure>()
             .Which.Error.Should().Contain("limit");
+    }
+
+    /// <summary>
+    /// Refused here rather than thrown by the query's validator, for the same
+    /// reason an out-of-range limit is: a thrown validation failure reaches the
+    /// model as a generic error naming no parameter, so it retries the same
+    /// call until the turn aborts.
+    /// </summary>
+    [TestMethod]
+    public async Task GetTodosRefusesOverlongSearchTextRatherThanThrowing()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+
+        object outcome = await harness.Tools.GetTodosAsync(
+            search: new string('a', TodoValidationLimits.SearchTextMaximumLength + 1));
+
+        outcome.Should().BeOfType<ToolFailure>()
+            .Which.Error.Should().Contain("search");
+        harness.Listed.Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task GetTodosAcceptsSearchTextAtTheLimit()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+        string atLimit = new string('a', TodoValidationLimits.SearchTextMaximumLength);
+
+        object outcome = await harness.Tools.GetTodosAsync(search: atLimit);
+
+        outcome.Should().BeOfType<TodoPage>();
+        harness.Listed!.SearchText.Should().Be(atLimit);
+    }
+
+    /// <summary>
+    /// The query trims before validating, so this has to trim before measuring.
+    /// Refusing padding the server would have accepted would send the model
+    /// hunting for a fault that is not there.
+    /// </summary>
+    [TestMethod]
+    public async Task GetTodosMeasuresSearchTextTheWayTheQueryDoes()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+        string padded = new string(' ', 50)
+            + new string('a', TodoValidationLimits.SearchTextMaximumLength)
+            + new string(' ', 50);
+
+        object outcome = await harness.Tools.GetTodosAsync(search: padded);
+
+        outcome.Should().BeOfType<TodoPage>();
+        harness.Listed!.SearchText.Should()
+            .HaveLength(TodoValidationLimits.SearchTextMaximumLength);
     }
 
     [TestMethod]

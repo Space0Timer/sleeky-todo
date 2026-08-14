@@ -10,6 +10,7 @@ using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
+using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Turns;
 using Sleeky.Todo.Domain.Enums;
@@ -75,7 +76,7 @@ public sealed class TodoTools
         string? dueFrom = null,
         [Description("Only TODOs due on or before this ISO date, such as 2026-08-14.")]
         string? dueTo = null,
-        [Description("Only TODOs whose name or description contains these words. Each word matches from the start of a word, so \"quart\" finds \"quarterly\" but \"uarter\" finds nothing, and every word given must match.")]
+        [Description("Only TODOs whose name or description contains these words, at most 200 characters. Each word matches from the start of a word, so \"quart\" finds \"quarterly\" but \"uarter\" finds nothing, and every word given must match.")]
         string? search = null,
         [Description("How many to return, at most 100. Defaults to 50.")]
         int? limit = null,
@@ -135,10 +136,22 @@ public sealed class TodoTools
             parsedTo = value;
         }
 
-        // Checked here like every other parameter. Left to the query's
-        // validator it would throw instead, and the loop reports a thrown tool
-        // exception to the model as a generic failure with nothing naming the
-        // parameter — so it would retry the same call until the turn aborts.
+        // The two bounded parameters are checked here like every other one.
+        // Left to the query's validator they would throw instead, and the loop
+        // reports a thrown tool exception to the model as a generic failure
+        // with nothing naming the parameter — so it would retry the same call
+        // until the turn aborts.
+        //
+        // Trimmed before measuring because the query trims before validating,
+        // and a limit that rejected what the server would have accepted would
+        // send the model looking for a fault that is not there.
+        if (search is not null
+            && search.Trim().Length > TodoValidationLimits.SearchTextMaximumLength)
+        {
+            return new ToolFailure(
+                $"search must not exceed {TodoValidationLimits.SearchTextMaximumLength} characters.");
+        }
+
         if (limit is < 1 or > GetTodosQuery.MaximumPageSize)
         {
             return new ToolFailure(

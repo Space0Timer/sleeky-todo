@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
+using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Tools;
 using Sleeky.Todo.Assistant.Turns;
@@ -128,7 +129,13 @@ public sealed class TodoToolsetTests
             .GetProperty("properties")
             .GetProperty("search");
 
-        search.GetProperty("description").GetString().Should().Contain("start of a word");
+        string description = search.GetProperty("description").GetString()!;
+        description.Should().Contain("start of a word");
+
+        // Declared as well as enforced, like the batch cap above, so a model
+        // does not compose a call that was going to be refused.
+        description.Should()
+            .Contain(TodoValidationLimits.SearchTextMaximumLength.ToString());
         Required(TodoToolset.Create(BuildTools()), TodoToolNames.GetTodos)
             .Should().NotContain("search");
     }
