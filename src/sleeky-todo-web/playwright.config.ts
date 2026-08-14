@@ -48,6 +48,16 @@ export default defineConfig({
         MongoDb__DatabaseName: databaseName,
       },
     },
+    // An OpenAI-compatible endpoint the specs write the replies for. The
+    // assistant reaches self-hosted models through a configurable base URL, so
+    // this needs no production seam: a turn runs through the same client, loop,
+    // and tool layer a real provider would.
+    {
+      command: 'node e2e/stub-provider.mjs',
+      url: 'http://127.0.0.1:4599/__health',
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
     {
       command: 'corepack yarn dev --host 127.0.0.1',
       url: 'http://127.0.0.1:5173',
