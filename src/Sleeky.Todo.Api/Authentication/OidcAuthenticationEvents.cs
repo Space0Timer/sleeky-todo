@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Application.Abstractions.Persistence;
 
 namespace Sleeky.Todo.Api.Authentication;
 
@@ -37,9 +38,9 @@ internal static class OidcAuthenticationEvents
         string? displayName = principal.FindFirstValue(DisplayNameClaim)
             ?? principal.FindFirstValue(PreferredUsernameClaim);
 
-        IUserDirectory userDirectory = context.HttpContext.RequestServices
-            .GetRequiredService<IUserDirectory>();
-        UserIdentity identity = await userDirectory.ResolveAsync(
+        IUserDirectoryRepository userDirectoryRepository = context.HttpContext.RequestServices
+            .GetRequiredService<IUserDirectoryRepository>();
+        UserIdentity identity = await userDirectoryRepository.ResolveAsync(
             issuer,
             subject,
             displayName,

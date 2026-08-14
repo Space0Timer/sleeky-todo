@@ -1,27 +1,26 @@
 using Sleeky.Todo.Application.Abstractions.Events;
 using Sleeky.Todo.Application.Abstractions.Persistence;
+using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Events;
-using Sleeky.Todo.Domain.Exceptions;
-using Sleeky.Todo.Domain.Services;
 
 namespace Sleeky.Todo.Application.Todos.Events;
 
 public sealed class CreateNextRecurringOccurrenceHandler
     : IDomainEventHandler<TodoCompletedDomainEvent>
 {
-    private readonly IRecurrenceCalculator recurrenceCalculator;
+    private readonly IRecurringOccurrenceFactory recurringOccurrenceFactory;
     private readonly ITodoRepository todoRepository;
 
     public CreateNextRecurringOccurrenceHandler(
         ITodoRepository todoRepository,
-        IRecurrenceCalculator recurrenceCalculator)
+        IRecurringOccurrenceFactory recurringOccurrenceFactory)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
-        ArgumentNullException.ThrowIfNull(recurrenceCalculator);
+        ArgumentNullException.ThrowIfNull(recurringOccurrenceFactory);
 
         this.todoRepository = todoRepository;
-        this.recurrenceCalculator = recurrenceCalculator;
+        this.recurringOccurrenceFactory = recurringOccurrenceFactory;
     }
 
     public async Task HandleAsync(
@@ -33,28 +32,7 @@ public sealed class CreateNextRecurringOccurrenceHandler
             return;
         }
 
-        if (domainEvent.SeriesId is null
-            || domainEvent.OccurrenceNumber is null
-            || domainEvent.NextOccurrenceId is null)
-        {
-            throw new DomainException(
-                "A recurring completion requires complete series context.");
-        }
-
-        DateOnly nextDueDate = recurrenceCalculator.CalculateNext(
-            domainEvent.CompletionContext.ScheduledDueDate,
-            domainEvent.CompletionContext.Recurrence);
-        TodoItem nextOccurrence = TodoItem.Create(
-            domainEvent.NextOccurrenceId.Value,
-            domainEvent.CompletionContext.OwnerId,
-            domainEvent.CompletionContext.Name,
-            domainEvent.CompletionContext.Description,
-            nextDueDate,
-            domainEvent.CompletionContext.Priority,
-            domainEvent.CompletionContext.CompletedAt,
-            domainEvent.CompletionContext.Recurrence,
-            domainEvent.SeriesId,
-            checked(domainEvent.OccurrenceNumber.Value + 1));
+        TodoItem nextOccurrence = recurringOccurrenceFactory.CreateNext(domainEvent);
 
         await todoRepository.AddAsync(nextOccurrence, cancellationToken);
     }

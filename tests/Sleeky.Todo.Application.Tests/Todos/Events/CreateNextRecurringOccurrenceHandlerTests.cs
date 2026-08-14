@@ -4,6 +4,7 @@ using NSubstitute;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Todos.Events;
+using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.Events;
@@ -45,7 +46,7 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
         CreateNextRecurringOccurrenceHandler handler =
             new CreateNextRecurringOccurrenceHandler(
                 repository,
-                new RecurrenceCalculator());
+                new RecurringOccurrenceFactory(new RecurrenceCalculator()));
 
         await handler.HandleAsync(domainEvent, CancellationToken.None);
 
@@ -79,7 +80,7 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
         CreateNextRecurringOccurrenceHandler handler =
             new CreateNextRecurringOccurrenceHandler(
                 repository,
-                new RecurrenceCalculator());
+                new RecurringOccurrenceFactory(new RecurrenceCalculator()));
 
         await handler.HandleAsync(domainEvent, CancellationToken.None);
 

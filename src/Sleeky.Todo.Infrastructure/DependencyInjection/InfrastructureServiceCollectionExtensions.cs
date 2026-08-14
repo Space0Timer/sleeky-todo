@@ -1,5 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 using MongoDB.Driver;
@@ -8,6 +10,8 @@ using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence;
+using Sleeky.Todo.Infrastructure.Persistence.Diagnostics;
+using Sleeky.Todo.Infrastructure.Persistence.Documents;
 using Sleeky.Todo.Infrastructure.Persistence.Health;
 using Sleeky.Todo.Infrastructure.Persistence.Indexes;
 using Sleeky.Todo.Infrastructure.Persistence.Migrations;
@@ -49,8 +53,17 @@ public static class InfrastructureServiceCollectionExtensions
             MongoDbSettings settings = serviceProvider
                 .GetRequiredService<IOptions<MongoDbSettings>>()
                 .Value;
+            // Command timings are diagnostics, so a host that configured no
+            // logging still gets a working client rather than a resolve failure.
+            ILogger commandLogger = (serviceProvider.GetService<ILoggerFactory>()
+                    ?? NullLoggerFactory.Instance)
+                .CreateLogger(MongoCommandLogger.LoggerCategory);
+            MongoClientSettings clientSettings = MongoClientSettings.FromConnectionString(
+                settings.ConnectionString);
+            clientSettings.ClusterConfigurator =
+                builder => MongoCommandLogger.Configure(builder, commandLogger);
 
-            return new MongoClient(settings.ConnectionString);
+            return new MongoClient(clientSettings);
         });
         services.AddSingleton(serviceProvider =>
         {
@@ -61,12 +74,18 @@ public static class InfrastructureServiceCollectionExtensions
 
             return mongoClient.GetDatabase(settings.DatabaseName);
         });
+        services.AddSingleton(serviceProvider => ResolveCollection<TodoDocument>(
+            serviceProvider,
+            settings => settings.TodoItemsCollectionName));
+        services.AddSingleton(serviceProvider => ResolveCollection<UserDocument>(
+            serviceProvider,
+            settings => settings.UsersCollectionName));
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<MongoTransactionContext>();
         services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
-        services.AddScoped<IUserDirectory, MongoUserDirectory>();
+        services.AddScoped<IUserDirectoryRepository, MongoUserDirectoryRepository>();
         services.AddHostedService<MongoDbEnumStorageMigrator>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services
@@ -74,6 +93,18 @@ public static class InfrastructureServiceCollectionExtensions
             .AddCheck<MongoDbHealthCheck>("mongodb");
 
         return services;
+    }
+
+    private static IMongoCollection<TDocument> ResolveCollection<TDocument>(
+        IServiceProvider serviceProvider,
+        Func<MongoDbSettings, string> selectCollectionName)
+    {
+        MongoDbSettings settings = serviceProvider
+            .GetRequiredService<IOptions<MongoDbSettings>>()
+            .Value;
+        IMongoDatabase database = serviceProvider.GetRequiredService<IMongoDatabase>();
+
+        return database.GetCollection<TDocument>(selectCollectionName(settings));
     }
 
     private static bool IsValidConnectionString(string connectionString)

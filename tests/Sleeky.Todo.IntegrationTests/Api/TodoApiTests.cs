@@ -160,7 +160,10 @@ public sealed class TodoApiTests
         HttpResponseMessage getResponse = await client.GetAsync($"/api/todos/{id}");
         JsonElement problem = await ReadJsonAsync(getResponse);
 
-        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement deletedTodo = await ReadJsonAsync(deleteResponse);
+        deletedTodo.GetProperty("version").GetInt64().Should().Be(2);
+        deletedTodo.GetProperty("deletedAt").ValueKind.Should().NotBe(JsonValueKind.Null);
         getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         problem.GetProperty("title").GetString().Should().Be("Resource not found.");
     }
@@ -644,7 +647,7 @@ public sealed class TodoApiTests
         AssertResponses(paths, "/api/todos", "post", "201", "400", "409");
         AssertResponses(paths, "/api/todos/{id}", "get", "200", "400", "404");
         AssertResponses(paths, "/api/todos/{id}", "put", "200", "400", "404", "409");
-        AssertResponses(paths, "/api/todos/{id}", "delete", "204", "400", "404", "409");
+        AssertResponses(paths, "/api/todos/{id}", "delete", "200", "400", "404", "409");
         AssertResponses(
             paths,
             "/api/todos/{id}/dependencies",

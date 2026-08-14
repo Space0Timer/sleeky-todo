@@ -1,6 +1,7 @@
 using FluentAssertions;
 
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -10,8 +11,9 @@ using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.ValueObjects;
+using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Infrastructure.DependencyInjection;
 using Sleeky.Todo.Infrastructure.Persistence;
-using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 using Testcontainers.MongoDb;
 
@@ -33,6 +35,8 @@ public sealed class MongoTodoRepositoryTests
     private static readonly Guid OtherOwnerId = Id("owner-2");
 
     private static MongoDbContainer? mongoDbContainer;
+
+    private readonly List<ServiceProvider> providers = new List<ServiceProvider>();
 
     private IMongoDatabase database = null!;
     private ITodoRepository repository = null!;
@@ -84,6 +88,17 @@ public sealed class MongoTodoRepositoryTests
         otherOwnerRepository = CreateRepository(OtherOwnerId);
     }
 
+    [TestCleanup]
+    public void TestCleanup()
+    {
+        foreach (ServiceProvider serviceProvider in providers)
+        {
+            serviceProvider.Dispose();
+        }
+
+        providers.Clear();
+    }
+
     [TestMethod]
     public async Task AddAndGetRoundTripsThroughRepositoryContract()
     {
@@ -127,12 +142,7 @@ public sealed class MongoTodoRepositoryTests
 
         await repository.AddAsync(todoItem);
         TodoItem? stored = await repository.GetByIdAsync(todoItem.Id);
-        BsonDocument raw = await database
-            .GetCollection<BsonDocument>("todoItems")
-            .Find(new BsonDocument(
-                "_id",
-                new BsonBinaryData(todoItem.Id, GuidRepresentation.Standard)))
-            .FirstAsync();
+        BsonDocument raw = await ReadRawDocumentAsync(todoItem.Id);
 
         stored.Should().NotBeNull();
         stored!.Recurrence.Should().Be(recurrence);
@@ -142,6 +152,58 @@ public sealed class MongoTodoRepositoryTests
         raw["recurrence"]["interval"].AsInt32.Should().Be(1);
         raw["recurrence"]["unit"].AsString.Should().Be("Months");
         raw["recurrence"]["anchorDay"].AsInt32.Should().Be(31);
+    }
+
+    /// <summary>
+    /// Every identifier is stored as a standard UUID rather than the driver's
+    /// legacy C# subtype, so documents stay readable by other drivers and by
+    /// queries built outside this codebase.
+    /// </summary>
+    [TestMethod]
+    public async Task IdentifiersAreStoredAsStandardUuids()
+    {
+        TodoItem dependency = CreateTodo("dependency");
+        TodoItem todoItem = CreateRecurringTodo();
+        todoItem.AddDependency(dependency.Id, Timestamp);
+
+        await repository.AddAsync(dependency);
+        await repository.AddAsync(todoItem);
+        BsonDocument raw = await ReadRawDocumentAsync(todoItem.Id);
+
+        AssertStandardUuid(raw["_id"], todoItem.Id);
+        AssertStandardUuid(raw["ownerId"], OwnerId);
+        AssertStandardUuid(raw["dependencyIds"].AsBsonArray[0], dependency.Id);
+        AssertStandardUuid(raw["seriesId"], Id("series-1"));
+    }
+
+    /// <summary>
+    /// A document written by a newer deployment carries fields this version does
+    /// not know. Reading one must not fail, at the top level or inside the
+    /// nested recurrence document.
+    /// </summary>
+    [TestMethod]
+    public async Task UnknownStoredFieldsAreIgnoredWhenReading()
+    {
+        TodoItem todoItem = CreateRecurringTodo();
+        await repository.AddAsync(todoItem);
+
+        _ = await database
+            .GetCollection<BsonDocument>("todoItems")
+            .UpdateOneAsync(
+                new BsonDocument(
+                    "_id",
+                    new BsonBinaryData(todoItem.Id, GuidRepresentation.Standard)),
+                new BsonDocument("$set", new BsonDocument
+                {
+                    { "futureTodoField", "ignored" },
+                    { "recurrence.futureRecurrenceField", "ignored" },
+                }));
+        TodoItem? stored = await repository.GetByIdAsync(todoItem.Id);
+
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(todoItem.Id);
+        stored.Recurrence.Should().Be(todoItem.Recurrence);
+        stored.SeriesId.Should().Be(Id("series-1"));
     }
 
     [TestMethod]
@@ -182,6 +244,96 @@ public sealed class MongoTodoRepositoryTests
 
         hasActiveDependent.Should().BeTrue();
         hasActiveDependentAfterArchive.Should().BeFalse();
+    }
+
+    [TestMethod]
+    public async Task ActiveDependentIdsIgnoreSelectedArchivedAndDeletedDependents()
+    {
+        TodoItem prerequisite = CreateTodo("prerequisite");
+        TodoItem selectedDependent = CreateTodo("dependent-selected");
+        TodoItem archivedDependent = CreateTodo("dependent-archived");
+        TodoItem deletedDependent = CreateTodo("dependent-deleted");
+        TodoItem activeDependent = CreateTodo("dependent-active");
+        foreach (TodoItem dependent in new[]
+        {
+            selectedDependent,
+            archivedDependent,
+            deletedDependent,
+            activeDependent,
+        })
+        {
+            dependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+            await repository.AddAsync(dependent);
+        }
+
+        await repository.AddAsync(prerequisite);
+        _ = archivedDependent.ChangeStatus(TodoStatus.Archived, Timestamp.AddHours(2));
+        _ = await repository.UpdateAsync(archivedDependent);
+        deletedDependent.SoftDelete(Timestamp.AddHours(2));
+        _ = await repository.SoftDeleteAsync(deletedDependent);
+
+        IReadOnlyCollection<Guid> blocking = await repository.GetActiveDependentIdsAsync(
+            [prerequisite.Id],
+            [prerequisite.Id, selectedDependent.Id]);
+
+        blocking.Should().Equal(activeDependent.Id);
+    }
+
+    [TestMethod]
+    public async Task ActiveDependentIdsExcludeAnotherOwnersTodo()
+    {
+        TodoItem prerequisite = CreateTodo("prerequisite");
+        TodoItem otherOwnersDependent = CreateTodo("dependent-other", OtherOwnerId);
+        otherOwnersDependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+        await repository.AddAsync(prerequisite);
+        await otherOwnerRepository.AddAsync(otherOwnersDependent);
+
+        IReadOnlyCollection<Guid> blocking = await repository.GetActiveDependentIdsAsync(
+            [prerequisite.Id],
+            [prerequisite.Id]);
+
+        blocking.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task SaveBatchAppliesEveryWriteAndRejectsAStaleMember()
+    {
+        TodoItem first = CreateTodo("todo-1");
+        TodoItem second = CreateTodo("todo-2");
+        await repository.AddAsync(first);
+        await repository.AddAsync(second);
+        TodoItem firstWriter = await GetRequiredTodoAsync(first.Id);
+        TodoItem secondWriter = await GetRequiredTodoAsync(second.Id);
+        _ = firstWriter.ChangeStatus(TodoStatus.Completed, Timestamp.AddHours(1));
+        _ = secondWriter.ChangeStatus(TodoStatus.Completed, Timestamp.AddHours(1));
+
+        await repository.SaveBatchAsync([firstWriter, secondWriter], []);
+
+        (await GetRequiredTodoAsync(first.Id)).Version.Should().Be(2);
+        (await GetRequiredTodoAsync(second.Id)).Version.Should().Be(2);
+
+        Func<Task> staleBatch = async () => await repository.SaveBatchAsync(
+            [firstWriter],
+            []);
+
+        BulkConcurrencyConflictException exception = (await staleBatch.Should()
+            .ThrowAsync<BulkConcurrencyConflictException>())
+            .Which;
+        exception.ResourceIds.Should().Equal(first.Id);
+    }
+
+    [TestMethod]
+    public async Task SaveBatchRejectsAnotherOwnersTodo()
+    {
+        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
+        await otherOwnerRepository.AddAsync(otherOwnersTodo);
+
+        Func<Task> act = async () => await repository.SaveBatchAsync(
+            [otherOwnersTodo],
+            []);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("A TODO can only be persisted by its owner.");
     }
 
     [TestMethod]
@@ -480,6 +632,35 @@ public sealed class MongoTodoRepositoryTests
             Timestamp);
     }
 
+    private static TodoItem CreateRecurringTodo(string id = "recurring")
+    {
+        RecurrenceSchedule recurrence = RecurrenceSchedule.Create(
+            RecurrenceType.Monthly,
+            1,
+            null,
+            new DateOnly(2026, 8, 31));
+
+        return TodoItem.Create(
+            Id(id),
+            OwnerId,
+            "Submit report",
+            "Monthly report",
+            new DateOnly(2026, 8, 31),
+            TodoPriority.High,
+            Timestamp,
+            recurrence,
+            Id("series-1"),
+            1);
+    }
+
+    private static void AssertStandardUuid(BsonValue value, Guid expected)
+    {
+        BsonBinaryData binary = value.AsBsonBinaryData;
+
+        binary.SubType.Should().Be(BsonBinarySubType.UuidStandard);
+        binary.ToGuid().Should().Be(expected);
+    }
+
     private static bool ShouldRunMongoDbTests()
     {
         return string.Equals(
@@ -512,12 +693,40 @@ public sealed class MongoTodoRepositoryTests
         return new Guid(bytes);
     }
 
+    /// <summary>
+    /// The Mongo implementations are internal to the infrastructure assembly, so
+    /// the suite resolves the repository contract from the real registration
+    /// rather than constructing the concrete type.
+    /// </summary>
     private ITodoRepository CreateRepository(Guid ownerId)
     {
-        return new MongoTodoRepository(
-            database,
-            Options.Create(settings),
-            new TestCurrentUser(ownerId));
+        Dictionary<string, string?> values = new Dictionary<string, string?>
+        {
+            [$"{MongoDbSettings.SectionName}:ConnectionString"] = settings.ConnectionString,
+            [$"{MongoDbSettings.SectionName}:DatabaseName"] = settings.DatabaseName,
+            [$"{MongoDbSettings.SectionName}:TodoItemsCollectionName"] =
+                settings.TodoItemsCollectionName,
+        };
+        ServiceCollection services = new ServiceCollection();
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser(ownerId));
+        services.AddInfrastructure(new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build());
+
+        ServiceProvider serviceProvider = services.BuildServiceProvider();
+        providers.Add(serviceProvider);
+
+        return serviceProvider.GetRequiredService<ITodoRepository>();
+    }
+
+    private async Task<BsonDocument> ReadRawDocumentAsync(Guid id)
+    {
+        return await database
+            .GetCollection<BsonDocument>("todoItems")
+            .Find(new BsonDocument(
+                "_id",
+                new BsonBinaryData(id, GuidRepresentation.Standard)))
+            .FirstAsync();
     }
 
     private async Task<TodoItem> GetRequiredTodoAsync(

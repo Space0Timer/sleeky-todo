@@ -67,6 +67,10 @@ public sealed class ApiExceptionHandler : IExceptionHandler
                 StatusCodes.Status409Conflict,
                 "Concurrency conflict.",
                 exception.Message),
+            BulkConcurrencyConflictException => CreateProblem(
+                StatusCodes.Status409Conflict,
+                "Concurrency conflict.",
+                exception.Message),
             DomainRuleException => CreateProblem(
                 StatusCodes.Status409Conflict,
                 "Domain rule conflict.",

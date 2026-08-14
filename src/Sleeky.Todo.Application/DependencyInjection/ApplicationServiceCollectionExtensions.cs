@@ -9,6 +9,7 @@ using Sleeky.Todo.Application.Behaviors;
 using Sleeky.Todo.Application.Events;
 using Sleeky.Todo.Application.Todos.Dependencies;
 using Sleeky.Todo.Application.Todos.Events;
+using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Services;
 
@@ -32,6 +33,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<IDependencyGraphService, DependencyGraphService>();
         services.AddScoped<ITodoDependencyEvaluator, TodoDependencyEvaluator>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
+        services.AddSingleton<IRecurringOccurrenceFactory, RecurringOccurrenceFactory>();
         services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
         services.AddScoped<
             IDomainEventHandler<TodoCompletedDomainEvent>,

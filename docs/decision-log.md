@@ -139,6 +139,20 @@ source. Blocked TODOs cannot enter `InProgress` or `Completed`; other valid
 status transitions remain available. Dependency and status commands use the
 same optimistic version contract as the CRUD commands.
 
+## Archived TODOs are frozen
+
+Archiving is treated as putting a TODO beyond further work rather than as one status among equals. An archived TODO rejects edits, dependency changes, and completion; only unarchiving to `NotStarted` or `InProgress` reopens it. Soft delete stays available so archived records can still be cleaned up, and archiving itself remains reachable from every other status.
+
+The rule lives in the domain, so the single-item and bulk endpoints inherit identical behaviour rather than agreeing by convention. It tightens `PUT /{id}`, `PUT /{id}/status` towards `Completed`, and dependency changes on archived TODOs into 409 responses.
+
+## Bulk actions mirror the single-item API
+
+Bulk endpoints reuse the vocabulary of the single-item routes — `PUT /api/todos/status` and `DELETE /api/todos` — rather than introducing an action name and a discriminator enum. Widening bulk status changes to reopening or unarchiving later becomes a validator change instead of a new endpoint. Literal segments outrank route parameters, and the `{id}` routes carry `:guid` constraints so that precedence is enforced rather than incidental.
+
+A batch is all-or-nothing. Every selected TODO is loaded in one query, a missing identifier fails as 404 before any version is compared, and every stale version is reported together. Validation runs against the whole selection, so completing a prerequisite alongside its dependent succeeds while completing a TODO blocked by something outside the selection fails the entire request. Partial success was rejected because dependency chains and recurring occurrence creation would leave callers unable to tell what actually happened.
+
+Bulk delete answers 200 with a body rather than the 204 used for a single delete, because the response carries the new versions and deletion timestamps. Aligning the single-item route would be a client-visible change and was left out.
+
 ## API failure contract
 
 The API uses one global exception handler rather than controller-level

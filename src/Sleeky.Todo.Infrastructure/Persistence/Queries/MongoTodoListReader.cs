@@ -1,8 +1,6 @@
 using System.Globalization;
 using System.Linq.Expressions;
 
-using Microsoft.Extensions.Options;
-
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -17,7 +15,7 @@ using TodoSortDirection = Sleeky.Todo.Application.Todos.Queries.GetTodos.SortDir
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Queries;
 
-public sealed class MongoTodoListReader : ITodoListReader
+internal sealed class MongoTodoListReader : ITodoListReader
 {
     private const int DescriptionPreviewLength = 120;
 
@@ -26,17 +24,15 @@ public sealed class MongoTodoListReader : ITodoListReader
     private readonly IMongoCollection<TodoDocument> todoItems;
 
     public MongoTodoListReader(
-        IMongoDatabase database,
-        IOptions<MongoDbSettings> settings,
+        IMongoCollection<TodoDocument> todoItems,
         ICurrentUser currentUser)
     {
-        ArgumentNullException.ThrowIfNull(database);
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(todoItems);
         ArgumentNullException.ThrowIfNull(currentUser);
 
-        this.collectionName = settings.Value.TodoItemsCollectionName;
+        this.collectionName = todoItems.CollectionNamespace.CollectionName;
         this.currentUser = currentUser;
-        this.todoItems = database.GetCollection<TodoDocument>(this.collectionName);
+        this.todoItems = todoItems;
     }
 
     public async Task<IReadOnlyList<TodoListItemDto>> GetTodosAsync(
