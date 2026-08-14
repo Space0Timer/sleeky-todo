@@ -5,6 +5,7 @@ using MediatR;
 
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Time;
@@ -38,6 +39,8 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
 
     private readonly ILogger<TodoTools> toolLogger;
 
+    private readonly AssistantOptions options;
+
     public AssistantTurnRunner(
         IAssistantSettingsService settings,
         IChatClientFactory clients,
@@ -45,7 +48,8 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         IBulkConflictPolicy policy,
         ICurrentUser currentUser,
         IClock clock,
-        ILogger<TodoTools> toolLogger)
+        ILogger<TodoTools> toolLogger,
+        IOptions<AssistantOptions> options)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(clients);
@@ -54,6 +58,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         ArgumentNullException.ThrowIfNull(currentUser);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(toolLogger);
+        ArgumentNullException.ThrowIfNull(options);
 
         this.settings = settings;
         this.clients = clients;
@@ -62,6 +67,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         this.currentUser = currentUser;
         this.clock = clock;
         this.toolLogger = toolLogger;
+        this.options = options.Value;
     }
 
     public async Task RunAsync(
@@ -94,8 +100,18 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         }
 
         List<ChatMessage> messages = TranscriptCodec.Read(turn.Transcript);
+        bool trimmed = TranscriptWindow.Apply(messages, this.options.TranscriptMaxMessages);
+
         TodoVersionLedger ledger = new TodoVersionLedger();
-        TranscriptCodec.SeedLedger(turn.Transcript, ledger);
+
+        // Seeded from what is left once the window has been applied, so a
+        // version can only be bound to a read the model can still see. Nothing
+        // is re-serialized when nothing was dropped, which also keeps the seed
+        // reading the transcript that arrived rather than one this version was
+        // able to deserialize.
+        TranscriptCodec.SeedLedger(
+            trimmed ? TranscriptCodec.Write(messages) : turn.Transcript,
+            ledger);
 
         TodoTools tools = new TodoTools(
             this.sender,

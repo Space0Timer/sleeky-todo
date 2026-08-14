@@ -227,6 +227,39 @@ Conversation state is held by the client and echoed each turn, including tool-ca
 
 Two events beyond the coarse set exist for mechanical reasons. `heartbeat` keeps an idle stream, and any proxy in front of it, from timing out while the model thinks. `turn_completed` carries the transcript forward; without it a stateless server would leave the next turn with nothing to continue from.
 
+## Windowing the replayed conversation rather than storing it
+
+The client holds the transcript and echoes it back each turn, which is what lets
+the server keep no history. Nothing bounded it: request bodies grew with the
+conversation, and every later turn replayed the whole thing to the provider, so
+its cost grew with it and a long conversation would eventually exceed the
+model's context window outright.
+
+The bound is applied where the conversation is replayed. The opening message
+survives — it carries the date and is the still prefix prompt caching depends on
+— and the most recent `Assistant:TranscriptMaxMessages` follow it. Because the
+windowed conversation is also what the turn hands back, the copy the client
+holds stops growing as well, so one bound fixes the wire, the context, and the
+token cost together. Nothing the person sees changes: the client renders its
+chat log from turn events as they arrive and treats the transcript as opaque.
+
+The ledger is seeded from the windowed conversation rather than from what
+arrived. Seeding from the full transcript would leave versions bound to reads
+the model can no longer see, which is the blind overwrite the version-binding
+rule exists to prevent; dropping them together means an unread identifier
+returns the same "read it first" a fresh conversation gets. A window that would
+open on a tool result advances past it instead, because a result whose call was
+trimmed away is an orphan providers reject.
+
+Server-side conversation storage was not chosen instead. It fixes the wire and
+enables a history feature, but not the token cost — history still has to be
+replayed — so the window is the part that would survive it. It remains a history
+*feature* for later rather than a correctness need.
+
+The endpoint carries a request size limit as a backstop. A client that echoes
+what it was handed stays far below it; what it catches is one that does not,
+before the host's own multi-megabyte default would.
+
 ## Refusing an over-cap batch rather than splitting it
 
 The assistant declares the hundred-item batch cap in its tool schemas, sourced from `BulkTodoLimits`, so a model never composes a batch that was doomed before it was sent. Asked for more, it narrows and asks which ones the user means.
@@ -365,6 +398,17 @@ can act on.
 Sessions expire after eight hours and slide on use. Production deployments must
 persist Data Protection keys so sessions survive restarts and stay valid across
 API instances.
+
+The key ring is the one piece of state whose loss is not recoverable by
+restarting. It also encrypts stored provider API keys, which the API will not
+return to a caller, so a lost ring cannot be repaired by reading the old value
+back — each user has to enter theirs again. The image therefore writes the ring
+to `/keys` and creates that directory owned by the user it runs as, so a
+deployment persists it by mounting a volume rather than by also remembering a
+setting. The ring and the database are one backup unit: restoring MongoDB
+against a different ring yields provider keys nobody can decrypt. Keys roll
+roughly every 90 days and the superseded ones are retained deliberately, since
+they are what reads anything encrypted before the roll.
 
 ## Internal user identity separate from the OIDC subject
 

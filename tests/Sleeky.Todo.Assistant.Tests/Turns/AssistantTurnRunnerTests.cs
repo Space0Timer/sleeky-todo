@@ -6,6 +6,7 @@ using MediatR;
 
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 using NSubstitute;
 
@@ -241,20 +242,117 @@ public sealed class AssistantTurnRunnerTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// The client echoes the transcript back each turn, so an unbounded
+    /// conversation would grow the request body, the model's context, and the
+    /// tokens every later turn pays to replay it. What is handed back is the
+    /// windowed conversation, which is what stops the copy the client holds
+    /// from growing.
+    /// </summary>
+    [TestMethod]
+    public async Task RunReplaysAndHandsBackOnlyTheWindowedConversation()
+    {
+        List<ChatMessage> replayed = new List<ChatMessage>();
+        Harness harness = new Harness(
+            new AssistantOptions { TranscriptMaxMessages = 4 },
+            messages =>
+            {
+                replayed.AddRange(messages);
+                return ScriptedChatClient.Says("Noted.");
+            });
+
+        await harness.RunAsync(new AssistantTurn("And now?", Exchanges(12), null));
+
+        // Four from the window, plus the message this turn added.
+        replayed.Should().HaveCount(5);
+        replayed[0].Text.Should().Be("message 0");
+        replayed[^1].Text.Should().Be("And now?");
+
+        TurnTranscript? handedBack =
+            harness.Events.Single<TurnTranscript>(TurnEventType.TurnCompleted);
+        handedBack!.Messages.GetArrayLength().Should().BeLessThan(12);
+    }
+
+    /// <summary>
+    /// The ledger is seeded from the windowed conversation, so a read that fell
+    /// out of the window takes its version with it. The model cannot write
+    /// against a version it can no longer see, which is the rule the browser
+    /// holds and the reason writes are safe without trusting the model.
+    /// </summary>
+    [TestMethod]
+    public async Task RunWillNotBindAVersionReadOutsideTheWindow()
+    {
+        Harness harness = new Harness(
+            new AssistantOptions { TranscriptMaxMessages = 2 },
+            _ => ScriptedChatClient.Calls(
+                TodoToolNames.ChangeTodoStatus,
+                new Dictionary<string, object?>
+                {
+                    ["status"] = "Completed",
+                    ["ids"] = new[] { First.ToString() },
+                }));
+
+        using JsonDocument earlier = JsonDocument.Parse(
+            $$"""
+            [
+              { "role": "user", "text": "message 0" },
+              {
+                "role": "tool",
+                "contents": [
+                  {
+                    "$type": "functionResult",
+                    "callId": "1",
+                    "result": { "items": [ { "id": "{{First}}", "version": 11 } ] }
+                  }
+                ]
+              },
+              { "role": "user", "text": "message 2" },
+              { "role": "assistant", "text": "message 3" }
+            ]
+            """);
+
+        await harness.RunAsync(new AssistantTurn("Mark it done.", earlier.RootElement, null));
+
+        await harness.Policy.DidNotReceiveWithAnyArgs().ChangeStatusAsync(default, default!, default);
+    }
+
+    /// <summary>
+    /// Written through the codec rather than by hand, so the transcript under
+    /// test is the shape a real client echoes back.
+    /// </summary>
+    private static JsonElement Exchanges(int count)
+    {
+        return TranscriptCodec.Write(Enumerable
+            .Range(0, count)
+            .Select(index => new ChatMessage(
+                index % 2 == 0 ? ChatRole.User : ChatRole.Assistant,
+                $"message {index}"))
+            .ToList());
+    }
+
     private sealed class Harness
     {
+        private static readonly AssistantConnection Configured = new AssistantConnection(
+            AssistantProvider.Anthropic,
+            "claude-sonnet-5",
+            "sk-test",
+            null,
+            AssistantConnectionSource.User);
+
         private readonly IAssistantSettingsService settings =
             Substitute.For<IAssistantSettingsService>();
 
         private readonly IChatClientFactory clients = Substitute.For<IChatClientFactory>();
 
         public Harness(params Func<IEnumerable<ChatMessage>, ChatResponse>[] turns)
-            : this(new AssistantConnection(
-                AssistantProvider.Anthropic,
-                "claude-sonnet-5",
-                "sk-test",
-                null,
-                AssistantConnectionSource.User))
+            : this(new AssistantOptions(), turns)
+        {
+        }
+
+        public Harness(
+            AssistantOptions options,
+            params Func<IEnumerable<ChatMessage>, ChatResponse>[] turns)
+            : this(Configured, options)
         {
             this.Client = new ScriptedChatClient(turns);
             this.clients.Create(Arg.Any<AssistantConnection>()).Returns(this.Client);
@@ -267,6 +365,11 @@ public sealed class AssistantTurnRunnerTests
         }
 
         public Harness(AssistantConnection? connection)
+            : this(connection, new AssistantOptions())
+        {
+        }
+
+        public Harness(AssistantConnection? connection, AssistantOptions options)
         {
             this.Sender = Substitute.For<ISender>();
             this.Policy = Substitute.For<IBulkConflictPolicy>();
@@ -283,7 +386,8 @@ public sealed class AssistantTurnRunnerTests
                 this.Policy,
                 new TestCurrentUser(),
                 clock,
-                NullLogger<TodoTools>.Instance);
+                NullLogger<TodoTools>.Instance,
+                Options.Create(options));
         }
 
         public ISender Sender { get; } = null!;
