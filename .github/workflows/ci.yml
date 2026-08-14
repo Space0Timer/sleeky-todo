@@ -67,6 +67,16 @@ jobs:
       - name: Restore
         run: dotnet restore Sleeky.Todo.sln
 
+      # Analyzer rules are enforced by the build, which treats warnings as
+      # errors, so this checks whitespace only and does not re-run analyzers.
+      - name: Verify formatting
+        run: dotnet format whitespace Sleeky.Todo.sln --verify-no-changes --no-restore
+
+      # Rules the standard states but no analyzer can check. Each entry is a
+      # pattern that must not appear, with the reason it is banned.
+      - name: Check banned patterns
+        run: bash .github/scripts/check-banned-patterns.sh
+
       - name: Build
         run: dotnet build Sleeky.Todo.sln --configuration Release --no-restore
 
