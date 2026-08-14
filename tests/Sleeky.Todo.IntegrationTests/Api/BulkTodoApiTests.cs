@@ -340,6 +340,80 @@ public sealed class BulkTodoApiTests
         item.GetProperty("version").GetInt64().Should().Be(3);
     }
 
+    [TestMethod]
+    public async Task TheSelectionQueryAnswersInRequestOrder()
+    {
+        JsonElement first = await CreateTodoAsync();
+        JsonElement second = await CreateTodoAsync();
+        JsonElement third = await CreateTodoAsync();
+        Guid[] requested = [Id(third), Id(first), Id(second)];
+
+        HttpResponseMessage response = await GetSelectionAsync(requested);
+        JsonElement body = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        SelectedIds(body).Should().Equal(requested);
+    }
+
+    [TestMethod]
+    public async Task AnUnknownIdIsOmittedFromTheSelectionRatherThanFailingIt()
+    {
+        JsonElement first = await CreateTodoAsync();
+        JsonElement second = await CreateTodoAsync();
+
+        HttpResponseMessage response = await GetSelectionAsync(
+            Id(first),
+            Guid.NewGuid(),
+            Id(second));
+        JsonElement body = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        SelectedIds(body).Should().Equal(Id(first), Id(second));
+    }
+
+    [TestMethod]
+    public async Task ADeletedTodoIsAbsentFromTheSelection()
+    {
+        JsonElement survivor = await CreateTodoAsync();
+        JsonElement removed = await CreateTodoAsync();
+        (await DeleteManyAsync(Select(removed))).StatusCode
+            .Should().Be(HttpStatusCode.OK);
+
+        HttpResponseMessage response = await GetSelectionAsync(
+            Id(removed),
+            Id(survivor));
+        JsonElement body = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        SelectedIds(body).Should().Equal(Id(survivor));
+    }
+
+    [TestMethod]
+    public async Task ASelectionQueryAboveTheLimitIsRejected()
+    {
+        Guid[] ids = Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToArray();
+
+        HttpResponseMessage response = await GetSelectionAsync(ids);
+        JsonElement problem = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        ValidationMessages(problem).Should()
+            .Contain("No more than 100 TODOs can be selected.");
+    }
+
+    [TestMethod]
+    public async Task ARepeatedIdInTheSelectionQueryIsRejected()
+    {
+        JsonElement todo = await CreateTodoAsync();
+
+        HttpResponseMessage response = await GetSelectionAsync(Id(todo), Id(todo));
+        JsonElement problem = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        ValidationMessages(problem).Should()
+            .Contain("A TODO can only be selected once.");
+    }
+
     private static bool ShouldRunMongoDbTests()
     {
         return string.Equals(
@@ -360,6 +434,28 @@ public sealed class BulkTodoApiTests
     {
         return todo.GetProperty("id").GetString()
             ?? throw new InvalidOperationException("The response carried no TODO id.");
+    }
+
+    private static Guid Id(JsonElement todo)
+    {
+        return Guid.Parse(GetId(todo));
+    }
+
+    private static string[] ValidationMessages(JsonElement problem)
+    {
+        return problem.GetProperty("errors")
+            .EnumerateObject()
+            .SelectMany(error => error.Value.EnumerateArray())
+            .Select(message => message.GetString() ?? string.Empty)
+            .ToArray();
+    }
+
+    private static Guid[] SelectedIds(JsonElement selection)
+    {
+        return selection.GetProperty("items")
+            .EnumerateArray()
+            .Select(item => item.GetProperty("id").GetGuid())
+            .ToArray();
     }
 
     private static BulkTodoSelectionItem Selection(JsonElement todo)
@@ -410,6 +506,13 @@ public sealed class BulkTodoApiTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         return await ReadJsonAsync(response);
+    }
+
+    private Task<HttpResponseMessage> GetSelectionAsync(params Guid[] ids)
+    {
+        string query = string.Join('&', ids.Select(id => $"id={id}"));
+
+        return client.GetAsync($"/api/todos/selection?{query}");
     }
 
     private async Task<JsonElement> AddDependencyAsync(
