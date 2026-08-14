@@ -29,6 +29,18 @@ namespace Sleeky.Todo.Api.Controllers;
 [Route("api/assistant")]
 public sealed class AssistantController : ControllerBase
 {
+    /// <summary>
+    /// A backstop, not the bound that matters.
+    /// </summary>
+    /// <remarks>
+    /// The turn windows the conversation before replaying it and hands the
+    /// windowed copy back, so a client that echoes what it was given stays far
+    /// below this. What is left to catch is a client that does not, and the
+    /// host's own multi-megabyte default would let one grow long enough to be
+    /// expensive first.
+    /// </remarks>
+    private const long MaxTurnRequestBytes = 4L * 1024 * 1024;
+
     private readonly IAssistantTurnRunner runner;
 
     public AssistantController(IAssistantTurnRunner runner)
@@ -39,10 +51,12 @@ public sealed class AssistantController : ControllerBase
     }
 
     [HttpPost("turns")]
+    [RequestSizeLimit(MaxTurnRequestBytes)]
 
     // The content type is left to the result rather than declared with
     // [Produces], which installs a filter that would set it to something else.
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
     public IResult Run(AssistantTurnRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);

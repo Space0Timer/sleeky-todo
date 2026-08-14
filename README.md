@@ -436,14 +436,38 @@ the network it sits on, before trusting it:
 }
 ```
 
-**Data protection keys must outlive the container.** Session cookies are
-encrypted with keys that are otherwise written inside the container, so a
-restart signs everyone out and two replicas cannot read each other's cookies.
-Point `DataProtection:KeyRingPath` at a mounted volume, or a location every
-replica shares:
+**Data protection keys must outlive the container.** The key ring encrypts two
+things: session cookies, and every user's stored provider API key. Losing it
+signs everyone out, stops two replicas reading each other's cookies, and leaves
+saved provider keys unreadable — the API is write-only, so a user cannot even
+look up what they had and must enter it again.
+
+The image writes the ring to `/keys`, owned by the user it runs as, so
+persisting it is a mount rather than a mount plus a setting:
+
+```sh
+docker run --volume sleeky-todo-keys:/keys ... sleeky-todo
+```
+
+Set `DataProtection:KeyRingPath` only to move it somewhere else, such as a
+location every replica shares:
 
 ```json
 {
   "DataProtection": { "KeyRingPath": "/keys" }
 }
 ```
+
+Without a volume the keys still live on the container's writable layer and
+still vanish with it. Two rules make the mount worth having:
+
+- **Back the ring up with the database, and restore them together.** Restoring
+  MongoDB against a different ring gives you a database of provider keys nobody
+  can decrypt. They are one backup unit.
+- **Never prune the directory.** Keys roll roughly every 90 days and the old
+  ones stay behind to read what they encrypted. A key saved eight months ago is
+  readable only by the key that protected it.
+
+A bind mount is the exception to the ownership note above: its permissions come
+from the host, so the directory has to be writable by the container's user
+(`APP_UID`, `1654` on the .NET base images) before it is mounted.

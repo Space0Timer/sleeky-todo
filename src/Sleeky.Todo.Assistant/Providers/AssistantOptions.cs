@@ -24,4 +24,16 @@ public sealed class AssistantOptions
     /// ignore this.
     /// </summary>
     public int AnthropicMaxTokens { get; init; } = 8192;
+
+    /// <summary>
+    /// How many messages of a conversation are replayed, counting the model's
+    /// tool calls and their results rather than only what was typed.
+    /// </summary>
+    /// <remarks>
+    /// An exchange that reads before it answers costs about four, so the
+    /// default holds roughly a dozen of them. Raising it buys the model a
+    /// longer memory and charges every later turn for it; setting it to zero or
+    /// less replays everything, which is the behaviour this bound replaced.
+    /// </remarks>
+    public int TranscriptMaxMessages { get; init; } = 60;
 }

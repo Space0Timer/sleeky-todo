@@ -56,5 +56,17 @@ COPY --from=web /web/dist ./wwwroot
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 
+# The key ring encrypts session cookies and every user's stored provider key, so
+# losing it signs everyone out and leaves saved keys unreadable. The directory
+# is created here, owned by the user the app runs as, because a named volume
+# takes its ownership from the image directory it covers: mounted over a path
+# that does not exist, it arrives owned by root and the app cannot write it.
+#
+# Without a volume the keys still live on the container's writable layer and
+# still vanish with it. Creating the directory makes persisting them a mount
+# rather than a mount plus a setting.
+RUN mkdir /keys && chown $APP_UID /keys
+ENV DataProtection__KeyRingPath=/keys
+
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Sleeky.Todo.Api.dll"]

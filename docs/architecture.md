@@ -384,6 +384,22 @@ write to the version the model last read, keeping "version sent" equal to
 seeded by scanning the echoed transcript, because the server keeps no
 conversation history and a model will not re-read what is still in its context.
 
+The conversation is windowed before it is replayed. The client holds the
+transcript and echoes it back each turn, so nothing bounded it: a long
+conversation grew the request body, the model's context, and the tokens every
+later turn paid to replay it. `TranscriptWindow` keeps the opening message and
+the most recent `Assistant:TranscriptMaxMessages`, and the windowed conversation
+is both what the model is sent and what the turn hands back, so the copy the
+client holds stops growing too. What the person sees is unaffected, because the
+client renders the chat log from turn events rather than from the transcript it
+carries.
+
+The ledger is seeded from the windowed conversation rather than from what
+arrived, so a read that fell out of the window takes its version with it and the
+model cannot write against a version it can no longer see. The window opens
+after any orphaned tool result, since a result whose call has been trimmed away
+is a message providers reject.
+
 Conflict handling sits above the dispatch in `BulkConflictPolicy`, not in the
 handlers, which are shared with the HTTP path: a retry inside one would make the
 browser's writes silently retry too.
@@ -514,6 +530,14 @@ responsibility beyond session cookies — it encrypts stored provider keys — s
 deployment without a durable key ring loses saved keys on restart rather than
 only signing users out. The keys stay in the database and are reported as
 unusable until replaced.
+
+The image writes the ring to `/keys` and creates that directory owned by the
+user it runs as, because a named volume takes its ownership from the directory
+it covers: mounted over a path that does not exist, it arrives owned by root and
+the application cannot write it. Persisting the ring is therefore a mount rather
+than a mount plus a setting, and the container smoke test asserts the mounted
+directory is writable so the ownership rule fails in CI rather than at a user's
+first login.
 
 Constructors fail fast with `ArgumentNullException` for every required injected
 dependency. This makes direct construction and registration mistakes fail at

@@ -303,6 +303,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: sleeky-todo
       IMAGE_TAG: sleeky-todo:${{ github.sha }}
+      KEYS_VOLUME: sleeky-todo-keys
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -335,6 +336,7 @@ jobs:
           docker run --detach --name sleeky-todo-smoke \
             --network "${COMPOSE_PROJECT_NAME}_default" \
             --publish 8080:8080 \
+            --volume "${KEYS_VOLUME}:/keys" \
             --env ASPNETCORE_ENVIRONMENT=Production \
             --env 'MongoDb__ConnectionString=mongodb://mongodb:27017/?directConnection=true' \
             --env MongoDb__DatabaseName=sleekyTodoSmoke \
@@ -354,6 +356,14 @@ jobs:
           echo "::error::The container never served /health."
           docker logs sleeky-todo-smoke
           exit 1
+
+      # Session cookies and every stored provider key are encrypted with the
+      # key ring, so a deployment mounts it to outlive the container. The image
+      # runs as a non-root user and a named volume takes its ownership from the
+      # directory it covers, so this proves that directory is one the app can
+      # actually write rather than a root-owned mount it will fail on later.
+      - name: Check that the mounted key ring is writable
+        run: docker exec sleeky-todo-smoke sh -c 'touch /keys/.ci-probe'
 
       # /api/auth/me is anonymous and needs no database, so it answers 200 in a
       # container that started correctly. Swagger is deliberately not checked:
@@ -396,4 +406,5 @@ jobs:
         run: |
           docker logs sleeky-todo-smoke || true
           docker rm --force sleeky-todo-smoke || true
+          docker volume rm "$KEYS_VOLUME" || true
           docker compose down --volumes
