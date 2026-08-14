@@ -165,20 +165,20 @@ public sealed class TodosController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Delete(
+    public async Task<ActionResult<TodoDto>> Delete(
         Guid id,
         DeleteTodoRequest request,
         CancellationToken cancellationToken)
     {
-        _ = await sender.Send(
+        TodoDto todo = await sender.Send(
             new DeleteTodoCommand(id, request.Version),
             cancellationToken);
 
-        return NoContent();
+        return Ok(todo);
     }
 
     [HttpPost("{id:guid}/restore")]
