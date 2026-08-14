@@ -51,12 +51,18 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
 
         if (stored is not null)
         {
+            // The reported provider and model stay the user's own, because this
+            // is what their settings form edits. IsUsable therefore describes
+            // *that* configuration rather than whether any connection resolved:
+            // a stored record the resolver set aside is unusable even though
+            // the application fallback will carry the next turn, and Source
+            // says which of the two is actually running.
             return new AssistantSettingsView(
                 stored.Provider,
                 stored.BaseUrl,
                 stored.Model,
                 HasKey: stored.ProtectedApiKey is not null,
-                IsUsable: resolved is not null,
+                IsUsable: resolved?.Source == AssistantConnectionSource.User,
                 Source: (resolved?.Source ?? AssistantConnectionSource.User).ToString());
         }
 
@@ -77,6 +83,43 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
             cancellationToken);
 
         return this.Resolve(stored);
+    }
+
+    public async Task<AssistantConnection?> ResolveDraftAsync(
+        AssistantSettingsInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        if (string.IsNullOrWhiteSpace(input.Model)
+            || !AssistantBaseUrl.TryParse(input.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
+        // The same rule the save follows: an absent key means the stored one,
+        // because the user cannot read it back to retype it.
+        string? apiKey = input.ApiKey;
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            AssistantSettingsRecord? stored = await this.repository.GetAsync(
+                this.currentUser.UserId,
+                cancellationToken);
+            apiKey = this.protector.Unprotect(stored?.ProtectedApiKey);
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        return new AssistantConnection(
+            input.Provider,
+            input.Model,
+            apiKey,
+            baseUrl,
+            AssistantConnectionSource.User);
     }
 
     public async Task SaveAsync(
@@ -115,11 +158,6 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
         return string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.Trim();
     }
 
-    private static Uri? ParseBaseUrl(string? baseUrl)
-    {
-        return Uri.TryCreate(baseUrl, UriKind.Absolute, out Uri? parsed) ? parsed : null;
-    }
-
     private AssistantConnection? Resolve(AssistantSettingsRecord? stored)
     {
         AssistantConnection? user = this.ResolveUser(stored);
@@ -139,6 +177,14 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
             return null;
         }
 
+        // Refused rather than dropped: an unset endpoint means the provider's
+        // own default, so running with a base URL the user cannot see was
+        // ignored would send their key somewhere they never named.
+        if (!AssistantBaseUrl.TryParse(stored.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
         // A key that will not unprotect is what a rotated or lost key ring
         // looks like. The record stays, so the user replaces the key rather
         // than rebuilding the whole configuration.
@@ -153,7 +199,7 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
             provider,
             stored.Model,
             apiKey,
-            ParseBaseUrl(stored.BaseUrl),
+            baseUrl,
             AssistantConnectionSource.User);
     }
 
@@ -165,11 +211,16 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
             return null;
         }
 
+        if (!AssistantBaseUrl.TryParse(this.options.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
         return new AssistantConnection(
             this.options.Provider,
             this.options.Model,
             this.options.ApiKey,
-            ParseBaseUrl(this.options.BaseUrl),
+            baseUrl,
             AssistantConnectionSource.Application);
     }
 }

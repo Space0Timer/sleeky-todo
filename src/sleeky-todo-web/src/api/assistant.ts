@@ -78,8 +78,22 @@ export function deleteAssistantSettings(): Promise<void> {
   return send<void>(settingsPath, { method: 'DELETE' })
 }
 
-export function testAssistantConnection(): Promise<AssistantProbeResult> {
-  return send<AssistantProbeResult>(`${settingsPath}/test`, { method: 'POST' })
+/**
+ * Probes the values on the form rather than the stored ones, so a key the user
+ * has just typed is what gets checked. Nothing sent here is persisted.
+ */
+export function testAssistantConnection(
+  draft: AssistantSettingsDraft,
+): Promise<AssistantProbeResult> {
+  return send<AssistantProbeResult>(`${settingsPath}/test`, {
+    method: 'POST',
+    body: JSON.stringify({
+      provider: draft.provider,
+      baseUrl: draft.baseUrl.trim() === '' ? null : draft.baseUrl.trim(),
+      model: draft.model,
+      apiKey: draft.apiKey === '' ? null : draft.apiKey,
+    }),
+  })
 }
 
 /**

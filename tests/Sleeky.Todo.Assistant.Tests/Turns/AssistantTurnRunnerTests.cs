@@ -118,6 +118,46 @@ public sealed class AssistantTurnRunnerTests
     }
 
     /// <summary>
+    /// Deletion is the only tool that proposes, so a confirmation naming
+    /// anything else is a client that has reused this path. Running a deletion
+    /// for it would invert the intent the gate exists to check.
+    /// </summary>
+    [TestMethod]
+    public async Task RunRefusesAConfirmationThatNamesAnotherTool()
+    {
+        Harness harness = new Harness(ScriptedChatClient.Says("Nothing to summarise."));
+
+        await harness.RunAsync(new AssistantTurn(
+            null,
+            null,
+            new ConfirmedAction(
+                TodoToolNames.RestoreTodos,
+                new[] { new TodoVersionReference(First, 5) })));
+
+        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().RestoreAsync(default!, default);
+        harness.Events.Types().Should().NotContain(TurnEventType.TodosChanged);
+    }
+
+    /// <summary>
+    /// Losing a provider mid-session is recoverable, so the conversation is
+    /// handed back rather than cleared.
+    /// </summary>
+    [TestMethod]
+    public async Task RunKeepsTheConversationWhenNoProviderIsConfigured()
+    {
+        using JsonDocument earlier = JsonDocument.Parse("""[{"role":"user","text":"hello"}]""");
+        Harness harness = new Harness(connection: null);
+
+        await harness.RunAsync(new AssistantTurn(null, earlier.RootElement, null));
+
+        TurnTranscript? handedBack =
+            harness.Events.Single<TurnTranscript>(TurnEventType.TurnCompleted);
+        handedBack.Should().NotBeNull();
+        handedBack!.Messages.GetArrayLength().Should().Be(1);
+    }
+
+    /// <summary>
     /// The tool set never varies, and the dynamic context is a user message, so
     /// the cacheable prefix stays still across turns.
     /// </summary>

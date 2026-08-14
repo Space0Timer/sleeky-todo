@@ -43,6 +43,15 @@ public static class TranscriptCodec
         {
             return new List<ChatMessage>();
         }
+        catch (NotSupportedException)
+        {
+            // Well-formed JSON the serializer will not map: a content
+            // discriminator this version does not know, which is what a
+            // transcript held over a deployment looks like. Without this arm a
+            // stale transcript would fault every turn a client tried, and the
+            // client has no way to know it should discard it.
+            return new List<ChatMessage>();
+        }
     }
 
     public static JsonElement Write(IReadOnlyList<ChatMessage> messages)

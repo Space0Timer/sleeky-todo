@@ -83,6 +83,18 @@
   color: t.$color-text-muted;
 }
 
+// A message the assistant kept no record of. Marked rather than removed, so
+// the user can see what they wrote and send it again.
+.undelivered {
+  @include m.tone(t.$color-warning-surface, t.$color-warning-text);
+  @include m.typography(meta);
+
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  margin-left: 0.5rem;
+  border-radius: t.$radius-sm;
+}
+
 .error {
   @include m.tone(t.$color-danger-surface, t.$color-danger-text);
   @include m.typography(detail);

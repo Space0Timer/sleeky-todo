@@ -147,6 +147,118 @@ public sealed class AssistantSettingsServiceTests
         (await harness.Service.ResolveAsync()).Should().BeNull();
     }
 
+    /// <summary>
+    /// An unset endpoint means the provider SDK's own default, so a base URL
+    /// that cannot be parsed must make the connection unusable rather than be
+    /// dropped: dropping it would send a key meant for a local model to
+    /// whichever host the provider falls back to.
+    /// </summary>
+    [TestMethod]
+    public async Task AnUnusableBaseUrlIsRefusedRatherThanIgnored()
+    {
+        Harness harness = new Harness();
+        await harness.Repository.SaveAsync(new AssistantSettingsRecord(
+            TestTodo.OwnerId,
+            AssistantProvider.OpenAiCompatible.ToString(),
+            "localhost:11434/v1",
+            "llama-3",
+            harness.Protector.Protect(UserKey)));
+
+        (await harness.Service.ResolveAsync()).Should().BeNull();
+        (await harness.Service.DescribeAsync()).IsUsable.Should().BeFalse();
+    }
+
+    [TestMethod]
+    public async Task AnAbsoluteBaseUrlResolvesAsTheEndpoint()
+    {
+        Harness harness = new Harness();
+        await harness.Service.SaveAsync(new AssistantSettingsInput(
+            AssistantProvider.OpenAiCompatible,
+            "http://localhost:11434/v1",
+            "llama-3",
+            UserKey));
+
+        AssistantConnection? resolved = await harness.Service.ResolveAsync();
+
+        resolved!.BaseUrl.Should().Be(new Uri("http://localhost:11434/v1"));
+    }
+
+    /// <summary>
+    /// The view describes the user's own settings, so a record the resolver set
+    /// aside is reported as unusable even though the application fallback will
+    /// carry the next turn.
+    /// </summary>
+    [TestMethod]
+    public async Task DescribeDoesNotCallAStoredRecordUsableBecauseTheFallbackResolved()
+    {
+        Harness harness = new Harness(applicationKey: ApplicationKey);
+        await harness.Repository.SaveAsync(new AssistantSettingsRecord(
+            TestTodo.OwnerId,
+            AssistantProvider.OpenAiCompatible.ToString(),
+            BaseUrl: null,
+            "llama-3",
+            ProtectedApiKey: null));
+
+        AssistantSettingsView view = await harness.Service.DescribeAsync();
+
+        view.Model.Should().Be("llama-3");
+        view.IsUsable.Should().BeFalse();
+        view.Source.Should().Be(nameof(AssistantConnectionSource.Application));
+    }
+
+    /// <summary>
+    /// The probe answers for what is on the form, so a key typed but not yet
+    /// saved is the one that gets checked.
+    /// </summary>
+    [TestMethod]
+    public async Task ResolveDraftPrefersTheSuppliedKeyOverTheStoredOne()
+    {
+        Harness harness = new Harness();
+        await harness.Service.SaveAsync(Input(UserKey));
+
+        AssistantConnection? drafted = await harness.Service.ResolveDraftAsync(
+            new AssistantSettingsInput(
+                AssistantProvider.Anthropic,
+                BaseUrl: null,
+                "claude-opus-5",
+                "sk-just-typed"));
+
+        drafted!.ApiKey.Should().Be("sk-just-typed");
+        drafted.Model.Should().Be("claude-opus-5");
+    }
+
+    [TestMethod]
+    public async Task ResolveDraftFallsBackToTheStoredKeyWhenTheFieldIsLeftEmpty()
+    {
+        Harness harness = new Harness();
+        await harness.Service.SaveAsync(Input(UserKey));
+
+        AssistantConnection? drafted = await harness.Service.ResolveDraftAsync(
+            new AssistantSettingsInput(
+                AssistantProvider.Anthropic,
+                BaseUrl: null,
+                "claude-opus-5",
+                ApiKey: null));
+
+        drafted!.ApiKey.Should().Be(UserKey);
+    }
+
+    [TestMethod]
+    public async Task ResolveDraftRefusesAnUnusableBaseUrl()
+    {
+        Harness harness = new Harness();
+        await harness.Service.SaveAsync(Input(UserKey));
+
+        AssistantConnection? drafted = await harness.Service.ResolveDraftAsync(
+            new AssistantSettingsInput(
+                AssistantProvider.OpenAiCompatible,
+                "not a url",
+                "llama-3",
+                "sk-just-typed"));
+
+        drafted.Should().BeNull();
+    }
+
     [TestMethod]
     public async Task DeleteReportsWhetherThereWasAnythingToRemove()
     {
@@ -187,9 +299,10 @@ public sealed class AssistantSettingsServiceTests
         public Harness(string? applicationKey = null)
         {
             this.Repository = new InMemoryAssistantSettingsRepository();
+            this.Protector = new AssistantKeyProtector(new EphemeralDataProtectionProvider());
             this.Service = new AssistantSettingsService(
                 this.Repository,
-                new AssistantKeyProtector(new EphemeralDataProtectionProvider()),
+                this.Protector,
                 new TestCurrentUser(),
                 Options.Create(new AssistantOptions
                 {
@@ -200,6 +313,8 @@ public sealed class AssistantSettingsServiceTests
         }
 
         public InMemoryAssistantSettingsRepository Repository { get; }
+
+        public AssistantKeyProtector Protector { get; }
 
         public AssistantSettingsService Service { get; }
     }

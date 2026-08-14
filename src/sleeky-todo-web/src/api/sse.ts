@@ -40,6 +40,13 @@ export async function* readEventStream(
     }
   } finally {
     signal?.removeEventListener('abort', abort)
+
+    // Cancelled before the lock is released. A consumer that stopped early —
+    // by breaking out, or by throwing from the yield — otherwise leaves the
+    // response body open, so the server never sees the disconnect and keeps
+    // the turn, its request scope, and its provider call alive. Cancelling a
+    // stream that already ended is a no-op.
+    await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
 }

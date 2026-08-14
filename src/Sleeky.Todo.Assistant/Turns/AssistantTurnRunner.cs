@@ -81,8 +81,14 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
             await events.PublishAsync(
                 TurnEvent.Message(new AssistantMessage(NotConfigured)),
                 cancellationToken);
+
+            // The conversation is handed back untouched rather than cleared.
+            // Losing a provider mid-session is recoverable, and emptying the
+            // transcript would silently discard the exchange the user is still
+            // looking at.
             await events.PublishAsync(
-                TurnEvent.TurnCompleted(new TurnTranscript(TranscriptCodec.Empty())),
+                TurnEvent.TurnCompleted(new TurnTranscript(
+                    turn.Transcript ?? TranscriptCodec.Empty())),
                 cancellationToken);
             return;
         }
@@ -160,7 +166,28 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         TodoTools tools,
         CancellationToken cancellationToken)
     {
+        // The tool name decides what runs. Deletion is the only tool that
+        // proposes, so anything else naming itself here is a client that has
+        // reused this path — and executing a deletion for it would invert the
+        // very intent the gate exists to check.
+        if (!string.Equals(
+            confirmation.Tool,
+            TodoToolNames.DeleteTodos,
+            StringComparison.Ordinal))
+        {
+            return $"I answered a '{confirmation.Tool}' confirmation, which is not "
+                + "something you can ask me to confirm. Nothing was changed. Tell me "
+                + "what you were trying to do.";
+        }
+
         object outcome = await tools.ExecuteConfirmedDeletionAsync(confirmation, cancellationToken);
+
+        if (outcome is ToolFailure failure)
+        {
+            return "I answered a deletion confirmation, but it could not be applied: "
+                + failure.Error
+                + " Nothing was changed.";
+        }
 
         return "I confirmed the deletion. It has been applied; here is what "
             + "happened, which you should summarise for me: "

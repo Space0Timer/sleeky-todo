@@ -206,8 +206,11 @@ test('a filter that hides a selected TODO drops it from the count', async ({ pag
  * retries to status changes.
  */
 test('a deletion that loses the race after the dialog opened is not retried', async ({ page }) => {
-  const stable = await createTodo(page, 'Late drift stable')
-  const drifting = await createTodo(page, 'Late drift moving')
+  // Due early on purpose. The list holds one page of twelve sorted by due date
+  // and the suite shares a database, so a TODO created with the default date
+  // lands on the second page once enough specs have run before this one.
+  const stable = await createTodo(page, 'Late drift stable', { dueDate: '2026-01-01' })
+  const drifting = await createTodo(page, 'Late drift moving', { dueDate: '2026-01-02' })
   const driftingId = await cardId(drifting)
 
   await selectCard(stable)

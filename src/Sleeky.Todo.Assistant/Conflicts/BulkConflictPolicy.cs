@@ -82,6 +82,22 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
 
             return retried;
         }
+        catch (TransactionConflictException)
+        {
+            // An aborted transaction does not say which document lost, so this
+            // arrives without identifiers — but it is the same "re-run the
+            // read-modify-write" answer, and it is the transient case a single
+            // retry exists to absorb. The browser already retries it, because
+            // the API maps it to the same 409 the version conflicts use.
+            BulkTodoResult? retried = await this.RetryStatusAsync(status, items, cancellationToken);
+
+            if (retried is null)
+            {
+                throw;
+            }
+
+            return retried;
+        }
     }
 
     /// <summary>

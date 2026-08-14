@@ -107,8 +107,14 @@ export type AssistantProbeResult = {
   error: string | null
 }
 
-/** What the panel shows: the user's own turns and the assistant's replies. */
+/**
+ * What the panel shows: the user's own turns and the assistant's replies.
+ *
+ * A user entry carries `delivered`, because a turn that fails leaves the
+ * transcript where it was: the message is on screen but the assistant has no
+ * record of it, and saying so is more honest than showing it as sent.
+ */
 export type ChatEntry =
-  | { kind: 'user'; text: string }
+  | { kind: 'user'; text: string; delivered: boolean }
   | { kind: 'assistant'; text: string }
   | { kind: 'tool'; summary: string }

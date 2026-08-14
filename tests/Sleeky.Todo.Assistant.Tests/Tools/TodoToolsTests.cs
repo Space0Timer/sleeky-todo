@@ -209,6 +209,66 @@ public sealed class TodoToolsTests
             .And.Contain(TurnEventType.TodosChanged);
     }
 
+    /// <summary>
+    /// A confirmed selection comes from a client rather than through a tool
+    /// schema, and it runs outside the loop — so a validation failure would
+    /// stop the stream mid-turn rather than reach anything that can explain it.
+    /// </summary>
+    [TestMethod]
+    public async Task ConfirmedDeletionRefusesASelectionTheCommandWouldReject()
+    {
+        Harness harness = new Harness();
+
+        object empty = await harness.Tools.ExecuteConfirmedDeletionAsync(
+            new ConfirmedAction(TodoToolNames.DeleteTodos, Array.Empty<TodoVersionReference>()),
+            CancellationToken.None);
+
+        object duplicated = await harness.Tools.ExecuteConfirmedDeletionAsync(
+            new ConfirmedAction(
+                TodoToolNames.DeleteTodos,
+                new[] { new TodoVersionReference(First, 5), new TodoVersionReference(First, 5) }),
+            CancellationToken.None);
+
+        empty.Should().BeOfType<ToolFailure>();
+        duplicated.Should().BeOfType<ToolFailure>();
+        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+    }
+
+    [TestMethod]
+    public async Task ConfirmedDeletionRefusesAnOverCapSelection()
+    {
+        Harness harness = new Harness();
+        TodoVersionReference[] tooMany = Enumerable
+            .Range(0, BulkTodoLimits.MaximumSelectionSize + 1)
+            .Select(index => new TodoVersionReference(TestTodo.Id($"todo-{index}"), 1))
+            .ToArray();
+
+        object outcome = await harness.Tools.ExecuteConfirmedDeletionAsync(
+            new ConfirmedAction(TodoToolNames.DeleteTodos, tooMany),
+            CancellationToken.None);
+
+        outcome.Should().BeOfType<ToolFailure>();
+        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+    }
+
+    [TestMethod]
+    public async Task GetTodosRefusesAnOutOfRangeLimitRatherThanThrowing()
+    {
+        Harness harness = new Harness();
+
+        object outcome = await harness.Tools.GetTodosAsync(
+            null,
+            null,
+            null,
+            null,
+            null,
+            limit: 500,
+            CancellationToken.None);
+
+        outcome.Should().BeOfType<ToolFailure>()
+            .Which.Error.Should().Contain("limit");
+    }
+
     [TestMethod]
     public async Task AMalformedIdentifierComesBackAsSomethingTheModelCanFix()
     {

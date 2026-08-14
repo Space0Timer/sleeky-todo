@@ -57,7 +57,7 @@ export function AssistantSettingsForm({
     setBusy(true)
     setStatus(null)
     try {
-      const result = await testAssistantConnection()
+      const result = await testAssistantConnection(draft)
       setStatus(result.succeeded
         ? 'The provider answered.'
         : result.error ?? 'The provider did not answer.')

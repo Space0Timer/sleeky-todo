@@ -87,6 +87,43 @@ public sealed class BulkConflictPolicyTests
     }
 
     /// <summary>
+    /// An aborted transaction carries no identifiers but means the same
+    /// "re-run the read-modify-write", and it is the transient case a single
+    /// retry exists to absorb. The browser already retries it, because the API
+    /// maps it to the same 409 the version conflicts use.
+    /// </summary>
+    [TestMethod]
+    public async Task ChangeStatusRetriesAnAbortedTransaction()
+    {
+        List<BulkChangeTodoStatusCommand> attempts = new List<BulkChangeTodoStatusCommand>();
+        ISender sender = Substitute.For<ISender>();
+        sender.Send(Arg.Any<IRequest<BulkTodoResult>>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                BulkChangeTodoStatusCommand command =
+                    (BulkChangeTodoStatusCommand)call.Arg<IRequest<BulkTodoResult>>();
+                attempts.Add(command);
+
+                if (attempts.Count == 1)
+                {
+                    throw new TransactionConflictException("The transaction was aborted.");
+                }
+
+                return Task.FromResult(Applied(First, 8));
+            });
+        StageSelection(sender, TestTodo.At(First, 7));
+
+        BulkTodoResult result = await Policy(sender).ChangeStatusAsync(
+            TodoStatus.Completed,
+            Selection((First, 5)),
+            CancellationToken.None);
+
+        attempts.Should().HaveCount(2);
+        attempts[1].Items.Single().Version.Should().Be(7);
+        result.Items.Should().ContainSingle();
+    }
+
+    /// <summary>
     /// Deletion is the batch whose intent can invert while the world moves, so
     /// it always returns to a person.
     /// </summary>

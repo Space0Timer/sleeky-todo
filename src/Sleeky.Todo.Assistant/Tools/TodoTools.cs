@@ -133,6 +133,16 @@ public sealed class TodoTools
             parsedTo = value;
         }
 
+        // Checked here like every other parameter. Left to the query's
+        // validator it would throw instead, and the loop reports a thrown tool
+        // exception to the model as a generic failure with nothing naming the
+        // parameter — so it would retry the same call until the turn aborts.
+        if (limit is < 1 or > GetTodosQuery.MaximumPageSize)
+        {
+            return new ToolFailure(
+                $"limit must be between 1 and {GetTodosQuery.MaximumPageSize}.");
+        }
+
         CursorPage<TodoListItemDto> page = await this.DispatchAsync(
             new GetTodosQuery(
                 parsedStatus,
@@ -362,9 +372,15 @@ public sealed class TodoTools
     {
         ArgumentNullException.ThrowIfNull(confirmation);
 
-        BulkTodoItemRequest[] items = confirmation.Items
-            .Select(item => new BulkTodoItemRequest(item.Id, item.Version))
-            .ToArray();
+        // Checked here rather than left to the command's validator, because
+        // this runs outside the tool loop: a validation failure would leave the
+        // response as a stream that stops mid-turn rather than as something the
+        // model can explain.
+        if (!TryReadConfirmed(confirmation, out BulkTodoItemRequest[] items, out string? error))
+        {
+            return new ToolFailure(error);
+        }
+
         BulkTodoResult result = await this.policy.DeleteAsync(items, cancellationToken);
 
         return await this.ReportWriteAsync(
@@ -406,6 +422,51 @@ public sealed class TodoTools
     /// guarantee, and the assistant could not then describe honestly what
     /// actually happened.
     /// </summary>
+    /// <summary>
+    /// Applies to a confirmed selection the same checks a proposed one gets.
+    /// The items come from a client rather than from the model, so they arrive
+    /// having passed through no tool schema at all.
+    /// </summary>
+    private static bool TryReadConfirmed(
+        ConfirmedAction confirmation,
+        out BulkTodoItemRequest[] items,
+        [NotNullWhen(false)] out string? error)
+    {
+        items = Array.Empty<BulkTodoItemRequest>();
+
+        if (confirmation.Items.Count == 0)
+        {
+            error = "That confirmation named no TODOs, so nothing was deleted.";
+            return false;
+        }
+
+        if (Exceeds(confirmation.Items.Count, out error))
+        {
+            return false;
+        }
+
+        if (confirmation.Items.Any(item => item.Id == Guid.Empty || item.Version <= 0))
+        {
+            error = "That confirmation carried an unusable identifier or version, "
+                + "so nothing was deleted.";
+            return false;
+        }
+
+        if (confirmation.Items.Select(item => item.Id).Distinct().Count()
+            != confirmation.Items.Count)
+        {
+            error = "That confirmation named the same TODO more than once, so "
+                + "nothing was deleted.";
+            return false;
+        }
+
+        items = confirmation.Items
+            .Select(item => new BulkTodoItemRequest(item.Id, item.Version))
+            .ToArray();
+        error = null;
+        return true;
+    }
+
     private static bool Exceeds(int count, [NotNullWhen(true)] out string? error)
     {
         if (count <= BulkTodoLimits.MaximumSelectionSize)

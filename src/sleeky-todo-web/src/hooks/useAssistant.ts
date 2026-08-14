@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { runAssistantTurn } from '../api/assistant.ts'
 import {
@@ -27,10 +27,35 @@ export function useAssistant({ onTodosChanged }: UseAssistantOptions) {
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null)
   const [error, setError] = useState<string | null>(null)
   const transcript = useRef<unknown>(undefined)
+  const running = useRef<AbortController | null>(null)
 
   const say = useCallback((entry: ChatEntry) => {
     setEntries((current) => [...current, entry])
   }, [])
+
+  /**
+   * A turn that never handed a transcript back is a turn the assistant has no
+   * record of, so the message that started it is marked undelivered rather
+   * than left looking sent.
+   */
+  const markLastUndelivered = useCallback(() => {
+    setEntries((current) => {
+      const index = current.findLastIndex((entry) => entry.kind === 'user')
+      if (index === -1) return current
+
+      const next = [...current]
+      next[index] = { ...current[index], kind: 'user', delivered: false } as ChatEntry
+      return next
+    })
+  }, [])
+
+  /** Stops an in-flight turn, which also releases it server-side. */
+  const abort = useCallback(() => {
+    running.current?.abort()
+    running.current = null
+  }, [])
+
+  useEffect(() => abort, [abort])
 
   /**
    * A turn ends either with an answer or with a question the user has to
@@ -69,31 +94,46 @@ export function useAssistant({ onTodosChanged }: UseAssistantOptions) {
     message: string | null,
     confirmed: ConfirmedAction | null,
   ) => {
+    abort()
+    const controller = new AbortController()
+    running.current = controller
+
     setPending(true)
     setError(null)
     setConfirmation(null)
 
+    const before = transcript.current
+
     try {
       const stream = runAssistantTurn({
         message,
-        transcript: transcript.current,
+        transcript: before,
         confirmation: confirmed,
-      })
+      }, controller.signal)
 
       for await (const event of stream) {
         consume(event)
       }
+
+      // No turn_completed means the assistant kept no record of this turn, so
+      // the message that started it did not land however the stream ended.
+      if (transcript.current === before) markLastUndelivered()
     } catch (caught) {
-      setError(caught instanceof Error
-        ? caught.message
-        : 'The assistant stopped unexpectedly.')
+      markLastUndelivered()
+
+      if (!controller.signal.aborted) {
+        setError(caught instanceof Error
+          ? caught.message
+          : 'The assistant stopped unexpectedly.')
+      }
     } finally {
+      if (running.current === controller) running.current = null
       setPending(false)
     }
-  }, [consume])
+  }, [abort, consume, markLastUndelivered])
 
   const ask = useCallback(async (message: string) => {
-    say({ kind: 'user', text: message })
+    say({ kind: 'user', text: message, delivered: true })
     await run(message, null)
   }, [run, say])
 
@@ -106,21 +146,22 @@ export function useAssistant({ onTodosChanged }: UseAssistantOptions) {
     tool: string,
     items: TodoVersionReference[],
   ) => {
-    say({ kind: 'user', text: 'Confirmed.' })
+    say({ kind: 'user', text: 'Confirmed.', delivered: true })
     await run(null, { tool, items })
   }, [run, say])
 
   const cancel = useCallback(() => {
     setConfirmation(null)
-    say({ kind: 'user', text: 'Cancelled.' })
+    say({ kind: 'user', text: 'Cancelled.', delivered: true })
   }, [say])
 
   const reset = useCallback(() => {
+    abort()
     transcript.current = undefined
     setEntries([])
     setConfirmation(null)
     setError(null)
-  }, [])
+  }, [abort])
 
-  return { ask, cancel, confirm, confirmation, entries, error, pending, reset }
+  return { abort, ask, cancel, confirm, confirmation, entries, error, pending, reset }
 }

@@ -19,6 +19,10 @@ namespace Sleeky.Todo.Api.Controllers;
 [Route("api/assistant/settings")]
 public sealed class AssistantSettingsController : ControllerBase
 {
+    private const string MalformedBaseUrl =
+        "The base URL must be an absolute http or https address, such as "
+        + "http://localhost:11434/v1.";
+
     private readonly IAssistantSettingsService settings;
 
     private readonly IAssistantConnectionProbe probe;
@@ -64,6 +68,14 @@ public sealed class AssistantSettingsController : ControllerBase
                 $"Provider must be one of: {string.Join(", ", Enum.GetNames<AssistantProvider>())}.");
         }
 
+        // Caught here rather than left to resolution, so a mistyped endpoint is
+        // a field error on the form instead of a key quietly sent to whichever
+        // host the provider defaults to.
+        if (!AssistantBaseUrl.TryParse(request.BaseUrl, out Uri? _))
+        {
+            ModelState.AddModelError(nameof(request.BaseUrl), MalformedBaseUrl);
+        }
+
         if (!ModelState.IsValid)
         {
             return ValidationProblem(ModelState);
@@ -91,15 +103,25 @@ public sealed class AssistantSettingsController : ControllerBase
     }
 
     /// <summary>
-    /// Checks the configuration in effect without saving anything, so a wrong
-    /// key or an unknown model is caught while the user is still on the form.
+    /// Checks a configuration without saving it, so a wrong key or an unknown
+    /// model is caught while the user is still on the form.
     /// </summary>
+    /// <remarks>
+    /// The body is optional and carries the values on the form. Probing the
+    /// stored settings instead would answer for a key the user has just
+    /// replaced, which is the opposite of what the button is for. Nothing sent
+    /// here is persisted, and the probe strips the key from any message it
+    /// reports.
+    /// </remarks>
     [HttpPost("test")]
     [ProducesResponseType<AssistantProbeResult>(StatusCodes.Status200OK)]
     public async Task<ActionResult<AssistantProbeResult>> Test(
+        [FromBody] SaveAssistantSettingsRequest? request,
         CancellationToken cancellationToken)
     {
-        AssistantConnection? connection = await settings.ResolveAsync(cancellationToken);
+        AssistantConnection? connection = await ResolveProbeTargetAsync(
+            request,
+            cancellationToken);
 
         if (connection is null)
         {
@@ -109,5 +131,29 @@ public sealed class AssistantSettingsController : ControllerBase
         }
 
         return Ok(await probe.ProbeAsync(connection, cancellationToken));
+    }
+
+    private async Task<AssistantConnection?> ResolveProbeTargetAsync(
+        SaveAssistantSettingsRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Model))
+        {
+            return await settings.ResolveAsync(cancellationToken);
+        }
+
+        if (!Enum.TryParse(request.Provider, out AssistantProvider provider)
+            || !Enum.IsDefined(provider))
+        {
+            return null;
+        }
+
+        return await settings.ResolveDraftAsync(
+            new AssistantSettingsInput(
+                provider,
+                request.BaseUrl,
+                request.Model,
+                request.ApiKey),
+            cancellationToken);
     }
 }
