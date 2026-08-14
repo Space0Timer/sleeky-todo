@@ -340,6 +340,82 @@ public sealed class MongoTodoListReaderTests
         pagedBlockedItems.Select(item => item.Id).Should().OnlyHaveUniqueItems();
     }
 
+    /// <summary>
+    /// The description is cut to the preview length on the server now, so these
+    /// pin the boundary the cut has to preserve. A card never renders more than
+    /// the preview, and sending a full two-thousand-character description to
+    /// build one was most of a page's payload.
+    /// </summary>
+    [TestMethod]
+    [DataRow(50, DisplayName = "well under the preview length")]
+    [DataRow(119, DisplayName = "one under")]
+    [DataRow(120, DisplayName = "exactly the preview length")]
+    public async Task ADescriptionWithinThePreviewLengthIsReturnedWhole(int length)
+    {
+        string description = new string('x', length);
+        await SeedAsync(CreateDocument(
+            "preview",
+            "Preview",
+            new DateOnly(2026, 8, 1),
+            description: description));
+
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+
+        page.Items.Single().DescriptionPreview.Should().Be(description);
+    }
+
+    [TestMethod]
+    [DataRow(121, DisplayName = "one over")]
+    [DataRow(2000, DisplayName = "the maximum a description may hold")]
+    public async Task ALongerDescriptionIsTruncatedWithAnEllipsis(int length)
+    {
+        await SeedAsync(CreateDocument(
+            "preview",
+            "Preview",
+            new DateOnly(2026, 8, 1),
+            description: new string('x', length)));
+
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+
+        string? preview = page.Items.Single().DescriptionPreview;
+        preview.Should().Be(new string('x', 117) + "...");
+        preview.Should().HaveLength(120);
+    }
+
+    /// <summary>
+    /// Cut by code point rather than by byte, so a character encoded in more
+    /// than one byte never arrives as half of itself.
+    /// </summary>
+    [TestMethod]
+    public async Task AMultiByteDescriptionIsNotSplitMidCharacter()
+    {
+        await SeedAsync(CreateDocument(
+            "preview",
+            "Preview",
+            new DateOnly(2026, 8, 1),
+            description: new string('日', 400)));
+
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+
+        page.Items.Single().DescriptionPreview
+            .Should().Be(new string('日', 117) + "...");
+    }
+
+    [TestMethod]
+    public async Task AnAbsentDescriptionStaysNullRatherThanBecomingEmpty()
+    {
+        BsonDocument document = CreateDocument(
+            "preview",
+            "Preview",
+            new DateOnly(2026, 8, 1));
+        document["description"] = BsonNull.Value;
+        await SeedAsync(document);
+
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+
+        page.Items.Single().DescriptionPreview.Should().BeNull();
+    }
+
     [TestMethod]
     public async Task SearchMatchesATokenOfTheNameByPrefix()
     {

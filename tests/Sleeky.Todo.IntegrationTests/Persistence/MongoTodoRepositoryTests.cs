@@ -155,6 +155,71 @@ public sealed class MongoTodoRepositoryTests
     }
 
     /// <summary>
+    /// Reads project the search tokens away, because the entity recomputes them
+    /// and nothing reading a TODO back has a use for them. This guards the risk
+    /// that creates: a document loaded without its tokens must not be written
+    /// back without them either.
+    /// </summary>
+    [TestMethod]
+    public async Task AReadModifyWriteCycleDoesNotStripSearchTokens()
+    {
+        TodoItem todoItem = TodoItem.Create(
+            Id("round-trip"),
+            OwnerId,
+            "Submit Quarterly Report",
+            "Include the VAT summary",
+            new DateOnly(2026, 8, 31),
+            TodoPriority.High,
+            Timestamp);
+        await repository.AddAsync(todoItem);
+
+        // Loaded through the projecting read, changed in a way that leaves the
+        // text alone, and written straight back.
+        TodoItem loaded = await GetRequiredTodoAsync(todoItem.Id);
+        _ = loaded.ChangeStatus(TodoStatus.InProgress, Timestamp.AddHours(1));
+        _ = await repository.UpdateAsync(loaded);
+
+        BsonDocument stored = await ReadRawDocumentAsync(todoItem.Id);
+        stored["searchTokens"].AsBsonArray.Select(token => token.AsString)
+            .Should().Equal(
+                "submit",
+                "quarterly",
+                "report",
+                "include",
+                "the",
+                "vat",
+                "summary");
+    }
+
+    /// <summary>
+    /// The batch read projects tokens away as well, so the same round trip is
+    /// measured through it rather than assumed to behave like the single read.
+    /// </summary>
+    [TestMethod]
+    public async Task ABatchReadModifyWriteCycleDoesNotStripSearchTokens()
+    {
+        TodoItem todoItem = TodoItem.Create(
+            Id("batch-round-trip"),
+            OwnerId,
+            "Renew Passport",
+            null,
+            new DateOnly(2026, 8, 31),
+            TodoPriority.Low,
+            Timestamp);
+        await repository.AddAsync(todoItem);
+
+        IReadOnlyCollection<TodoItem> loaded = await repository.GetByIdsAsync(
+            new[] { todoItem.Id });
+        TodoItem batched = loaded.Single();
+        _ = batched.ChangeStatus(TodoStatus.InProgress, Timestamp.AddHours(1));
+        await repository.SaveBatchAsync(new[] { batched }, Array.Empty<TodoItem>());
+
+        BsonDocument stored = await ReadRawDocumentAsync(todoItem.Id);
+        stored["searchTokens"].AsBsonArray.Select(token => token.AsString)
+            .Should().Equal("renew", "passport");
+    }
+
+    /// <summary>
     /// Search matches the persisted tokens rather than the text, so what a
     /// repository write leaves behind is the contract search depends on.
     /// </summary>

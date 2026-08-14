@@ -442,6 +442,63 @@ internal sealed class MongoTodoListReader : ITodoListReader
         };
     }
 
+    /// <summary>
+    /// Cuts the description to one character beyond the preview before it
+    /// leaves the server.
+    /// </summary>
+    /// <remarks>
+    /// A card renders at most <see cref="DescriptionPreviewLength"/>
+    /// characters, so sending a full two-thousand-character description to
+    /// build one is most of a page's payload spent on text nobody reads.
+    ///
+    /// One character beyond the limit is what keeps the truncation decision
+    /// intact: anything arriving longer than the preview length was longer in
+    /// storage too, which is exactly what <see cref="CreateDescriptionPreview"/>
+    /// needs in order to decide whether to append an ellipsis. Fetching exactly
+    /// the preview length would make a description that merely reaches it
+    /// indistinguishable from one that overruns it.
+    ///
+    /// <c>$substrCP</c> counts code points rather than bytes, so a multi-byte
+    /// character is never split in half.
+    ///
+    /// A missing or null description stays null rather than becoming an empty
+    /// string. <c>$substrCP</c> rejects a non-string input, so the guard is
+    /// required either way, and answering it with null keeps
+    /// <c>descriptionPreview</c> absent from the JSON exactly as before.
+    /// </remarks>
+    private static BsonDocument BuildDescriptionPreviewExpression()
+    {
+        return new BsonDocument(
+            "$cond",
+            new BsonDocument
+            {
+                {
+                    "if",
+                    new BsonDocument(
+                        "$eq",
+                        new BsonArray
+                        {
+                            new BsonDocument(
+                                "$type",
+                                FieldPath(MongoTodoFields.Description)),
+                            "string",
+                        })
+                },
+                {
+                    "then",
+                    new BsonDocument(
+                        "$substrCP",
+                        new BsonArray
+                        {
+                            FieldPath(MongoTodoFields.Description),
+                            0,
+                            DescriptionPreviewLength + 1,
+                        })
+                },
+                { "else", BsonNull.Value },
+            });
+    }
+
     private static BsonDocument BuildProjectionStage()
     {
         return new BsonDocument(
@@ -450,7 +507,7 @@ internal sealed class MongoTodoListReader : ITodoListReader
             {
                 { MongoTodoFields.Id, 1 },
                 { MongoTodoFields.Name, 1 },
-                { MongoTodoFields.Description, 1 },
+                { MongoTodoFields.Description, BuildDescriptionPreviewExpression() },
                 { MongoTodoFields.DueDate, 1 },
                 { MongoTodoFields.Status, 1 },
                 { MongoTodoFields.Priority, 1 },

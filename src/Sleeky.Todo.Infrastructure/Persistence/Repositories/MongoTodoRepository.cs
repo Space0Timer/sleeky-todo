@@ -14,6 +14,20 @@ internal sealed class MongoTodoRepository : ITodoRepository
 {
     private const int WriteConflictErrorCode = 112;
 
+    /// <summary>
+    /// Search tokens are derived, so nothing that reads a TODO back needs them.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="TodoDocumentMapper.ToDomain"/> never reads the field —
+    /// <see cref="TodoItem"/> recomputes its tokens from the name and
+    /// description — so every byte fetched here would be discarded. Excluding
+    /// them is safe across a read-modify-write because writes go back through
+    /// <see cref="TodoDocumentMapper.FromDomain"/>, which recomputes the field
+    /// rather than echoing what was read.
+    /// </remarks>
+    private static readonly ProjectionDefinition<TodoDocument> WithoutSearchTokens =
+        Builders<TodoDocument>.Projection.Exclude(document => document.SearchTokens);
+
     private readonly ICurrentUser currentUser;
     private readonly IMongoCollection<TodoDocument> todoItems;
     private readonly MongoTransactionContext transactionContext;
@@ -64,7 +78,9 @@ internal sealed class MongoTodoRepository : ITodoRepository
         IFindFluent<TodoDocument, TodoDocument> find = transactionContext.Session is null
             ? todoItems.Find(filter)
             : todoItems.Find(transactionContext.Session, filter);
-        TodoDocument? document = await find.FirstOrDefaultAsync(cancellationToken);
+        TodoDocument? document = await find
+            .Project<TodoDocument>(WithoutSearchTokens)
+            .FirstOrDefaultAsync(cancellationToken);
 
         return document is null ? null : TodoDocumentMapper.ToDomain(document);
     }
@@ -112,7 +128,9 @@ internal sealed class MongoTodoRepository : ITodoRepository
         IFindFluent<TodoDocument, TodoDocument> find = transactionContext.Session is null
             ? todoItems.Find(filter)
             : todoItems.Find(transactionContext.Session, filter);
-        List<TodoDocument> documents = await find.ToListAsync(cancellationToken);
+        List<TodoDocument> documents = await find
+            .Project<TodoDocument>(WithoutSearchTokens)
+            .ToListAsync(cancellationToken);
 
         return documents.Select(TodoDocumentMapper.ToDomain).ToArray();
     }
@@ -394,9 +412,13 @@ internal sealed class MongoTodoRepository : ITodoRepository
         long expectedVersion = todoItem.Version;
         long nextVersion = checked(expectedVersion + 1);
         TodoDocument replacement = TodoDocumentMapper.FromDomain(todoItem, nextVersion);
+
+        // Without the projection the tokens just written travel straight back,
+        // so a single write would pay for them twice on one round trip.
         FindOneAndReplaceOptions<TodoDocument> options = new FindOneAndReplaceOptions<TodoDocument>
         {
             ReturnDocument = ReturnDocument.After,
+            Projection = WithoutSearchTokens,
         };
         TodoDocument? persistedDocument = transactionContext.Session is null
             ? await todoItems.FindOneAndReplaceAsync(
