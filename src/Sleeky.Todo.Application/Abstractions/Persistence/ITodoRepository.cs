@@ -29,6 +29,17 @@ public interface ITodoRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the identifiers of active, non-archived TODOs that depend on any
+    /// of <paramref name="dependencyIds"/>, ignoring those in
+    /// <paramref name="excludedIds"/>. A batch deletion excludes its own members
+    /// so that deleting a prerequisite together with its dependent is allowed.
+    /// </summary>
+    Task<IReadOnlyCollection<Guid>> GetActiveDependentIdsAsync(
+        IReadOnlyCollection<Guid> dependencyIds,
+        IReadOnlyCollection<Guid> excludedIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Persists the aggregate, expecting the version it was loaded at. Throws
     /// <see cref="ConcurrencyConflictException"/> when the stored version has
     /// moved on.
@@ -43,5 +54,17 @@ public interface ITodoRepository
 
     Task<TodoItem> RestoreAsync(
         TodoItem todoItem,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Persists every aggregate as one batch, replacing each update at the
+    /// version it was loaded at and inserting each new aggregate. Throws
+    /// <see cref="BulkConcurrencyConflictException"/> when any replacement no
+    /// longer matches or any insert collides, leaving the batch unapplied when
+    /// it runs inside a transaction.
+    /// </summary>
+    Task SaveBatchAsync(
+        IReadOnlyCollection<TodoItem> updates,
+        IReadOnlyCollection<TodoItem> inserts,
         CancellationToken cancellationToken = default);
 }

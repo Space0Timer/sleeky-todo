@@ -185,6 +185,96 @@ public sealed class MongoTodoRepositoryTests
     }
 
     [TestMethod]
+    public async Task ActiveDependentIdsIgnoreSelectedArchivedAndDeletedDependents()
+    {
+        TodoItem prerequisite = CreateTodo("prerequisite");
+        TodoItem selectedDependent = CreateTodo("dependent-selected");
+        TodoItem archivedDependent = CreateTodo("dependent-archived");
+        TodoItem deletedDependent = CreateTodo("dependent-deleted");
+        TodoItem activeDependent = CreateTodo("dependent-active");
+        foreach (TodoItem dependent in new[]
+        {
+            selectedDependent,
+            archivedDependent,
+            deletedDependent,
+            activeDependent,
+        })
+        {
+            dependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+            await repository.AddAsync(dependent);
+        }
+
+        await repository.AddAsync(prerequisite);
+        _ = archivedDependent.ChangeStatus(TodoStatus.Archived, Timestamp.AddHours(2));
+        _ = await repository.UpdateAsync(archivedDependent);
+        deletedDependent.SoftDelete(Timestamp.AddHours(2));
+        _ = await repository.SoftDeleteAsync(deletedDependent);
+
+        IReadOnlyCollection<Guid> blocking = await repository.GetActiveDependentIdsAsync(
+            [prerequisite.Id],
+            [prerequisite.Id, selectedDependent.Id]);
+
+        blocking.Should().Equal(activeDependent.Id);
+    }
+
+    [TestMethod]
+    public async Task ActiveDependentIdsExcludeAnotherOwnersTodo()
+    {
+        TodoItem prerequisite = CreateTodo("prerequisite");
+        TodoItem otherOwnersDependent = CreateTodo("dependent-other", OtherOwnerId);
+        otherOwnersDependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+        await repository.AddAsync(prerequisite);
+        await otherOwnerRepository.AddAsync(otherOwnersDependent);
+
+        IReadOnlyCollection<Guid> blocking = await repository.GetActiveDependentIdsAsync(
+            [prerequisite.Id],
+            [prerequisite.Id]);
+
+        blocking.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task SaveBatchAppliesEveryWriteAndRejectsAStaleMember()
+    {
+        TodoItem first = CreateTodo("todo-1");
+        TodoItem second = CreateTodo("todo-2");
+        await repository.AddAsync(first);
+        await repository.AddAsync(second);
+        TodoItem firstWriter = await GetRequiredTodoAsync(first.Id);
+        TodoItem secondWriter = await GetRequiredTodoAsync(second.Id);
+        _ = firstWriter.ChangeStatus(TodoStatus.Completed, Timestamp.AddHours(1));
+        _ = secondWriter.ChangeStatus(TodoStatus.Completed, Timestamp.AddHours(1));
+
+        await repository.SaveBatchAsync([firstWriter, secondWriter], []);
+
+        (await GetRequiredTodoAsync(first.Id)).Version.Should().Be(2);
+        (await GetRequiredTodoAsync(second.Id)).Version.Should().Be(2);
+
+        Func<Task> staleBatch = async () => await repository.SaveBatchAsync(
+            [firstWriter],
+            []);
+
+        BulkConcurrencyConflictException exception = (await staleBatch.Should()
+            .ThrowAsync<BulkConcurrencyConflictException>())
+            .Which;
+        exception.ResourceIds.Should().Equal(first.Id);
+    }
+
+    [TestMethod]
+    public async Task SaveBatchRejectsAnotherOwnersTodo()
+    {
+        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
+        await otherOwnerRepository.AddAsync(otherOwnersTodo);
+
+        Func<Task> act = async () => await repository.SaveBatchAsync(
+            [otherOwnersTodo],
+            []);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("A TODO can only be persisted by its owner.");
+    }
+
+    [TestMethod]
     public async Task DeletedTodoIsOnlyReturnedWhenExplicitlyIncluded()
     {
         TodoItem todoItem = CreateTodo();

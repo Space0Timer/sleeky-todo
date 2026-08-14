@@ -166,6 +166,7 @@ public sealed class TodoItem
         DateTimeOffset updatedAt)
     {
         EnsureNotDeleted();
+        EnsureNotArchived();
 
         SetName(name);
         Description = NormalizeDescription(description);
@@ -177,6 +178,7 @@ public sealed class TodoItem
     public void AddDependency(Guid dependencyId, DateTimeOffset updatedAt)
     {
         EnsureNotDeleted();
+        EnsureNotArchived();
 
         Guid validatedDependencyId = ValidateId(dependencyId);
         if (Id == validatedDependencyId)
@@ -196,6 +198,7 @@ public sealed class TodoItem
     public void RemoveDependency(Guid dependencyId, DateTimeOffset updatedAt)
     {
         EnsureNotDeleted();
+        EnsureNotArchived();
 
         Guid validatedDependencyId = ValidateId(dependencyId);
         if (!dependencyIds.Remove(validatedDependencyId))
@@ -218,6 +221,12 @@ public sealed class TodoItem
         if (Status == status)
         {
             return false;
+        }
+
+        if (Status == TodoStatus.Archived && status == TodoStatus.Completed)
+        {
+            throw new DomainException(
+                "An archived TODO must be unarchived before it can be completed.");
         }
 
         TodoStatus previousStatus = Status;
@@ -392,6 +401,14 @@ public sealed class TodoItem
         if (DeletedAt is not null)
         {
             throw new DomainException("A deleted TODO cannot be changed.");
+        }
+    }
+
+    private void EnsureNotArchived()
+    {
+        if (Status == TodoStatus.Archived)
+        {
+            throw new DomainException("An archived TODO cannot be changed.");
         }
     }
 

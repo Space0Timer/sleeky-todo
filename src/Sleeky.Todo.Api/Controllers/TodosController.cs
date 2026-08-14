@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 using Sleeky.Todo.Api.Contracts.Todos;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Commands.AddDependency;
+using Sleeky.Todo.Application.Todos.Commands.Bulk;
+using Sleeky.Todo.Application.Todos.Commands.BulkChangeTodoStatus;
+using Sleeky.Todo.Application.Todos.Commands.BulkDeleteTodos;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
@@ -75,7 +78,7 @@ public sealed class TodosController : ControllerBase
         return CreatedAtAction(nameof(Get), new { id = todo.Id }, todo);
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -87,7 +90,7 @@ public sealed class TodosController : ControllerBase
         return Ok(todo);
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:guid}")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -109,7 +112,7 @@ public sealed class TodosController : ControllerBase
         return Ok(todo);
     }
 
-    [HttpPost("{id}/dependencies")]
+    [HttpPost("{id:guid}/dependencies")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -126,7 +129,7 @@ public sealed class TodosController : ControllerBase
         return Ok(todo);
     }
 
-    [HttpDelete("{id}/dependencies/{dependencyId}")]
+    [HttpDelete("{id:guid}/dependencies/{dependencyId:guid}")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -144,7 +147,7 @@ public sealed class TodosController : ControllerBase
         return Ok(todo);
     }
 
-    [HttpPut("{id}/status")]
+    [HttpPut("{id:guid}/status")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -161,7 +164,7 @@ public sealed class TodosController : ControllerBase
         return Ok(todo);
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete("{id:guid}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -178,7 +181,7 @@ public sealed class TodosController : ControllerBase
         return NoContent();
     }
 
-    [HttpPost("{id}/restore")]
+    [HttpPost("{id:guid}/restore")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -193,5 +196,45 @@ public sealed class TodosController : ControllerBase
             cancellationToken);
 
         return Ok(todo);
+    }
+
+    [HttpPut("status")]
+    [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BulkTodoResult>> ChangeStatuses(
+        BulkChangeTodoStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        BulkTodoResult result = await sender.Send(
+            new BulkChangeTodoStatusCommand(request.Status, ToSelection(request.Items)),
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    [HttpDelete]
+    [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BulkTodoResult>> DeleteMany(
+        BulkDeleteTodosRequest request,
+        CancellationToken cancellationToken)
+    {
+        BulkTodoResult result = await sender.Send(
+            new BulkDeleteTodosCommand(ToSelection(request.Items)),
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    private static IReadOnlyCollection<BulkTodoItemRequest> ToSelection(
+        IReadOnlyCollection<BulkTodoSelectionItem> items)
+    {
+        return items
+            .Select(item => new BulkTodoItemRequest(item.Id, item.Version))
+            .ToArray();
     }
 }

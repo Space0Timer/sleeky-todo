@@ -14,6 +14,8 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 public sealed class MongoTodoRepository : ITodoRepository
 {
+    private const int WriteConflictErrorCode = 112;
+
     private readonly ICurrentUser currentUser;
     private readonly IMongoCollection<TodoDocument> todoItems;
     private readonly MongoTransactionContext transactionContext;
@@ -41,12 +43,7 @@ public sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(todoItem);
-
-        if (todoItem.OwnerId != OwnerId)
-        {
-            throw new InvalidOperationException(
-                "A TODO can only be persisted by its owner.");
-        }
+        EnsureOwned(todoItem);
 
         TodoDocument document = TodoDocumentMapper.FromDomain(todoItem);
         if (transactionContext.Session is null)
@@ -151,6 +148,46 @@ public sealed class MongoTodoRepository : ITodoRepository
         return count > 0;
     }
 
+    public async Task<IReadOnlyCollection<Guid>> GetActiveDependentIdsAsync(
+        IReadOnlyCollection<Guid> dependencyIds,
+        IReadOnlyCollection<Guid> excludedIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dependencyIds);
+        ArgumentNullException.ThrowIfNull(excludedIds);
+
+        if (dependencyIds.Count == 0)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.AnyIn(
+                document => document.DependencyIds,
+                dependencyIds)
+            & Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null)
+            & Builders<TodoDocument>.Filter.Ne(
+                document => document.Status,
+                TodoStatus.Archived)
+            & Builders<TodoDocument>.Filter.Nin(document => document.Id, excludedIds);
+        FindOptions<TodoDocument, TodoDocument> options =
+            new FindOptions<TodoDocument, TodoDocument>
+            {
+                Projection = Builders<TodoDocument>.Projection.Include(
+                    document => document.Id),
+            };
+        using IAsyncCursor<TodoDocument> cursor = transactionContext.Session is null
+            ? await todoItems.FindAsync(filter, options, cancellationToken)
+            : await todoItems.FindAsync(
+                transactionContext.Session,
+                filter,
+                options,
+                cancellationToken);
+        List<TodoDocument> documents = await cursor.ToListAsync(cancellationToken);
+
+        return documents.Select(document => document.Id).ToArray();
+    }
+
     public Task<TodoItem> UpdateAsync(
         TodoItem todoItem,
         CancellationToken cancellationToken = default)
@@ -203,6 +240,100 @@ public sealed class MongoTodoRepository : ITodoRepository
             & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);
 
         return ReplaceAsync(todoItem, filter, cancellationToken);
+    }
+
+    /// <summary>
+    /// Applies every write as one ordered bulk operation. Each replacement keeps
+    /// the versioned filter a single write would use, and the matched count is
+    /// verified afterwards, so a batch either applies in full or — when it runs
+    /// inside a transaction — not at all.
+    /// </summary>
+    public async Task SaveBatchAsync(
+        IReadOnlyCollection<TodoItem> updates,
+        IReadOnlyCollection<TodoItem> inserts,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(updates);
+        ArgumentNullException.ThrowIfNull(inserts);
+
+        if (updates.Count == 0 && inserts.Count == 0)
+        {
+            return;
+        }
+
+        List<WriteModel<TodoDocument>> writes =
+            new List<WriteModel<TodoDocument>>(updates.Count + inserts.Count);
+        List<Guid> writtenIds = new List<Guid>(updates.Count + inserts.Count);
+
+        foreach (TodoItem todoItem in updates)
+        {
+            EnsureOwned(todoItem);
+            writes.Add(new ReplaceOneModel<TodoDocument>(
+                BuildMutationFilter(todoItem.Id, todoItem.Version, includeDeleted: false),
+                TodoDocumentMapper.FromDomain(
+                    todoItem,
+                    checked(todoItem.Version + 1))));
+            writtenIds.Add(todoItem.Id);
+        }
+
+        foreach (TodoItem todoItem in inserts)
+        {
+            EnsureOwned(todoItem);
+            writes.Add(new InsertOneModel<TodoDocument>(
+                TodoDocumentMapper.FromDomain(todoItem)));
+            writtenIds.Add(todoItem.Id);
+        }
+
+        BulkWriteOptions options = new BulkWriteOptions { IsOrdered = true };
+        BulkWriteResult<TodoDocument> result;
+        try
+        {
+            result = transactionContext.Session is null
+                ? await todoItems.BulkWriteAsync(writes, options, cancellationToken)
+                : await todoItems.BulkWriteAsync(
+                    transactionContext.Session,
+                    writes,
+                    options,
+                    cancellationToken);
+        }
+        catch (MongoBulkWriteException exception)
+            when (GetConflictingIds(exception, writtenIds) is { Count: > 0 } conflictingIds)
+        {
+            // A bulk write reports its own errors rather than raising the single
+            // write exception the transaction executor classifies, so duplicate
+            // keys are translated here where the submitted models are known.
+            throw new BulkConcurrencyConflictException("TODO", conflictingIds, exception);
+        }
+
+        if (result.MatchedCount != updates.Count || result.InsertedCount != inserts.Count)
+        {
+            throw new BulkConcurrencyConflictException(
+                "TODO",
+                updates.Select(todoItem => todoItem.Id).ToArray());
+        }
+    }
+
+    private static IReadOnlyCollection<Guid> GetConflictingIds(
+        MongoBulkWriteException exception,
+        IReadOnlyList<Guid> writtenIds)
+    {
+        return exception.WriteErrors
+            .Where(error => error.Category == ServerErrorCategory.DuplicateKey
+                || error.Code == WriteConflictErrorCode)
+            .Select(error => error.Index)
+            .Where(index => index >= 0 && index < writtenIds.Count)
+            .Select(index => writtenIds[index])
+            .Distinct()
+            .ToArray();
+    }
+
+    private void EnsureOwned(TodoItem todoItem)
+    {
+        if (todoItem.OwnerId != OwnerId)
+        {
+            throw new InvalidOperationException(
+                "A TODO can only be persisted by its owner.");
+        }
     }
 
     private FilterDefinition<TodoDocument> BuildOwnerFilter()
