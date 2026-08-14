@@ -179,6 +179,60 @@ Deletion is never retried automatically. It is the one batch whose intent can in
 
 A retry runs only when every selected identifier is still resolvable. A shrunken selection would act on a subset the user never chose, so any absence goes back to the user instead.
 
+## Two conflict policies, governed by invariants rather than lockstep
+
+The assistant carries its own copy of the rule above, in `BulkConflictPolicy.cs`, alongside the browser's in `useBulkActions.ts`. The copy is deliberate. The policy cannot move into the handlers, because those are shared with the HTTP path: a retry inside one would make the browser's writes silently retry too, which is precisely the behaviour the single-item routes refuse.
+
+Each copy independently holds three invariants: a retry applies to status changes only, never to deletion or restoration; there is at most one retry; and a retry proceeds only when every selected identifier still resolves. These derive from the domain — intent inversion on delete, the all-or-nothing batch — not from the other copy, so neither has to watch the other to stay correct. No divergence between them can corrupt data, because the server arbitrates every interleaving through the version check, and no actor observes both policies on one operation.
+
+What looked like duplication mostly is not. Classification is single-sourced already: the browser reads the server's problem title, and the assistant catches the server's own exception types. Representation is necessarily different — the browser highlights drifted cards and diffs a live selection inside a dialog, and the server cannot see a rendered screen.
+
+The only coherent route to one policy is a product decision to make the assistant the sole bulk write path. Consolidating them as a refactor is not that decision, and would trade a stated invariant for a shared abstraction that has to serve two actors with different repair surfaces.
+
+## The assistant acts as the user, in the user's own request
+
+Assistant turns dispatch MediatR commands inside the caller's authenticated HTTP request, synchronously and in process. `ICurrentUser` resolves from that HTTP context, so the assistant acts *as* the user by construction: there is no impersonation, no machine credential, and no second authorization surface to keep aligned with the first.
+
+Tools send commands and queries only, never repositories. Every call therefore inherits `ValidationBehavior`, `DomainRuleExceptionBehavior`, `RequestLoggingBehavior`, and the ownership scoping in the persistence boundary — every guardrail the HTTP API has. There is no path by which the assistant can do something a browser could not.
+
+Assistant-issued commands open a logging scope carrying `RequestOrigin`, so a log answers "did I do that or did the assistant?" without the request pipeline needing to know the assistant exists.
+
+The threat model this leaves is small and stated: a TODO's name and description are the user's own text, and the system prompt says to read them as data even when they are phrased as instructions. The blast radius is already bounded by owner scoping and by the confirmation gate, so prompt injection through a TODO can at worst propose something to the user's own list that the user is then asked to confirm.
+
+## Version binding: reads return versions, writes take identifiers
+
+Assistant read tools return versions; assistant write tools accept identifiers only, and the tool layer binds each one to the version the model last read it at. This mirrors the browser exactly — "version sent" equals "version the actor last saw" — and it is the reason writes are safe without trusting the model.
+
+The two rejected alternatives are worth naming. Letting the model supply versions would put an inventable value on the concurrency check. Reading a version immediately before writing would be a blind overwrite wearing an optimistic check, since nothing would have observed the state in between.
+
+The ledger is seeded from the echoed transcript at the start of each turn, by scanning it for objects carrying both an identifier and a version. Without that, a conversation that read its TODOs three turns ago could never write to them: the server keeps no history, and the model will not re-read something it can still see in its own context.
+
+Deletion binds differently, and for the same reason the browser's dialog does. The proposal reads the selection's current state, displays it, and the confirming turn executes with exactly those versions. Replay safety falls out of that: a repeated confirmation carries a version the store has already moved past.
+
+## Provider neutrality and bring-your-own-key
+
+The loop is `Microsoft.Extensions.AI`'s `IChatClient`, with tools defined once as `AIFunction`s. Two adapters ship: Anthropic through its own SDK's adapter, and an OpenAI-compatible client whose base URL is configurable, which reaches OpenRouter, Ollama, vLLM, LM Studio, and most self-hosted setups without a provider type for each.
+
+Provider flexibility is safe here because correctness never depended on the model. It only *proposes* tool calls; the version binding and the domain guards decide. A weaker model mis-calls tools more often, and a malformed or over-cap call fails validation and returns as an honest tool error the model can react to. What degrades is helpfulness, never correctness.
+
+Keys are the user's own, which dissolves the application's cost concern. They are encrypted with ASP.NET Data Protection before they reach persistence and decrypted only where a provider client is built, so the repository stores a string it cannot read and nothing on that path can log a usable secret. The API surface is write-only: a key can be replaced but never retrieved, so a stolen session cannot be used to walk away with the credential. An application-level key remains as an optional fallback, and a connection always resolves wholly from one source — falling back key-only would pair the application's credential with the user's chosen model, which is wrong whenever the two name different providers.
+
+Prompt-order hygiene is provider-neutral rather than Anthropic-specific: the tool set is identical on every request, and dynamic content such as the date lives in the conversation's first user message rather than the system prompt. A per-request tool set or a timestamped system prompt moves the cacheable prefix and defeats caching wherever a provider offers it. Anthropic's `max_tokens` is sized for thinking plus response text, because thinking is on by default on current models and shares that cap; other providers keep their own defaults.
+
+## Streaming a turn over POST, with the transcript held by the client
+
+A turn is watched while it happens, so it streams as server-sent events. The client parses them off the `fetch` body rather than using `EventSource`, because antiforgery is a global requirement here and `EventSource` can only issue a GET. Events are coarse, and there are no reconnection semantics: a dropped stream loses nothing, because a tool call that committed stays committed.
+
+Conversation state is held by the client and echoed each turn, including tool-call and result content. The server therefore stores no history and needs no schema for one. Tampering gains nothing — the assistant runs with exactly the caller's rights and dispatches commands the caller can already send over HTTP — so a mangled transcript starts a fresh conversation rather than failing the turn. A server-side store is a history *feature* for later, not a correctness need.
+
+Two events beyond the coarse set exist for mechanical reasons. `heartbeat` keeps an idle stream, and any proxy in front of it, from timing out while the model thinks. `turn_completed` carries the transcript forward; without it a stateless server would leave the next turn with nothing to continue from.
+
+## Refusing an over-cap batch rather than splitting it
+
+The assistant declares the hundred-item batch cap in its tool schemas, sourced from `BulkTodoLimits`, so a model never composes a batch that was doomed before it was sent. Asked for more, it narrows and asks which ones the user means.
+
+Chunking was rejected. Splitting a batch abandons the all-or-nothing guarantee the bulk endpoints exist to provide, and leaves the assistant unable to describe honestly what actually happened — which is the one thing it must be able to do.
+
 ## API failure contract
 
 The API uses one global exception handler rather than controller-level

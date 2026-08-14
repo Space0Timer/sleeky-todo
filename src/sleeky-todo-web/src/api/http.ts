@@ -42,7 +42,12 @@ export class ApiError extends Error {
   }
 }
 
-function buildHeaders(init?: RequestInit): HeadersInit {
+/**
+ * Exported because a streamed response cannot go through `send`, which reads
+ * the whole body as JSON. The antiforgery rule is the same either way, so the
+ * header is built here rather than assembled a second time at that call site.
+ */
+export function buildHeaders(init?: RequestInit): HeadersInit {
   const method = (init?.method ?? 'GET').toUpperCase()
   const needsToken = mutatingMethods.has(method) && antiforgeryToken !== null
 

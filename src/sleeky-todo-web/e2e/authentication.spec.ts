@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { expectSignedIn, signIn, signOut, testUsers } from './auth.ts'
+import { resetOwnedData } from './database.ts'
 
 async function createTodo(page: Page, name: string): Promise<void> {
   const form = page.getByRole('group', { name: 'Create a TODO' })
@@ -52,6 +53,7 @@ test('signing out returns to the login page and protects the list', async ({
 
 test('a mutation carries an antiforgery header', async ({ page }) => {
   await signIn(page, 'alice')
+  await resetOwnedData(page)
 
   const createRequest = page.waitForRequest(
     request =>
@@ -70,6 +72,7 @@ test('a mutation still succeeds after signing out and back in', async ({
   await signIn(page, 'alice')
   await signOut(page)
   await signIn(page, 'alice')
+  await resetOwnedData(page)
 
   // Antiforgery tokens are bound to the authenticated identity, so a token
   // kept from before the sign-out would be rejected. Creating a TODO only
@@ -104,9 +107,11 @@ test('two users see separate TODO lists', async ({ browser }) => {
     const bobPage = await bobContext.newPage()
 
     await signIn(alicePage, 'alice')
+    await resetOwnedData(alicePage)
     await createTodo(alicePage, 'Alice private TODO')
 
     await signIn(bobPage, 'bob')
+    await resetOwnedData(bobPage)
     await expect(bobPage.getByTestId('current-user')).toHaveText(
       testUsers.bob.displayName,
     )

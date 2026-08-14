@@ -1,0 +1,129 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+// Matches the create panel rather than `standalone-panel`, which is the
+// centred card the login page stands on its own with. This sits inside the app
+// shell alongside the list.
+.panel {
+  @include m.surface;
+
+  display: grid;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  margin-top: 1.5rem;
+  gap: 0.8rem;
+}
+
+.header {
+  @include m.action-row;
+
+  justify-content: space-between;
+
+  h2 {
+    @include m.typography(legend);
+
+    margin: 0;
+    color: t.$color-text-heading;
+  }
+}
+
+.header-actions {
+  @include m.action-row;
+}
+
+.notice {
+  @include m.typography(detail);
+
+  padding: 0.6rem 0.75rem;
+  margin: 0;
+  border-radius: t.$radius-md;
+  background: t.$color-surface-subtle;
+  color: t.$color-text-strong;
+}
+
+.transcript {
+  display: grid;
+  max-height: 22rem;
+  overflow-y: auto;
+  padding: 0;
+  margin: 0;
+  gap: 0.5rem;
+  list-style: none;
+}
+
+.user,
+.assistant,
+.tool,
+.working {
+  @include m.typography(body);
+
+  padding: 0.55rem 0.75rem;
+  border-radius: t.$radius-md;
+}
+
+.user {
+  background: t.$color-surface-counter;
+  color: t.$color-text-strong;
+}
+
+.assistant {
+  background: t.$color-surface-subtle;
+  color: t.$color-text;
+}
+
+.tool {
+  @include m.typography(detail);
+
+  background: t.$color-info-surface;
+  color: t.$color-info-text;
+}
+
+.working {
+  @include m.typography(detail);
+
+  color: t.$color-text-muted;
+}
+
+// A message the assistant kept no record of. Marked rather than removed, so
+// the user can see what they wrote and send it again.
+.undelivered {
+  @include m.tone(t.$color-warning-surface, t.$color-warning-text);
+  @include m.typography(meta);
+
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  margin-left: 0.5rem;
+  border-radius: t.$radius-sm;
+}
+
+.error {
+  @include m.tone(t.$color-danger-surface, t.$color-danger-text);
+  @include m.typography(detail);
+
+  padding: 0.55rem 0.75rem;
+  margin: 0;
+  border-radius: t.$radius-md;
+}
+
+.composer {
+  display: grid;
+  align-items: end;
+  grid-template-columns: 1fr auto;
+  gap: 0.6rem;
+}
+
+.composer-field {
+  display: grid;
+  gap: 0.4rem;
+
+  textarea {
+    @include m.field(0.5rem 0.65rem);
+
+    resize: vertical;
+  }
+}
+
+.composer-label {
+  @include m.typography(label-compact);
+
+  color: t.$color-text-label;
+}

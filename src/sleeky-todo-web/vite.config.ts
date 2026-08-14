@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 /**
  * `changeOrigin` stays false and `xfwd` is enabled so the API builds its OpenID
@@ -26,6 +26,14 @@ export default defineConfig({
        */
       localsConvention: 'camelCaseOnly',
     },
+  },
+  // Unit tests cover the pieces Playwright cannot reach: the event-stream
+  // parser's buffer handling, which only misbehaves at chunk boundaries a
+  // browser test has no way to control. Node rather than a DOM, because
+  // ReadableStream and TextDecoder are globals there.
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
   server: {
     proxy: {

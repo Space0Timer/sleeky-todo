@@ -180,6 +180,11 @@ jobs:
       - name: Lint styles
         run: corepack yarn lint:styles
 
+      # Covers what the browser suite cannot reach: the event-stream parser's
+      # behaviour at chunk boundaries a browser test has no way to control.
+      - name: Unit test
+        run: corepack yarn test:unit
+
       # Also the type check: the build script runs tsc before Vite.
       - name: Build
         run: corepack yarn build

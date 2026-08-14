@@ -5,12 +5,14 @@ The application uses a layered monolith:
 ```text
 React
   -> ASP.NET Core API
-  -> Application commands and queries
+  -> Application commands and queries        <- Assistant tools also enter here
   -> Domain and infrastructure
   -> MongoDB
 ```
 
 The Application layer owns persistence and time abstractions. Infrastructure supplies their runtime implementations, keeping command handlers testable and independent of MongoDB and the system clock.
+
+The Assistant is a fifth project sitting beside the API rather than beneath it. It sends the same commands and queries a controller does, so it enters the stack at the same point and inherits everything below. Every provider SDK dependency stops there, which is what keeps Application and API free of them.
 
 ## React client and persisted workflow
 
@@ -32,6 +34,11 @@ Each mutation of an existing TODO uses the version from the latest loaded
 representation and then refreshes the persisted list. A concurrency response is
 never overwritten silently: the UI displays the conflict and Reload Latest
 Version replaces stale state from the server.
+
+The assistant panel sits beside the list and refreshes it through the same
+callback the bulk toolbar uses, because its writes are the same writes. Turn
+events are read off the `fetch` body by a small parser beside the API module;
+the transcript it holds is opaque to the client, which only carries it back.
 
 Dependency selection is deliberately bounded. The client requests one active
 page of at most 100 TODOs sorted by normalized name and searches only within
@@ -127,6 +134,11 @@ maintenance operation that spans owners.
 A TODO belonging to another user is reported as `404` rather than `403`, so the
 response does not disclose that the identifier exists.
 
+The assistant is a second actor on this boundary and needed no rule of its own.
+It dispatches the same commands from inside the caller's request, so the owner
+predicate is applied by the same filters; an integration test drives its tool
+layer against another owner's TODO and gets the same nothing a controller would.
+
 Sort and lookup indexes gain `ownerId` as their leading key, since every query
 now filters on it before any scope, sort, or dependency term. The retention
 `purgeAt` index stays owner-independent to match the purge path. The index
@@ -152,6 +164,13 @@ Application handler
 `TodoDocument`, its serializer, and its mapper are internal Infrastructure details. They are not exposed to Application or test projects. Repository integration tests exercise the public `ITodoRepository` contract and inspect raw BSON only when the persisted representation matters.
 
 A separate `MongoDbContext` wrapper is intentionally not used. With one database and one collection it only duplicated `IMongoDatabase.GetCollection`; the repository owns collection access directly.
+
+Assistant provider settings are a second collection behind the same boundary:
+`IAssistantSettingsRepository` in Application, `MongoAssistantSettingsRepository`
+in Infrastructure, keyed by the owning user so a user has one record and no
+separate document identity. It stores the API key as ciphertext and cannot
+decrypt it; encryption belongs to the assistant, which is the only layer that
+needs the plaintext.
 
 List queries use a separate `ITodoListReader` implemented by
 `MongoTodoListReader`. Its aggregation applies scope and field filters, joins
@@ -228,6 +247,9 @@ blocked flag or count.
 
 Every mutable TODO carries a numeric version. Update, soft-delete, restore,
 dependency, and status requests include the version last read by the client.
+The assistant holds the same rule against a different actor: its tools accept
+identifiers and bind the version the model last read, so what reaches this check
+is still the version whoever acted had actually seen.
 Backend-owned TODO, dependency, recurrence-series, and cursor tie-breaker
 identifiers use `Guid` throughout Domain, Application, API, and Infrastructure.
 MongoDB stores them as standard BSON UUIDs (binary subtype 4), including TODO
@@ -331,6 +353,52 @@ before the transaction commits. A duplicate key arrives as a bulk write error
 rather than the single write error the transaction executor recognises, so the
 repository maps it back to the offending TODO through the write error index.
 
+The browser is no longer the only caller of these batches. The assistant sends
+the same commands and carries its own retry policy; see the assistant section
+below, and "Two conflict policies" in the decision log for why the two are not
+consolidated.
+
+## Assistant
+
+The assistant turns natural language into the same bulk writes the toolbar
+issues. It runs in process and synchronously, inside the caller's own
+authenticated request, so `ICurrentUser` resolves from that HTTP context and the
+assistant acts as the user by construction rather than by an impersonation rule.
+
+```text
+POST /api/assistant/turns  (server-sent events)
+  -> AssistantTurnRunner        resolves a provider, replays the transcript
+  -> IChatClient                Anthropic or an OpenAI-compatible endpoint
+  -> TodoTools                  six AIFunctions over commands and queries
+  -> MediatR                    validation, domain rules, logging, ownership
+```
+
+Tools send commands and queries only, never repositories, so every call inherits
+the guardrails the HTTP path has. Nothing in the tool layer reaches persistence
+directly, which is what makes "the assistant cannot do what a browser could not"
+a structural property rather than a review convention.
+
+Reads return versions and writes take identifiers. A per-turn ledger binds each
+write to the version the model last read, keeping "version sent" equal to
+"version the actor last saw" — the rule the browser already holds. The ledger is
+seeded by scanning the echoed transcript, because the server keeps no
+conversation history and a model will not re-read what is still in its context.
+
+Conflict handling sits above the dispatch in `BulkConflictPolicy`, not in the
+handlers, which are shared with the HTTP path: a retry inside one would make the
+browser's writes silently retry too.
+
+Deletion proposes and stops. The tool publishes the selection's state, ends the
+turn, and the confirming turn executes with exactly the versions it displayed,
+so a replayed confirmation fails on the moved version. The gate is implemented
+here rather than through a framework's approval feature, so it behaves
+identically on every provider.
+
+Provider settings are per user. The API key is encrypted through ASP.NET Data
+Protection before it reaches persistence and decrypted only where a provider
+client is built, so the repository stores a string it cannot read. No route
+returns a key: it can be replaced but never retrieved.
+
 ## Soft delete and restore
 
 Soft delete is a domain transition rather than a physical MongoDB delete:
@@ -383,6 +451,14 @@ The global API exception handler produces RFC Problem Details. It maps
 `errors` dictionary. All problem responses include the request path and a
 `traceId`.
 
+The assistant turn endpoint is the one route that does not end in that contract.
+It streams server-sent events, so a failure after the first event cannot become
+a Problem Details body — the status line is already sent. The turn instead ends
+by faulting the stream, and the client reports a turn that stopped. Failures
+before the stream opens, and every other assistant route, answer as above. It is
+a POST with the stream read off the response body rather than an `EventSource`,
+because antiforgery is a global requirement here and `EventSource` can only GET.
+
 ## Logging boundary
 
 Serilog is configured only by the API host. API, Application, and Infrastructure
@@ -409,8 +485,14 @@ Authenticated request events are enriched with the internal user ID so audit
 events can be attributed without a second lookup. The authentication slice adds
 events for successful login, failed login, logout, and first-time user creation.
 
+Commands the assistant issues open a logging scope carrying `RequestOrigin`, so
+an audit event answers whether a person or the assistant made a change without
+the request pipeline needing to know the assistant exists.
+
 Logging excludes request bodies, TODO descriptions, cursor query values, and
-MongoDB connection strings. It also excludes provider tokens, cookie values,
+MongoDB connection strings. It also excludes a user's provider API key, which is
+handled only where a provider client is built and is stripped from any error a
+connection probe reports. It excludes provider tokens, cookie values,
 client secrets, antiforgery tokens, and the raw OIDC subject, because the
 internal user ID already identifies the actor without carrying a provider
 credential into the log stream. Structured events use stable event IDs and named
@@ -424,6 +506,14 @@ Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
 repository and health check, and initializes MongoDB indexes through a hosted
 service. This keeps `Program.cs` limited to composition and application startup.
+
+`AddAssistant` binds provider options without validating them on start: an
+application-level API key is optional, and a deployment where every user brings
+their own is a valid one. Data Protection therefore carries a second
+responsibility beyond session cookies — it encrypts stored provider keys — so a
+deployment without a durable key ring loses saved keys on restart rather than
+only signing users out. The keys stay in the database and are reported as
+unusable until replaced.
 
 Constructors fail fast with `ArgumentNullException` for every required injected
 dependency. This makes direct construction and registration mistakes fail at

@@ -1,0 +1,66 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  padding: 1.5rem;
+  background: t.$color-overlay;
+  place-items: center;
+}
+
+.dialog {
+  @include m.surface;
+
+  display: grid;
+  width: min(32rem, 100%);
+  padding: 1.5rem;
+  gap: 0.9rem;
+
+  h2 {
+    @include m.typography(heading);
+
+    margin: 0;
+    color: t.$color-text;
+  }
+}
+
+.items {
+  @include m.typography(body);
+
+  display: grid;
+  padding: 0.75rem 0.9rem;
+  margin: 0;
+  border-radius: t.$radius-md;
+  background: t.$color-surface-subtle;
+  color: t.$color-text-strong;
+  gap: 0.35rem;
+  list-style: none;
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+}
+
+.state {
+  @include m.typography(meta);
+
+  color: t.$color-text-muted;
+}
+
+.note {
+  @include m.typography(detail);
+
+  margin: 0;
+  color: t.$color-text-muted;
+}
+
+.dialog-actions {
+  @include m.action-row;
+
+  justify-content: flex-end;
+}

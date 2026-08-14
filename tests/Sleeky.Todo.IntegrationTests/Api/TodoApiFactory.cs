@@ -19,15 +19,24 @@ internal sealed class TodoApiFactory : WebApplicationFactory<Program>
     private readonly string connectionString;
     private readonly string databaseName;
     private readonly string environmentName;
+    private readonly Action<IServiceCollection>? configureServices;
 
+    /// <summary>
+    /// <paramref name="configureServices"/> runs after the host's own
+    /// registrations, so a suite can replace a service the production graph
+    /// resolves — the assistant's provider client, for instance, which cannot
+    /// be reached in a test.
+    /// </summary>
     public TodoApiFactory(
         string connectionString,
         string databaseName,
-        string environmentName = TestingEnvironment)
+        string environmentName = TestingEnvironment,
+        Action<IServiceCollection>? configureServices = null)
     {
         this.connectionString = connectionString;
         this.databaseName = databaseName;
         this.environmentName = environmentName;
+        this.configureServices = configureServices;
     }
 
     /// <summary>
@@ -79,6 +88,8 @@ internal sealed class TodoApiFactory : WebApplicationFactory<Program>
                 .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
                     TestAuthenticationHandler.SchemeName,
                     _ => { });
+
+            configureServices?.Invoke(services);
         });
     }
 }

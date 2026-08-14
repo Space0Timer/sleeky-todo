@@ -187,6 +187,10 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
   }, [describeRepair, hydrate, send])
 
   /**
+   * Mirrored by the assistant's own policy in `BulkConflictPolicy.cs`; see
+   * "Retrying a conflicted batch without asking" in `docs/decision-log.md` for
+   * why both copies exist and which invariants each holds independently.
+   *
    * A silent retry is confined to status changes. They are idempotent, an
    * already-satisfied item is a no-op that echoes its version unchanged, and
    * the domain guards reject the transitions that would be wrong, so a retry

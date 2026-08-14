@@ -2,6 +2,7 @@ using Serilog;
 
 using Sleeky.Todo.Api.DependencyInjection;
 using Sleeky.Todo.Application.DependencyInjection;
+using Sleeky.Todo.Assistant.DependencyInjection;
 using Sleeky.Todo.Infrastructure.DependencyInjection;
 
 namespace Sleeky.Todo.Api;
@@ -36,6 +37,7 @@ public partial class Program
 
             builder.Services.AddApplication();
             builder.Services.AddInfrastructure(builder.Configuration);
+            builder.Services.AddAssistant(builder.Configuration);
             builder.Services.AddApi(builder.Configuration, builder.Environment);
 
             WebApplication app = builder.Build();

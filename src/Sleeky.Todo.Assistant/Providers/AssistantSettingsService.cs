@@ -1,0 +1,226 @@
+using Microsoft.Extensions.Options;
+
+using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Application.Abstractions.Persistence;
+
+namespace Sleeky.Todo.Assistant.Providers;
+
+/// <summary>
+/// Resolves whose provider, whose model, and whose key a turn runs on.
+/// </summary>
+/// <remarks>
+/// A connection comes wholly from one source. Falling back key-only would pair
+/// the application's credential with the user's chosen model, which is wrong
+/// whenever the two name different providers, so a user record that cannot
+/// produce a usable key is set aside entirely rather than patched.
+/// </remarks>
+public sealed class AssistantSettingsService : IAssistantSettingsService
+{
+    private readonly IAssistantSettingsRepository repository;
+
+    private readonly AssistantKeyProtector protector;
+
+    private readonly ICurrentUser currentUser;
+
+    private readonly AssistantOptions options;
+
+    public AssistantSettingsService(
+        IAssistantSettingsRepository repository,
+        AssistantKeyProtector protector,
+        ICurrentUser currentUser,
+        IOptions<AssistantOptions> options)
+    {
+        ArgumentNullException.ThrowIfNull(repository);
+        ArgumentNullException.ThrowIfNull(protector);
+        ArgumentNullException.ThrowIfNull(currentUser);
+        ArgumentNullException.ThrowIfNull(options);
+
+        this.repository = repository;
+        this.protector = protector;
+        this.currentUser = currentUser;
+        this.options = options.Value;
+    }
+
+    public async Task<AssistantSettingsView> DescribeAsync(
+        CancellationToken cancellationToken = default)
+    {
+        AssistantSettingsRecord? stored = await this.repository.GetAsync(
+            this.currentUser.UserId,
+            cancellationToken);
+        AssistantConnection? resolved = this.Resolve(stored);
+
+        if (stored is not null)
+        {
+            // The reported provider and model stay the user's own, because this
+            // is what their settings form edits. IsUsable therefore describes
+            // *that* configuration rather than whether any connection resolved:
+            // a stored record the resolver set aside is unusable even though
+            // the application fallback will carry the next turn, and Source
+            // says which of the two is actually running.
+            return new AssistantSettingsView(
+                stored.Provider,
+                stored.BaseUrl,
+                stored.Model,
+                HasKey: stored.ProtectedApiKey is not null,
+                IsUsable: resolved?.Source == AssistantConnectionSource.User,
+                Source: (resolved?.Source ?? AssistantConnectionSource.User).ToString());
+        }
+
+        return new AssistantSettingsView(
+            this.options.Provider.ToString(),
+            this.options.BaseUrl,
+            this.options.Model,
+            HasKey: false,
+            IsUsable: resolved is not null,
+            Source: AssistantConnectionSource.Application.ToString());
+    }
+
+    public async Task<AssistantConnection?> ResolveAsync(
+        CancellationToken cancellationToken = default)
+    {
+        AssistantSettingsRecord? stored = await this.repository.GetAsync(
+            this.currentUser.UserId,
+            cancellationToken);
+
+        return this.Resolve(stored);
+    }
+
+    public async Task<AssistantConnection?> ResolveDraftAsync(
+        AssistantSettingsInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        if (string.IsNullOrWhiteSpace(input.Model)
+            || !AssistantBaseUrl.TryParse(input.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
+        // The same rule the save follows: an absent key means the stored one,
+        // because the user cannot read it back to retype it.
+        string? apiKey = input.ApiKey;
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            AssistantSettingsRecord? stored = await this.repository.GetAsync(
+                this.currentUser.UserId,
+                cancellationToken);
+            apiKey = this.protector.Unprotect(stored?.ProtectedApiKey);
+        }
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        return new AssistantConnection(
+            input.Provider,
+            input.Model,
+            apiKey,
+            baseUrl,
+            AssistantConnectionSource.User);
+    }
+
+    public async Task SaveAsync(
+        AssistantSettingsInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        AssistantSettingsRecord? stored = await this.repository.GetAsync(
+            this.currentUser.UserId,
+            cancellationToken);
+
+        // An absent key keeps whatever is stored, because the user cannot read
+        // their key back to resubmit it alongside a model change.
+        string? protectedKey = string.IsNullOrWhiteSpace(input.ApiKey)
+            ? stored?.ProtectedApiKey
+            : this.protector.Protect(input.ApiKey);
+
+        await this.repository.SaveAsync(
+            new AssistantSettingsRecord(
+                this.currentUser.UserId,
+                input.Provider.ToString(),
+                NormalizeBaseUrl(input.BaseUrl),
+                input.Model,
+                protectedKey),
+            cancellationToken);
+    }
+
+    public Task<bool> DeleteAsync(CancellationToken cancellationToken = default)
+    {
+        return this.repository.DeleteAsync(this.currentUser.UserId, cancellationToken);
+    }
+
+    private static string? NormalizeBaseUrl(string? baseUrl)
+    {
+        return string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.Trim();
+    }
+
+    private AssistantConnection? Resolve(AssistantSettingsRecord? stored)
+    {
+        AssistantConnection? user = this.ResolveUser(stored);
+
+        return user ?? this.ResolveApplication();
+    }
+
+    private AssistantConnection? ResolveUser(AssistantSettingsRecord? stored)
+    {
+        if (stored is null || string.IsNullOrWhiteSpace(stored.Model))
+        {
+            return null;
+        }
+
+        if (!Enum.TryParse(stored.Provider, out AssistantProvider provider))
+        {
+            return null;
+        }
+
+        // Refused rather than dropped: an unset endpoint means the provider's
+        // own default, so running with a base URL the user cannot see was
+        // ignored would send their key somewhere they never named.
+        if (!AssistantBaseUrl.TryParse(stored.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
+        // A key that will not unprotect is what a rotated or lost key ring
+        // looks like. The record stays, so the user replaces the key rather
+        // than rebuilding the whole configuration.
+        string? apiKey = this.protector.Unprotect(stored.ProtectedApiKey);
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            return null;
+        }
+
+        return new AssistantConnection(
+            provider,
+            stored.Model,
+            apiKey,
+            baseUrl,
+            AssistantConnectionSource.User);
+    }
+
+    private AssistantConnection? ResolveApplication()
+    {
+        if (string.IsNullOrWhiteSpace(this.options.ApiKey)
+            || string.IsNullOrWhiteSpace(this.options.Model))
+        {
+            return null;
+        }
+
+        if (!AssistantBaseUrl.TryParse(this.options.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
+        return new AssistantConnection(
+            this.options.Provider,
+            this.options.Model,
+            this.options.ApiKey,
+            baseUrl,
+            AssistantConnectionSource.Application);
+    }
+}
