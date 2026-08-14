@@ -85,10 +85,7 @@ public static class ApiServiceCollectionExtensions
                     network,
                     out System.Net.IPNetwork parsed))
                 {
-                    options.KnownNetworks.Add(
-                        new Microsoft.AspNetCore.HttpOverrides.IPNetwork(
-                            parsed.BaseAddress,
-                            parsed.PrefixLength));
+                    options.KnownIPNetworks.Add(parsed);
                 }
             }
         });

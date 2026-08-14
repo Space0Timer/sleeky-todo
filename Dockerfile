@@ -25,6 +25,10 @@ COPY src/Sleeky.Todo.Infrastructure/Sleeky.Todo.Infrastructure.csproj src/Sleeky
 COPY src/Sleeky.Todo.Api/Sleeky.Todo.Api.csproj src/Sleeky.Todo.Api/
 RUN dotnet restore src/Sleeky.Todo.Api/Sleeky.Todo.Api.csproj
 
+# The analyzer severity map is a compile input like the sources below it, so it
+# joins them after the restore layer. Without it the image compiles under
+# stricter rules than CI, and warnings-as-errors turns that drift fatal.
+COPY .editorconfig ./
 COPY src/Sleeky.Todo.Domain/ src/Sleeky.Todo.Domain/
 COPY src/Sleeky.Todo.Application/ src/Sleeky.Todo.Application/
 COPY src/Sleeky.Todo.Infrastructure/ src/Sleeky.Todo.Infrastructure/
