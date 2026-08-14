@@ -85,7 +85,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
-        services.AddScoped<IUserDirectory, MongoUserDirectory>();
+        services.AddScoped<IUserDirectoryRepository, MongoUserDirectoryRepository>();
         services.AddHostedService<MongoDbEnumStorageMigrator>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services

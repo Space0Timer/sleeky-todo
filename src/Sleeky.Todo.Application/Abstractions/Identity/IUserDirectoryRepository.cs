@@ -1,6 +1,6 @@
 namespace Sleeky.Todo.Application.Abstractions.Identity;
 
-public interface IUserDirectory
+public interface IUserDirectoryRepository
 {
     /// <summary>
     /// Maps an external issuer and subject pair onto a stable internal user

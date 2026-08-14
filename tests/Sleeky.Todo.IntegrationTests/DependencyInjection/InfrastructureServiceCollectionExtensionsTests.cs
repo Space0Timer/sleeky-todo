@@ -43,8 +43,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         ITodoRepository repository = serviceProvider.GetRequiredService<ITodoRepository>();
         ITransactionExecutor transactionExecutor = serviceProvider
             .GetRequiredService<ITransactionExecutor>();
-        IUserDirectory userDirectory = serviceProvider
-            .GetRequiredService<IUserDirectory>();
+        IUserDirectoryRepository userDirectoryRepository = serviceProvider
+            .GetRequiredService<IUserDirectoryRepository>();
 
         settings.DatabaseName.Should().Be("sleekyTodo");
         settings.TodoItemsCollectionName.Should().Be("todoItems");
@@ -54,7 +54,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         clock.UtcNow.Offset.Should().Be(TimeSpan.Zero);
         repository.Should().BeOfType<MongoTodoRepository>();
         transactionExecutor.Should().NotBeNull();
-        userDirectory.Should().BeOfType<MongoUserDirectory>();
+        userDirectoryRepository.Should().BeOfType<MongoUserDirectoryRepository>();
     }
 
     [TestMethod]

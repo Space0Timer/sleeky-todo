@@ -6,14 +6,14 @@ using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-internal sealed class MongoUserDirectory : IUserDirectory
+internal sealed class MongoUserDirectoryRepository : IUserDirectoryRepository
 {
     private const int DuplicateKeyErrorCode = 11000;
 
     private readonly IClock clock;
     private readonly IMongoCollection<UserDocument> users;
 
-    public MongoUserDirectory(
+    public MongoUserDirectoryRepository(
         IMongoCollection<UserDocument> users,
         IClock clock)
     {
