@@ -142,12 +142,7 @@ public sealed class MongoTodoRepositoryTests
 
         await repository.AddAsync(todoItem);
         TodoItem? stored = await repository.GetByIdAsync(todoItem.Id);
-        BsonDocument raw = await database
-            .GetCollection<BsonDocument>("todoItems")
-            .Find(new BsonDocument(
-                "_id",
-                new BsonBinaryData(todoItem.Id, GuidRepresentation.Standard)))
-            .FirstAsync();
+        BsonDocument raw = await ReadRawDocumentAsync(todoItem.Id);
 
         stored.Should().NotBeNull();
         stored!.Recurrence.Should().Be(recurrence);
@@ -157,6 +152,58 @@ public sealed class MongoTodoRepositoryTests
         raw["recurrence"]["interval"].AsInt32.Should().Be(1);
         raw["recurrence"]["unit"].AsString.Should().Be("Months");
         raw["recurrence"]["anchorDay"].AsInt32.Should().Be(31);
+    }
+
+    /// <summary>
+    /// Every identifier is stored as a standard UUID rather than the driver's
+    /// legacy C# subtype, so documents stay readable by other drivers and by
+    /// queries built outside this codebase.
+    /// </summary>
+    [TestMethod]
+    public async Task IdentifiersAreStoredAsStandardUuids()
+    {
+        TodoItem dependency = CreateTodo("dependency");
+        TodoItem todoItem = CreateRecurringTodo();
+        todoItem.AddDependency(dependency.Id, Timestamp);
+
+        await repository.AddAsync(dependency);
+        await repository.AddAsync(todoItem);
+        BsonDocument raw = await ReadRawDocumentAsync(todoItem.Id);
+
+        AssertStandardUuid(raw["_id"], todoItem.Id);
+        AssertStandardUuid(raw["ownerId"], OwnerId);
+        AssertStandardUuid(raw["dependencyIds"].AsBsonArray[0], dependency.Id);
+        AssertStandardUuid(raw["seriesId"], Id("series-1"));
+    }
+
+    /// <summary>
+    /// A document written by a newer deployment carries fields this version does
+    /// not know. Reading one must not fail, at the top level or inside the
+    /// nested recurrence document.
+    /// </summary>
+    [TestMethod]
+    public async Task UnknownStoredFieldsAreIgnoredWhenReading()
+    {
+        TodoItem todoItem = CreateRecurringTodo();
+        await repository.AddAsync(todoItem);
+
+        _ = await database
+            .GetCollection<BsonDocument>("todoItems")
+            .UpdateOneAsync(
+                new BsonDocument(
+                    "_id",
+                    new BsonBinaryData(todoItem.Id, GuidRepresentation.Standard)),
+                new BsonDocument("$set", new BsonDocument
+                {
+                    { "futureTodoField", "ignored" },
+                    { "recurrence.futureRecurrenceField", "ignored" },
+                }));
+        TodoItem? stored = await repository.GetByIdAsync(todoItem.Id);
+
+        stored.Should().NotBeNull();
+        stored!.Id.Should().Be(todoItem.Id);
+        stored.Recurrence.Should().Be(todoItem.Recurrence);
+        stored.SeriesId.Should().Be(Id("series-1"));
     }
 
     [TestMethod]
@@ -585,6 +632,35 @@ public sealed class MongoTodoRepositoryTests
             Timestamp);
     }
 
+    private static TodoItem CreateRecurringTodo(string id = "recurring")
+    {
+        RecurrenceSchedule recurrence = RecurrenceSchedule.Create(
+            RecurrenceType.Monthly,
+            1,
+            null,
+            new DateOnly(2026, 8, 31));
+
+        return TodoItem.Create(
+            Id(id),
+            OwnerId,
+            "Submit report",
+            "Monthly report",
+            new DateOnly(2026, 8, 31),
+            TodoPriority.High,
+            Timestamp,
+            recurrence,
+            Id("series-1"),
+            1);
+    }
+
+    private static void AssertStandardUuid(BsonValue value, Guid expected)
+    {
+        BsonBinaryData binary = value.AsBsonBinaryData;
+
+        binary.SubType.Should().Be(BsonBinarySubType.UuidStandard);
+        binary.ToGuid().Should().Be(expected);
+    }
+
     private static bool ShouldRunMongoDbTests()
     {
         return string.Equals(
@@ -641,6 +717,16 @@ public sealed class MongoTodoRepositoryTests
         providers.Add(serviceProvider);
 
         return serviceProvider.GetRequiredService<ITodoRepository>();
+    }
+
+    private async Task<BsonDocument> ReadRawDocumentAsync(Guid id)
+    {
+        return await database
+            .GetCollection<BsonDocument>("todoItems")
+            .Find(new BsonDocument(
+                "_id",
+                new BsonBinaryData(id, GuidRepresentation.Standard)))
+            .FirstAsync();
     }
 
     private async Task<TodoItem> GetRequiredTodoAsync(
