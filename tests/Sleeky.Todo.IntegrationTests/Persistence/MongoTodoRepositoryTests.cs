@@ -1,5 +1,8 @@
 using FluentAssertions;
 
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
 using MongoDB.Bson;
 using MongoDB.Driver;
 
@@ -8,9 +11,9 @@ using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.ValueObjects;
+using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Infrastructure.DependencyInjection;
 using Sleeky.Todo.Infrastructure.Persistence;
-using Sleeky.Todo.Infrastructure.Persistence.Documents;
-using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 using Testcontainers.MongoDb;
 
@@ -32,6 +35,8 @@ public sealed class MongoTodoRepositoryTests
     private static readonly Guid OtherOwnerId = Id("owner-2");
 
     private static MongoDbContainer? mongoDbContainer;
+
+    private readonly List<ServiceProvider> providers = new List<ServiceProvider>();
 
     private IMongoDatabase database = null!;
     private ITodoRepository repository = null!;
@@ -81,6 +86,17 @@ public sealed class MongoTodoRepositoryTests
         };
         repository = CreateRepository(OwnerId);
         otherOwnerRepository = CreateRepository(OtherOwnerId);
+    }
+
+    [TestCleanup]
+    public void TestCleanup()
+    {
+        foreach (ServiceProvider serviceProvider in providers)
+        {
+            serviceProvider.Dispose();
+        }
+
+        providers.Clear();
     }
 
     [TestMethod]
@@ -601,11 +617,30 @@ public sealed class MongoTodoRepositoryTests
         return new Guid(bytes);
     }
 
+    /// <summary>
+    /// The Mongo implementations are internal to the infrastructure assembly, so
+    /// the suite resolves the repository contract from the real registration
+    /// rather than constructing the concrete type.
+    /// </summary>
     private ITodoRepository CreateRepository(Guid ownerId)
     {
-        return new MongoTodoRepository(
-            database.GetCollection<TodoDocument>(settings.TodoItemsCollectionName),
-            new TestCurrentUser(ownerId));
+        Dictionary<string, string?> values = new Dictionary<string, string?>
+        {
+            [$"{MongoDbSettings.SectionName}:ConnectionString"] = settings.ConnectionString,
+            [$"{MongoDbSettings.SectionName}:DatabaseName"] = settings.DatabaseName,
+            [$"{MongoDbSettings.SectionName}:TodoItemsCollectionName"] =
+                settings.TodoItemsCollectionName,
+        };
+        ServiceCollection services = new ServiceCollection();
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser(ownerId));
+        services.AddInfrastructure(new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build());
+
+        ServiceProvider serviceProvider = services.BuildServiceProvider();
+        providers.Add(serviceProvider);
+
+        return serviceProvider.GetRequiredService<ITodoRepository>();
     }
 
     private async Task<TodoItem> GetRequiredTodoAsync(

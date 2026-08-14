@@ -1,13 +1,18 @@
 using FluentAssertions;
 
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
 using MongoDB.Bson;
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Infrastructure.Persistence.Documents;
-using Sleeky.Todo.Infrastructure.Persistence.Queries;
+using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Application.Abstractions.Persistence;
+using Sleeky.Todo.Infrastructure.DependencyInjection;
+using Sleeky.Todo.Infrastructure.Persistence;
 
 using Testcontainers.MongoDb;
 
@@ -25,6 +30,7 @@ public sealed class MongoTodoListReaderTests
 
     private IMongoCollection<BsonDocument> collection = null!;
     private GetTodosQueryHandler handler = null!;
+    private ServiceProvider? serviceProvider;
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext testContext)
@@ -60,10 +66,39 @@ public sealed class MongoTodoListReaderTests
         IMongoDatabase database = new MongoClient(mongoDbContainer.GetConnectionString())
             .GetDatabase(databaseName);
         collection = database.GetCollection<BsonDocument>("todoItems");
-        handler = new GetTodosQueryHandler(
-            new MongoTodoListReader(
-                database.GetCollection<TodoDocument>("todoItems"),
-                new TestCurrentUser(OwnerId)));
+        handler = new GetTodosQueryHandler(ResolveListReader(databaseName));
+    }
+
+    [TestCleanup]
+    public void TestCleanup()
+    {
+        serviceProvider?.Dispose();
+        serviceProvider = null;
+    }
+
+    /// <summary>
+    /// The Mongo implementations are internal to the infrastructure assembly, so
+    /// the suite resolves the reader contract from the real registration rather
+    /// than constructing the concrete type.
+    /// </summary>
+    private ITodoListReader ResolveListReader(string databaseName)
+    {
+        Dictionary<string, string?> values = new Dictionary<string, string?>
+        {
+            [$"{MongoDbSettings.SectionName}:ConnectionString"] =
+                mongoDbContainer!.GetConnectionString(),
+            [$"{MongoDbSettings.SectionName}:DatabaseName"] = databaseName,
+            [$"{MongoDbSettings.SectionName}:TodoItemsCollectionName"] = "todoItems",
+        };
+        ServiceCollection services = new ServiceCollection();
+        services.AddSingleton<ICurrentUser>(new TestCurrentUser(OwnerId));
+        services.AddInfrastructure(new ConfigurationBuilder()
+            .AddInMemoryCollection(values)
+            .Build());
+
+        serviceProvider = services.BuildServiceProvider();
+
+        return serviceProvider.GetRequiredService<ITodoListReader>();
     }
 
     [TestMethod]

@@ -3,7 +3,7 @@ using FluentAssertions;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 
-using Sleeky.Todo.Infrastructure.Persistence.Repositories;
+using Sleeky.Todo.Infrastructure.Persistence;
 
 namespace Sleeky.Todo.IntegrationTests.Persistence;
 
@@ -48,7 +48,7 @@ public sealed class MongoGuidSerializationTests
 
     private static Type GetRequiredTodoDocumentType()
     {
-        return typeof(MongoTodoRepository).Assembly.GetType(
+        return typeof(MongoDbSettings).Assembly.GetType(
             "Sleeky.Todo.Infrastructure.Persistence.Documents.TodoDocument",
             throwOnError: true)
             ?? throw new InvalidOperationException("Could not find TodoDocument.");

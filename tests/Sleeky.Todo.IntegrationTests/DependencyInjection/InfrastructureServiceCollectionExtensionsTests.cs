@@ -11,7 +11,6 @@ using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.DependencyInjection;
 using Sleeky.Todo.Infrastructure.Persistence;
-using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
 namespace Sleeky.Todo.IntegrationTests.DependencyInjection;
 
@@ -52,9 +51,11 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         mongoClient.Should().BeOfType<MongoClient>();
         database.DatabaseNamespace.DatabaseName.Should().Be("sleekyTodo");
         clock.UtcNow.Offset.Should().Be(TimeSpan.Zero);
-        repository.Should().BeOfType<MongoTodoRepository>();
+        // The implementations are internal to the infrastructure assembly, so
+        // the registration is asserted by name rather than by exposing them.
+        repository.GetType().Name.Should().Be("MongoTodoRepository");
         transactionExecutor.Should().NotBeNull();
-        userDirectoryRepository.Should().BeOfType<MongoUserDirectoryRepository>();
+        userDirectoryRepository.GetType().Name.Should().Be("MongoUserDirectoryRepository");
     }
 
     [TestMethod]
