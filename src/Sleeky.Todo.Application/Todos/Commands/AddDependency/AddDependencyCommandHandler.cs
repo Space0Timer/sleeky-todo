@@ -69,9 +69,7 @@ public sealed class AddDependencyCommandHandler
         todoItem.AddDependency(request.DependencyId, clock.UtcNow);
         TodoItem updatedTodo = await todoRepository.UpdateAsync(
             todoItem,
-            request.Version,
-            cancellationToken)
-            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+            cancellationToken);
 
         this.logger.LogInformation(
             1104,

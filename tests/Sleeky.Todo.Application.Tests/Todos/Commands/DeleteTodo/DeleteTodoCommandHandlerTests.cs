@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
@@ -37,7 +38,6 @@ public sealed class DeleteTodoCommandHandlerTests
         exception.ResourceId.Should().Be(todoId);
         await repository.DidNotReceiveWithAnyArgs().SoftDeleteAsync(
             default!,
-            default,
             default);
     }
 
@@ -53,7 +53,7 @@ public sealed class DeleteTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         repository
-            .SoftDeleteAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
+            .SoftDeleteAsync(todoItem, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version);
         DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
@@ -65,7 +65,6 @@ public sealed class DeleteTodoCommandHandlerTests
         result.Version.Should().Be(2);
         await repository.Received(1).SoftDeleteAsync(
             todoItem,
-            command.Version,
             Arg.Any<CancellationToken>());
     }
 
@@ -86,7 +85,6 @@ public sealed class DeleteTodoCommandHandlerTests
         await act.Should().ThrowAsync<ConcurrencyConflictException>();
         await repository.DidNotReceiveWithAnyArgs().SoftDeleteAsync(
             default!,
-            default,
             default);
     }
 
@@ -101,8 +99,11 @@ public sealed class DeleteTodoCommandHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         repository
-            .SoftDeleteAsync(todoItem, todoItem.Version, Arg.Any<CancellationToken>())
-            .Returns((TodoItem?)null);
+            .SoftDeleteAsync(todoItem, Arg.Any<CancellationToken>())
+            .ThrowsAsync(new ConcurrencyConflictException(
+                "TODO",
+                todoItem.Id,
+                todoItem.Version));
         DeleteTodoCommand command = new DeleteTodoCommand(todoItem.Id, todoItem.Version);
         DeleteTodoCommandHandler handler = CreateHandler(repository, clock);
 
@@ -135,7 +136,6 @@ public sealed class DeleteTodoCommandHandlerTests
             .WithMessage("A TODO with active dependents cannot be deleted.");
         await repository.DidNotReceiveWithAnyArgs().SoftDeleteAsync(
             default!,
-            default,
             default);
     }
 

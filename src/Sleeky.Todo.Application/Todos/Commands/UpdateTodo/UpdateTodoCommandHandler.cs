@@ -50,9 +50,7 @@ public sealed class UpdateTodoCommandHandler : IRequestHandler<UpdateTodoCommand
 
         TodoItem updatedTodoItem = await todoRepository.UpdateAsync(
             todoItem,
-            request.Version,
-            cancellationToken)
-            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+            cancellationToken);
 
         this.logger.LogInformation(
             1103,

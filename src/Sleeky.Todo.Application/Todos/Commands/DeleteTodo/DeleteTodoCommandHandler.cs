@@ -54,9 +54,7 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
 
         TodoItem deletedTodoItem = await todoRepository.SoftDeleteAsync(
             todoItem,
-            request.Version,
-            cancellationToken)
-            ?? throw new ConcurrencyConflictException("TODO", request.Id, request.Version);
+            cancellationToken);
 
         this.logger.LogInformation(
             1106,

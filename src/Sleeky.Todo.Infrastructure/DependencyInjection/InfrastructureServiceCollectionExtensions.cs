@@ -63,7 +63,7 @@ public static class InfrastructureServiceCollectionExtensions
         });
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<MongoTransactionContext>();
-        services.AddScoped<ITodoTransaction, MongoTodoTransaction>();
+        services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
         services.AddScoped<ITodoRepository, MongoTodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
         services.AddScoped<IUserDirectory, MongoUserDirectory>();

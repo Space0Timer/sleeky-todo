@@ -244,31 +244,45 @@ _id == todoId AND version == expectedVersion
 
 Update and soft-delete also require an active document. Restore requires a deleted document. The replacement increments the version by one, and `ReturnDocument.After` returns the actual persisted state.
 
-If the filter matches nothing, the repository returns `null`; command handlers map that result to `ConcurrencyConflictException`. This covers the race between the handler's initial read and its write. `UpdatedAt` remains ordinary data and is never used as the concurrency token.
+If the filter matches nothing, the repository throws `ConcurrencyConflictException` itself, because it is the only component that knows both the TODO ID and the expected version. That expected version is the aggregate's own `Version`, which no domain method mutates, so callers never pass it separately. This covers the race between the handler's initial read and its write. `UpdatedAt` remains ordinary data and is never used as the concurrency token.
 
 Integration tests issue simultaneous mutations with the same version and verify that exactly one succeeds for update/update, update/delete, and restore/restore races.
 
 ## Transactional recurring completion
 
 Only a real transition from a non-completed state into `Completed` raises a
-`TodoCompletedDomainEvent`. Completion runs through a scoped transaction
-coordinator:
+`TodoCompletedDomainEvent`. Completion runs through `ITransactionExecutor`:
 
 ```text
 ChangeTodoStatus handler
-  -> start MongoDB session transaction
-  -> versioned replacement of current occurrence
-  -> dispatch TodoCompletedDomainEvent in-process
-  -> calculate next date from scheduled due date
-  -> insert next occurrence through the same session
-  -> commit
+  -> ITransactionExecutor.ExecuteAsync
+     -> start MongoDB session transaction
+     -> versioned replacement of current occurrence
+     -> dispatch TodoCompletedDomainEvent in-process
+     -> calculate next date from scheduled due date
+     -> insert next occurrence through the same session
+     -> commit
 ```
 
-The MongoDB repository reads the scoped transaction context and uses the active
-session for both the replacement and event-handler insert. Any event-handler or
-write failure aborts the transaction. A unique partial index on series ID and
-occurrence number complements optimistic concurrency and prevents duplicate
-next occurrences.
+`ITransactionExecutor` takes the work as a lambda and runs it as one atomic
+unit, committing when it returns and aborting when it throws. It is deliberately
+not a unit of work: nothing is tracked, deferred, or coordinated, and repository
+writes stay immediate. The MongoDB repository reads the scoped transaction
+context and uses the active session for both the replacement and the
+event-handler insert, so anything running inside the operation joins the
+transaction without knowing it exists. Any event-handler or write failure aborts
+it.
+
+An aborted transaction surfaces as `TransactionConflictException`, which carries
+no resource identifier because the conflicting document is not always the one
+the caller named. A unique partial index on owner, series ID, and occurrence
+number complements optimistic concurrency and prevents duplicate next
+occurrences.
+
+Schema and data bootstrap never runs inside this boundary. MongoDB forbids index
+creation and removal in a transaction, and the index initializer and enum
+migrator are idempotent hosted services that already tolerate concurrent
+instances, so partial application is safe and self-heals on the next start.
 
 The recurrence calculator preserves a stored monthly anchor rather than adding
 months to a previously clamped date. Thus January 31 becomes February's final

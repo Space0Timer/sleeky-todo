@@ -5,12 +5,12 @@ using Sleeky.Todo.Application.Exceptions;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Transactions;
 
-internal sealed class MongoTodoTransaction : ITodoTransaction
+internal sealed class MongoTransactionExecutor : ITransactionExecutor
 {
     private readonly IMongoClient mongoClient;
     private readonly MongoTransactionContext transactionContext;
 
-    public MongoTodoTransaction(
+    public MongoTransactionExecutor(
         IMongoClient mongoClient,
         MongoTransactionContext transactionContext)
     {
@@ -22,8 +22,6 @@ internal sealed class MongoTodoTransaction : ITodoTransaction
     }
 
     public async Task<TResult> ExecuteAsync<TResult>(
-        Guid todoId,
-        long expectedVersion,
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken = default)
     {
@@ -43,7 +41,9 @@ internal sealed class MongoTodoTransaction : ITodoTransaction
         catch (MongoException exception) when (IsConcurrencyConflict(exception))
         {
             await AbortIfActiveAsync(session);
-            throw new ConcurrencyConflictException("TODO", todoId, expectedVersion);
+            throw new TransactionConflictException(
+                "The operation conflicted with a concurrent change and was rolled back.",
+                exception);
         }
         catch
         {

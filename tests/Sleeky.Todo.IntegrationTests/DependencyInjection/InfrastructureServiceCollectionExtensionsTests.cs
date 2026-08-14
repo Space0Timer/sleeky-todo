@@ -41,7 +41,8 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         IMongoDatabase database = serviceProvider.GetRequiredService<IMongoDatabase>();
         IClock clock = serviceProvider.GetRequiredService<IClock>();
         ITodoRepository repository = serviceProvider.GetRequiredService<ITodoRepository>();
-        ITodoTransaction transaction = serviceProvider.GetRequiredService<ITodoTransaction>();
+        ITransactionExecutor transactionExecutor = serviceProvider
+            .GetRequiredService<ITransactionExecutor>();
         IUserDirectory userDirectory = serviceProvider
             .GetRequiredService<IUserDirectory>();
 
@@ -52,7 +53,7 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         database.DatabaseNamespace.DatabaseName.Should().Be("sleekyTodo");
         clock.UtcNow.Offset.Should().Be(TimeSpan.Zero);
         repository.Should().BeOfType<MongoTodoRepository>();
-        transaction.Should().NotBeNull();
+        transactionExecutor.Should().NotBeNull();
         userDirectory.Should().BeOfType<MongoUserDirectory>();
     }
 
