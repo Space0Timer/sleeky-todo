@@ -22,6 +22,7 @@ COPY global.json Directory.Build.props Directory.Packages.props stylecop.json ./
 COPY src/Sleeky.Todo.Domain/Sleeky.Todo.Domain.csproj src/Sleeky.Todo.Domain/
 COPY src/Sleeky.Todo.Application/Sleeky.Todo.Application.csproj src/Sleeky.Todo.Application/
 COPY src/Sleeky.Todo.Infrastructure/Sleeky.Todo.Infrastructure.csproj src/Sleeky.Todo.Infrastructure/
+COPY src/Sleeky.Todo.Assistant/Sleeky.Todo.Assistant.csproj src/Sleeky.Todo.Assistant/
 COPY src/Sleeky.Todo.Api/Sleeky.Todo.Api.csproj src/Sleeky.Todo.Api/
 RUN dotnet restore src/Sleeky.Todo.Api/Sleeky.Todo.Api.csproj
 
@@ -32,6 +33,7 @@ COPY .editorconfig ./
 COPY src/Sleeky.Todo.Domain/ src/Sleeky.Todo.Domain/
 COPY src/Sleeky.Todo.Application/ src/Sleeky.Todo.Application/
 COPY src/Sleeky.Todo.Infrastructure/ src/Sleeky.Todo.Infrastructure/
+COPY src/Sleeky.Todo.Assistant/ src/Sleeky.Todo.Assistant/
 COPY src/Sleeky.Todo.Api/ src/Sleeky.Todo.Api/
 RUN dotnet publish src/Sleeky.Todo.Api/Sleeky.Todo.Api.csproj \
     --configuration Release \
