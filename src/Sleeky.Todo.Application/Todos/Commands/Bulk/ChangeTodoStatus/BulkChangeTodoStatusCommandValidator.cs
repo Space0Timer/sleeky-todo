@@ -1,9 +1,8 @@
 using FluentValidation;
 
-using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Domain.Enums;
 
-namespace Sleeky.Todo.Application.Todos.Commands.BulkChangeTodoStatus;
+namespace Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 
 public sealed class BulkChangeTodoStatusCommandValidator
     : AbstractValidator<BulkChangeTodoStatusCommand>

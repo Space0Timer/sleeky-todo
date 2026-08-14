@@ -4,14 +4,13 @@ using Microsoft.Extensions.Logging;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
-using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
 
-namespace Sleeky.Todo.Application.Todos.Commands.BulkChangeTodoStatus;
+namespace Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 
 public sealed class BulkChangeTodoStatusCommandHandler
     : IRequestHandler<BulkChangeTodoStatusCommand, BulkTodoResult>

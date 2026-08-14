@@ -37,6 +37,23 @@ This document defines the implementation and test standards for the repository.
 - Keep generated files, build output, and local environment artifacts out of
   source control.
 
+## Application layout
+
+- Give each command and query its own folder under `Todos/Commands` or
+  `Todos/Queries`, named for the operation and holding that operation's request,
+  handler, and validator.
+- A folder under `Commands` or `Queries` is either one operation or a group of
+  related operations. It is never a bag of helpers sitting beside the operations
+  that use it.
+- When operations share request, result, loading, or validation parts, put the
+  shared parts in the folder that contains those operations, so the grouping is
+  visible from the tree rather than from the file names. Bulk status change and
+  bulk deletion are grouped this way under `Commands/Bulk`.
+- Match namespaces to folder paths.
+- Keep a type name unambiguous on its own. A bulk operation keeps its `Bulk`
+  prefix even inside `Commands/Bulk`, because the single-item command of the
+  same name exists alongside it.
+
 ## Boundaries and tests
 
 - Keep infrastructure documents, serializers, and database details behind

@@ -1,8 +1,6 @@
 using FluentValidation;
 
-using Sleeky.Todo.Application.Todos.Commands.Bulk;
-
-namespace Sleeky.Todo.Application.Todos.Commands.BulkDeleteTodos;
+namespace Sleeky.Todo.Application.Todos.Commands.Bulk.DeleteTodos;
 
 public sealed class BulkDeleteTodosCommandValidator
     : AbstractValidator<BulkDeleteTodosCommand>

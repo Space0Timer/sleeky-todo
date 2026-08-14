@@ -3,8 +3,8 @@ using FluentAssertions;
 using FluentValidation.Results;
 
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
-using Sleeky.Todo.Application.Todos.Commands.BulkChangeTodoStatus;
-using Sleeky.Todo.Application.Todos.Commands.BulkDeleteTodos;
+using Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
+using Sleeky.Todo.Application.Todos.Commands.Bulk.DeleteTodos;
 using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Commands.Bulk;

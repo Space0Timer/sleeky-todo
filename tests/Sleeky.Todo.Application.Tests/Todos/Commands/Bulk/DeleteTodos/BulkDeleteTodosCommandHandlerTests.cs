@@ -8,11 +8,11 @@ using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
-using Sleeky.Todo.Application.Todos.Commands.BulkDeleteTodos;
+using Sleeky.Todo.Application.Todos.Commands.Bulk.DeleteTodos;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Exceptions;
 
-namespace Sleeky.Todo.Application.Tests.Todos.Commands.Bulk;
+namespace Sleeky.Todo.Application.Tests.Todos.Commands.Bulk.DeleteTodos;
 
 [TestClass]
 public sealed class BulkDeleteTodosCommandHandlerTests

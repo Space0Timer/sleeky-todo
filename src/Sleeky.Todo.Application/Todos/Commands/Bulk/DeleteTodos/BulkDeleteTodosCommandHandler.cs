@@ -4,11 +4,10 @@ using Microsoft.Extensions.Logging;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
-using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Exceptions;
 
-namespace Sleeky.Todo.Application.Todos.Commands.BulkDeleteTodos;
+namespace Sleeky.Todo.Application.Todos.Commands.Bulk.DeleteTodos;
 
 public sealed class BulkDeleteTodosCommandHandler
     : IRequestHandler<BulkDeleteTodosCommand, BulkTodoResult>

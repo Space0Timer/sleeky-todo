@@ -8,7 +8,7 @@ using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
-using Sleeky.Todo.Application.Todos.Commands.BulkChangeTodoStatus;
+using Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
@@ -16,7 +16,7 @@ using Sleeky.Todo.Domain.Exceptions;
 using Sleeky.Todo.Domain.Services;
 using Sleeky.Todo.Domain.ValueObjects;
 
-namespace Sleeky.Todo.Application.Tests.Todos.Commands.Bulk;
+namespace Sleeky.Todo.Application.Tests.Todos.Commands.Bulk.ChangeTodoStatus;
 
 [TestClass]
 public sealed class BulkChangeTodoStatusCommandHandlerTests
