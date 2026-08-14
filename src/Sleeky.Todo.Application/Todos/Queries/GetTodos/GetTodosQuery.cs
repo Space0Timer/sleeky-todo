@@ -20,7 +20,8 @@ public sealed class GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
         TodoSortField sortField = TodoSortField.DueDate,
         SortDirection sortDirection = SortDirection.Asc,
         int? limit = null,
-        string? cursor = null)
+        string? cursor = null,
+        string? searchText = null)
     {
         Status = status;
         Priority = priority;
@@ -32,6 +33,13 @@ public sealed class GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
         SortDirection = sortDirection;
         Limit = limit ?? DefaultPageSize;
         Cursor = string.IsNullOrWhiteSpace(cursor) ? null : cursor;
+
+        // Trimmed rather than only emptied, unlike the cursor above: a cursor
+        // is an opaque token that has to survive byte for byte, while surrounding
+        // space in a search box is the user's typing and never part of a term.
+        // Trimming here is what lets the length rule and the cursor signature
+        // both work on one canonical form.
+        SearchText = string.IsNullOrWhiteSpace(searchText) ? null : searchText.Trim();
     }
 
     public TodoStatus? Status { get; }
@@ -53,4 +61,6 @@ public sealed class GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
     public int Limit { get; }
 
     public string? Cursor { get; }
+
+    public string? SearchText { get; }
 }

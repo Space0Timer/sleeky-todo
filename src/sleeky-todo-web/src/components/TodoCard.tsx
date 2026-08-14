@@ -13,13 +13,13 @@ import {
   type TodoScope,
   type TodoStatus,
 } from '../types/todo.ts'
+import { useDebouncedValue } from '../hooks/useDebouncedValue.ts'
 import styles from './TodoCard.module.scss'
 import { TodoForm } from './TodoForm.tsx'
 import { Badge, Button, type BadgeTone } from './common/index.ts'
 
 type TodoCardProps = {
   busy: boolean
-  candidates: TodoListItem[]
   drifted?: boolean
   errors?: Record<string, string[]>
   item: TodoListItem
@@ -32,6 +32,7 @@ type TodoCardProps = {
   onLoad: (id: string, quiet?: boolean) => Promise<Todo | null>
   onRemoveDependency: (todo: Todo, dependencyId: string) => Promise<Todo | null>
   onRestore: (todo: TodoListItem) => Promise<boolean>
+  onSearchCandidates: (search: string) => Promise<TodoListItem[]>
   onStatus: (todo: Todo, status: TodoStatus) => Promise<Todo | null>
   onUpdate: (todo: Todo, draft: TodoDraft) => Promise<Todo | null>
 }
@@ -60,7 +61,6 @@ function formatDateTime(value: string | null): string {
 
 export function TodoCard({
   busy,
-  candidates,
   drifted = false,
   errors,
   item,
@@ -72,6 +72,7 @@ export function TodoCard({
   onLoad,
   onRemoveDependency,
   onRestore,
+  onSearchCandidates,
   onStatus,
   onToggleSelected,
   onUpdate,
@@ -81,13 +82,18 @@ export function TodoCard({
   const [editing, setEditing] = useState(false)
   const [managing, setManaging] = useState(false)
   const [search, setSearch] = useState('')
+  const [candidates, setCandidates] = useState<TodoListItem[]>([])
+  const [searching, setSearching] = useState(false)
   const [selectedDependencyId, setSelectedDependencyId] = useState('')
+  const debouncedSearch = useDebouncedValue(search)
 
+  // The text predicate now runs on the server. What stays here is what the
+  // server cannot know: this card's own identity and the prerequisites it
+  // already has.
   const availableDependencies = useMemo(() => candidates.filter((candidate) => (
     candidate.id !== item.id
     && !details?.dependencyIds.includes(candidate.id)
-    && candidate.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())
-  )), [candidates, details?.dependencyIds, item.id, search])
+  )), [candidates, details?.dependencyIds, item.id])
 
   // An archived TODO is frozen in the domain: editing it, changing its
   // dependencies, or completing it are rejected. Only the transitions that
@@ -112,6 +118,39 @@ export function TodoCard({
 
     return () => { cancelled = true }
   }, [item.id, item.isBlocked, onLoad, scope])
+
+  // Only while the panel is open: a page of cards would otherwise each hold a
+  // candidate list nobody is looking at.
+  useEffect(() => {
+    if (!managing || frozen) return
+
+    let cancelled = false
+    setSearching(true)
+
+    // The previous options stay on screen while this runs. Clearing them would
+    // make the list flicker empty on every pause in typing, so the group is
+    // marked busy instead and the stale options remain selectable.
+    void onSearchCandidates(debouncedSearch).then((found) => {
+      if (!cancelled) setCandidates(found)
+    }).catch(() => {
+      if (!cancelled) setCandidates([])
+    }).finally(() => {
+      if (!cancelled) setSearching(false)
+    })
+
+    return () => { cancelled = true }
+  }, [debouncedSearch, frozen, managing, onSearchCandidates])
+
+  // A selection made before the list narrowed can stop being offered. Left set,
+  // Add would send an identifier the picker no longer shows.
+  useEffect(() => {
+    if (!selectedDependencyId) return
+    if (availableDependencies.some((candidate) => candidate.id === selectedDependencyId)) {
+      return
+    }
+
+    setSelectedDependencyId('')
+  }, [availableDependencies, selectedDependencyId])
 
   async function openManager() {
     const loaded = await onLoad(item.id)
@@ -148,7 +187,9 @@ export function TodoCard({
     if (!details || !selectedDependencyId) return
     const updated = await onAddDependency(details, selectedDependencyId)
     if (updated) {
-      const selected = candidates.find((candidate) => candidate.id === selectedDependencyId)
+      const selected = candidates.find(
+        (candidate) => candidate.id === selectedDependencyId,
+      )
       setDependencyNames((current) => ({
         ...current,
         [selectedDependencyId]: selected?.name ?? 'Unavailable prerequisite',
@@ -351,14 +392,14 @@ export function TodoCard({
               </ul>
             )}
             <label>
-              Search loaded TODOs
+              Search TODOs
               <input
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </label>
-            <div className={styles.dependencyAddRow}>
+            <div aria-busy={searching} className={styles.dependencyAddRow}>
               <select
                 aria-label={`Dependency for ${item.name}`}
                 value={selectedDependencyId}
@@ -376,6 +417,7 @@ export function TodoCard({
               >
                 Add
               </Button>
+              {searching && <span className={styles.muted}>Searching…</span>}
             </div>
           </div>
           )}

@@ -4,4 +4,5 @@ public static class TodoValidationLimits
 {
     public const int DescriptionMaximumLength = 2000;
     public const int NameMaximumLength = 200;
+    public const int SearchTextMaximumLength = 200;
 }

@@ -20,6 +20,7 @@ internal static class MongoTodoFields
     public const string Priority = "priority";
     public const string PurgeAt = "purgeAt";
     public const string Recurrence = "recurrence";
+    public const string SearchTokens = "searchTokens";
     public const string SeriesId = "seriesId";
     public const string Status = "status";
     public const string UpdatedAt = "updatedAt";

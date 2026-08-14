@@ -75,6 +75,8 @@ public sealed class TodoTools
         string? dueFrom = null,
         [Description("Only TODOs due on or before this ISO date, such as 2026-08-14.")]
         string? dueTo = null,
+        [Description("Only TODOs whose name or description contains these words. Each word matches from the start of a word, so \"quart\" finds \"quarterly\" but \"uarter\" finds nothing, and every word given must match.")]
+        string? search = null,
         [Description("How many to return, at most 100. Defaults to 50.")]
         int? limit = null,
         CancellationToken cancellationToken = default)
@@ -153,7 +155,9 @@ public sealed class TodoTools
                 parsedScope,
                 TodoSortField.DueDate,
                 SortDirection.Asc,
-                limit),
+                limit,
+                cursor: null,
+                search),
             cancellationToken);
         TodoSummary[] items = page.Items.Select(FromListItem).ToArray();
         this.ledger.RecordRange(items);

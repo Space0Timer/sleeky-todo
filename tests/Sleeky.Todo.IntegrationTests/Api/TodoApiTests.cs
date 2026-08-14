@@ -11,6 +11,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 
 using Sleeky.Todo.Api.Contracts.Todos;
+using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Domain.Enums;
 
 using Testcontainers.MongoDb;
@@ -621,6 +622,59 @@ public sealed class TodoApiTests
     }
 
     [TestMethod]
+    public async Task ListNarrowsToTheSearchedTodos()
+    {
+        _ = await CreateTodoAsync(name: "Submit quarterly report");
+        _ = await CreateTodoAsync(name: "Book a haircut");
+
+        HttpResponseMessage response = await client.GetAsync("/api/todos?search=quart");
+        JsonElement page = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        page.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("name").GetString())
+            .Should().Equal("Submit quarterly report");
+    }
+
+    [TestMethod]
+    public async Task ListRejectsSearchTextBeyondTheMaximumLength()
+    {
+        HttpResponseMessage response = await client.GetAsync(
+            $"/api/todos?search={new string('a', TodoValidationLimits.SearchTextMaximumLength + 1)}");
+        JsonElement problem = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        problem.GetProperty("title").GetString().Should().Be("Validation failed.");
+        problem.GetProperty("errors").TryGetProperty("searchText", out _)
+            .Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A cursor is bound to the search that produced it, so continuing a page
+    /// under different search text is refused rather than answered with a page
+    /// from a different result set.
+    /// </summary>
+    [TestMethod]
+    public async Task ListRejectsCursorReusedWithDifferentSearchText()
+    {
+        _ = await CreateTodoAsync(name: "Submit quarterly report");
+        _ = await CreateTodoAsync(name: "Submit annual report");
+        HttpResponseMessage firstResponse = await client.GetAsync(
+            "/api/todos?search=submit&limit=1");
+        JsonElement firstPage = await ReadJsonAsync(firstResponse);
+        string cursor = firstPage.GetProperty("nextCursor").GetString()
+            ?? throw new InvalidOperationException("The first page should provide a cursor.");
+
+        HttpResponseMessage response = await client.GetAsync(
+            $"/api/todos?search=report&limit=1&cursor={Uri.EscapeDataString(cursor)}");
+        JsonElement problem = await ReadJsonAsync(response);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        problem.GetProperty("title").GetString().Should().Be("Invalid cursor.");
+        problem.GetProperty("detail").GetString().Should().Contain("does not match");
+    }
+
+    [TestMethod]
     public async Task SwaggerIsNotPublishedOutsideDevelopment()
     {
         HttpResponseMessage response = await client.GetAsync("/swagger/v1/swagger.json");
@@ -704,6 +758,7 @@ public sealed class TodoApiTests
         indexNames.Should().Contain("owner_active_status_id");
         indexNames.Should().Contain("owner_active_name_normalized_id");
         indexNames.Should().Contain("owner_active_dependency_ids");
+        indexNames.Should().Contain("owner_active_search_tokens");
         indexNames.Should().Contain("purge_at");
         indexNames.Should().Contain("owner_unique_series_occurrence");
         indexNames.Should().NotContain("active_due_date_id");
@@ -932,11 +987,12 @@ public sealed class TodoApiTests
     }
 
     private async Task<(HttpResponseMessage Response, JsonElement Todo)> CreateTodoAsync(
-        RecurrenceRequest? recurrence = null)
+        RecurrenceRequest? recurrence = null,
+        string name = "Submit report")
     {
         CreateTodoRequest request = new CreateTodoRequest
         {
-            Name = "Submit report",
+            Name = name,
             Description = "Monthly report",
             DueDate = new DateOnly(2026, 8, 31),
             Priority = TodoPriority.High,

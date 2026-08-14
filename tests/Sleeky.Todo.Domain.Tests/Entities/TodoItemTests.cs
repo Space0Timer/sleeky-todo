@@ -131,6 +131,42 @@ public sealed class TodoItemTests
     }
 
     [TestMethod]
+    public void SearchTokensSpanTheNameAndTheDescription()
+    {
+        TodoItem item = CreateTodo(name: "Submit Report", description: "Monthly summary");
+
+        item.SearchTokens.Should().Equal("submit", "report", "monthly", "summary");
+    }
+
+    /// <summary>
+    /// The tokens are computed from the current text rather than captured at
+    /// construction, so an edit cannot leave the stored words describing the
+    /// previous name.
+    /// </summary>
+    [TestMethod]
+    public void SearchTokensFollowUpdatedDetails()
+    {
+        TodoItem item = CreateTodo(name: "Submit Report", description: "Monthly summary");
+
+        item.UpdateDetails(
+            "Review Invoice",
+            "Quarterly totals",
+            InitialDueDate,
+            TodoPriority.Low,
+            InitialTimestamp.AddHours(1));
+
+        item.SearchTokens.Should().Equal("review", "invoice", "quarterly", "totals");
+    }
+
+    [TestMethod]
+    public void SearchTokensOmitAnAbsentDescription()
+    {
+        TodoItem item = CreateTodo(name: "Submit Report", description: null);
+
+        item.SearchTokens.Should().Equal("submit", "report");
+    }
+
+    [TestMethod]
     public void AddAndRemoveDependencyUseControlledCollection()
     {
         TodoItem item = CreateTodo();

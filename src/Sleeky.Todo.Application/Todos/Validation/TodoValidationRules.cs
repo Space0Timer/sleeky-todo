@@ -15,6 +15,17 @@ internal static class TodoValidationRules
                 $"Description must not exceed {TodoValidationLimits.DescriptionMaximumLength} characters.");
     }
 
+    public static IRuleBuilderOptions<T, string?> MaximumSearchTextLength<T>(
+        this IRuleBuilder<T, string?> ruleBuilder)
+    {
+        return ruleBuilder
+            .Must(searchText =>
+                searchText is null
+                || searchText.Length <= TodoValidationLimits.SearchTextMaximumLength)
+            .WithMessage(
+                $"Search text must not exceed {TodoValidationLimits.SearchTextMaximumLength} characters.");
+    }
+
     public static IRuleBuilderOptions<T, Guid> ValidTodoIdentifier<T>(
         this IRuleBuilderInitial<T, Guid> ruleBuilder)
     {

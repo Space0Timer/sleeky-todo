@@ -10,6 +10,7 @@ using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
+using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Tests.Turns;
@@ -264,6 +265,31 @@ public sealed class TodoToolsTests
     }
 
     [TestMethod]
+    public async Task GetTodosForwardsSearchTextToTheQuery()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+
+        _ = await harness.Tools.GetTodosAsync(search: "tax return");
+
+        harness.Listed.Should().NotBeNull();
+        harness.Listed!.SearchText.Should().Be("tax return");
+    }
+
+    [TestMethod]
+    public async Task GetTodosWithoutSearchTextSendsNone()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+
+        _ = await harness.Tools.GetTodosAsync(status: "NotStarted");
+
+        harness.Listed.Should().NotBeNull();
+        harness.Listed!.SearchText.Should().BeNull();
+        harness.Listed.Status.Should().Be(TodoStatus.NotStarted);
+    }
+
+    [TestMethod]
     public async Task CreateRecordsTheNewVersionSoItCanBeWrittenToNext()
     {
         Harness harness = new Harness();
@@ -479,6 +505,23 @@ public sealed class TodoToolsTests
         public bool Halted { get; private set; }
 
         public CreateTodoCommand? Created { get; private set; }
+
+        public GetTodosQuery? Listed { get; private set; }
+
+        public void StageList(params TodoListItemDto[] items)
+        {
+            this.Sender
+                .Send(
+                    Arg.Any<IRequest<CursorPage<TodoListItemDto>>>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    this.Listed = (GetTodosQuery)call
+                        .Arg<IRequest<CursorPage<TodoListItemDto>>>();
+                    return Task.FromResult(
+                        new CursorPage<TodoListItemDto>(items, nextCursor: null));
+                });
+        }
 
         public void StageSelection(params TodoDto[] found)
         {

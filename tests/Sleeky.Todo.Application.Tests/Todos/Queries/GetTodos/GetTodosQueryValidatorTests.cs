@@ -3,6 +3,7 @@ using FluentAssertions;
 using FluentValidation.Results;
 
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
+using Sleeky.Todo.Application.Todos.Validation;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Queries.GetTodos;
 
@@ -37,6 +38,55 @@ public sealed class GetTodosQueryValidatorTests
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(failure => failure.PropertyName == "Limit");
+    }
+
+    [TestMethod]
+    public void SearchTextAtTheLimitIsValid()
+    {
+        GetTodosQuery query = new GetTodosQuery(
+            searchText: new string('a', TodoValidationLimits.SearchTextMaximumLength));
+
+        validator.Validate(query).IsValid.Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void SearchTextBeyondTheLimitIsInvalid()
+    {
+        GetTodosQuery query = new GetTodosQuery(
+            searchText: new string('a', TodoValidationLimits.SearchTextMaximumLength + 1));
+
+        ValidationResult result = validator.Validate(query);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(failure => failure.PropertyName == "SearchText");
+    }
+
+    /// <summary>
+    /// The length is measured after trimming, so padding a term to the limit
+    /// with spaces is not a way past the rule and is not a rejection either.
+    /// </summary>
+    [TestMethod]
+    public void SurroundingSpaceIsTrimmedBeforeTheLengthIsMeasured()
+    {
+        string padded = new string(' ', 50)
+            + new string('a', TodoValidationLimits.SearchTextMaximumLength)
+            + new string(' ', 50);
+        GetTodosQuery query = new GetTodosQuery(searchText: padded);
+
+        query.SearchText.Should().HaveLength(TodoValidationLimits.SearchTextMaximumLength);
+        validator.Validate(query).IsValid.Should().BeTrue();
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("   ")]
+    public void BlankSearchTextBecomesNoSearch(string? searchText)
+    {
+        GetTodosQuery query = new GetTodosQuery(searchText: searchText);
+
+        query.SearchText.Should().BeNull();
+        validator.Validate(query).IsValid.Should().BeTrue();
     }
 
     [TestMethod]

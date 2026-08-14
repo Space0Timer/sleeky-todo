@@ -71,6 +71,7 @@ export function listTodos(options: TodoListOptions): Promise<CursorPage<TodoList
   if (options.dependencyStatus !== null) {
     query.set('dependencyStatus', dependencyStatusNames[options.dependencyStatus])
   }
+  if (options.searchText) query.set('search', options.searchText)
   if (options.cursor) query.set('cursor', options.cursor)
 
   return send<CursorPage<TodoListItem>>(`/api/todos?${query.toString()}`)

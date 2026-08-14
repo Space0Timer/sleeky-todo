@@ -611,6 +611,61 @@ variants — and the remaining behaviour is `:focus`, `:disabled`,
 a CSS custom property set from an inline style, which keeps the token and mixin
 layers intact.
 
+## Token-prefix search over stored search tokens
+
+Text search stores a normalized `searchTokens` array on each TODO and matches
+each typed term as an index-backed prefix of some token, with several terms
+combining as AND. Search is a plain filter joined into the existing list query,
+so sorting and keyset paging are untouched.
+
+MongoDB's own `$text` index was rejected: it matches whole words or stems, so
+"quart" would not find "quarterly", and its relevance ordering fights the
+keyset cursor the list already depends on. Embeddings were rejected because the
+feature would then only work for users who have configured a provider, every
+write would pay an API call, and `$vectorSearch` is not available on the
+self-hosted `mongo:7.0` this deployment targets. An external search engine was
+rejected as a second always-on service for one text box.
+
+Search queries `hint()` the search index. Left to itself the planner can pick a
+sort-supporting index and then apply the token regexes to the owner's entire
+range, which is the slow path the feature exists to avoid. Non-search queries
+are not hinted and keep whatever plan they have today. The hint costs the sort
+its index, but no index can serve both a range on the tokens and the sort
+order, so a top-K sort bounded by `limit + 1` is the best plan available rather
+than a concession.
+
+The accepted costs:
+
+- **Residual filtering.** The index bounds serve the first term only. Remaining
+  terms and the status, priority, and due-date filters are applied to fetched
+  documents, each already owner-scoped, so the worst case is bounded by one
+  user's own TODO count.
+- **Paging under search is O(match set) per page.** The cursor predicate has no
+  indexed field after the tokens key, so each Load More re-fetches and top-K
+  sorts every matching document. Keyset paging's O(page) property is given back
+  while a search is active, again bounded by the owner's own TODOs.
+- **Trash-scope search scans wide.** Selecting deleted TODOs is a range on
+  `deletedAt`, which sits before the tokens key, so the token bounds apply per
+  distinct value and the query effectively scans that owner's trash.
+- **Write amplification.** A 2000-character description can produce roughly 250
+  to 300 distinct tokens, all rewritten as multikey entries on every
+  full-document replace. This is likely the collection's largest index — fine
+  at this scale, recorded so `db.stats()` does not surprise anyone.
+- **Rollback is safe but leaves work for the next start.** `TodoDocument`
+  ignores unknown elements, so a rolled-back binary reads token-carrying
+  documents without complaint, but its full-document replaces drop
+  `searchTokens` from anything edited while rolled back. The next start's
+  backfill heals exactly those documents. A non-event on the single-instance
+  compose deployment; it matters only if deployment ever becomes rolling.
+- **A match can be invisible.** Search covers description words, while a card
+  renders only the first 120 characters of the description. A term matched deep
+  in a long description produces a card with no visible occurrence of it. This
+  is documented rather than fixed, so it is not reported as a bug.
+- **Prefix, not substring.** The dependency picker used to filter its loaded
+  candidates by substring, so "ilk" found "milk". It no longer does. That is
+  the price of an index-backed match, and it buys the picker the whole
+  collection instead of the first hundred candidates.
+
 ## Deferred decisions
 
 Retention cleanup scheduling remains deferred until its vertical slice.

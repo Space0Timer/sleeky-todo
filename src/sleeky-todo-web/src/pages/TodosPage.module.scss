@@ -135,6 +135,12 @@
   }
 }
 
+// Search reads whole phrases rather than picking one of a few options, so it
+// gets the width two of the option controls occupy.
+.search-field {
+  grid-column: span 2;
+}
+
 .clear-filters {
   align-self: end;
 }
@@ -199,5 +205,9 @@
 
   .filter-panel {
     grid-template-columns: 1fr;
+  }
+
+  .search-field {
+    grid-column: auto;
   }
 }

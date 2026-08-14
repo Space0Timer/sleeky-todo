@@ -34,8 +34,10 @@ public static class TodoToolset
                         + "description rather than by identifier — \"everything due this week\", "
                         + "\"the high-priority ones\", \"what's in the trash\" — because the "
                         + "answer carries the identifiers and versions every other tool needs. "
-                        + "Returns hasMore when the list is longer than what came back; act on "
-                        + "the whole list only when it is false.",
+                        + "When the request names them by what they are about — \"the ones about "
+                        + "the tax return\" — pass those words as search rather than reading the "
+                        + "whole list and picking. Returns hasMore when the list is longer than "
+                        + "what came back; act on the whole list only when it is false.",
                 }),
             AIFunctionFactory.Create(
                 tools.GetTodoSelectionAsync,

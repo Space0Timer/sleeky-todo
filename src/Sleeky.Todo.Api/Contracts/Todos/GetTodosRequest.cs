@@ -36,4 +36,7 @@ public sealed class GetTodosRequest
 
     [FromQuery(Name = "cursor")]
     public string? Cursor { get; init; }
+
+    [FromQuery(Name = "search")]
+    public string? Search { get; init; }
 }

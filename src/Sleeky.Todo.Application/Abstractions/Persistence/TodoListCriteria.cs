@@ -16,8 +16,11 @@ public sealed class TodoListCriteria
         SortDirection sortDirection,
         int limit,
         string? lastSortValue,
-        Guid? lastTodoId)
+        Guid? lastTodoId,
+        IReadOnlyList<string> searchTerms)
     {
+        ArgumentNullException.ThrowIfNull(searchTerms);
+
         Status = status;
         Priority = priority;
         DueFrom = dueFrom;
@@ -29,6 +32,7 @@ public sealed class TodoListCriteria
         Limit = limit;
         LastSortValue = lastSortValue;
         LastTodoId = lastTodoId;
+        SearchTerms = searchTerms;
     }
 
     public TodoStatus? Status { get; }
@@ -52,4 +56,14 @@ public sealed class TodoListCriteria
     public string? LastSortValue { get; }
 
     public Guid? LastTodoId { get; }
+
+    /// <summary>
+    /// The already-tokenized search terms, empty when nothing was searched for.
+    /// Each must match a stored token as a prefix, and all of them must match.
+    /// </summary>
+    /// <remarks>
+    /// Splitting happens above this boundary so Infrastructure never learns the
+    /// tokenizer's rules and cannot drift from what the write path stored.
+    /// </remarks>
+    public IReadOnlyList<string> SearchTerms { get; }
 }

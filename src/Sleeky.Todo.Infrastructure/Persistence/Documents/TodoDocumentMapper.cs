@@ -20,6 +20,7 @@ internal static class TodoDocumentMapper
             Status = todoItem.Status,
             Priority = todoItem.Priority,
             DependencyIds = todoItem.DependencyIds.ToList(),
+            SearchTokens = todoItem.SearchTokens.ToList(),
             Recurrence = todoItem.Recurrence is null
                 ? null
                 : new RecurrenceDocument

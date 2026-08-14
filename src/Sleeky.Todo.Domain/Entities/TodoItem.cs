@@ -1,6 +1,7 @@
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
+using Sleeky.Todo.Domain.Services;
 using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Domain.Entities;
@@ -52,6 +53,17 @@ public sealed class TodoItem
     public IReadOnlyCollection<Guid> DependencyIds => dependencyIds.AsReadOnly();
 
     public IReadOnlyCollection<IDomainEvent> DomainEvents => domainEvents.AsReadOnly();
+
+    /// <summary>
+    /// The searchable words of the name and description.
+    /// </summary>
+    /// <remarks>
+    /// Computed rather than stored, so no creation, rehydration, edit, or
+    /// recurring occurrence can persist tokens that disagree with the text
+    /// they came from by forgetting to recompute them.
+    /// </remarks>
+    public IReadOnlyCollection<string> SearchTokens =>
+        SearchTokenizer.Tokenize(Name, Description);
 
     public RecurrenceSchedule? Recurrence { get; private set; }
 

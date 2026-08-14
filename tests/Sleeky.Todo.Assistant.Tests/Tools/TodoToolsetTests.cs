@@ -113,6 +113,26 @@ public sealed class TodoToolsetTests
         Required(toolset, TodoToolNames.GetTodoSelection).Should().BeEquivalentTo("ids");
     }
 
+    /// <summary>
+    /// Search is a plain optional string on the read tool. The tool list has to
+    /// be identical on every request for a provider's prefix caching to hold,
+    /// so this parameter is declared unconditionally rather than added when a
+    /// turn happens to need it.
+    /// </summary>
+    [TestMethod]
+    public void CreateOffersSearchAsAnOptionalStringOnTheReadTool()
+    {
+        AIFunction getTodos = Find(TodoToolset.Create(BuildTools()), TodoToolNames.GetTodos);
+
+        JsonElement search = getTodos.JsonSchema
+            .GetProperty("properties")
+            .GetProperty("search");
+
+        search.GetProperty("description").GetString().Should().Contain("start of a word");
+        Required(TodoToolset.Create(BuildTools()), TodoToolNames.GetTodos)
+            .Should().NotContain("search");
+    }
+
     [TestMethod]
     public void CreateDescribesWhenToCallEachTool()
     {
