@@ -47,7 +47,7 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
                 request.DueDate)
             : null;
         TodoItem todoItem = TodoItem.Create(
-            Guid.NewGuid(),
+            request.Id ?? Guid.NewGuid(),
             currentUser.UserId,
             request.Name,
             request.Description,

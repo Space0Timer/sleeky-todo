@@ -53,6 +53,9 @@ $color-focus: #7259d9;
 $color-focus-ring: rgb(114 89 217 / 15%);
 $color-page-glow: rgb(112 84 223 / 8%);
 
+// Dims the page behind a modal so the dialog reads as the only live surface.
+$color-overlay: rgb(39 33 47 / 45%);
+
 // Status tones ----------------------------------------------------------------
 // Each tone is a surface and a text colour that reach contrast together. Apply
 // them as a pair through the `tone` mixin rather than picking one half.

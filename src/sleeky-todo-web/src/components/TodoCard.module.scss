@@ -1,6 +1,30 @@
 @use '../styles/mixins' as m;
 @use '../styles/tokens' as t;
 
+// The label text is for assistive technology only: the checkbox sits among
+// badges where a visible caption would crowd the row.
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.select-box {
+  display: inline-flex;
+  align-items: center;
+}
+
+.drifted {
+  border-color: t.$color-text-strong;
+  box-shadow: 0 0 0 2px t.$color-surface-counter;
+}
+
 .todo-card {
   @include m.surface;
 

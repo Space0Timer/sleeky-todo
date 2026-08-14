@@ -10,16 +10,19 @@ internal static class BulkTodoLoader
     /// Loads every selected TODO in one query, in request order, rejecting the
     /// whole batch when an identifier is missing or its version has moved on.
     /// Ordering matches the single-item handlers: a missing TODO is a 404 before
-    /// any version is compared.
+    /// any version is compared. Restoration is the one batch that selects
+    /// deleted TODOs, so it asks for them explicitly.
     /// </summary>
     public static async Task<IReadOnlyList<TodoItem>> LoadAsync(
         ITodoRepository todoRepository,
         IReadOnlyCollection<BulkTodoItemRequest> items,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool includeDeleted = false)
     {
         IReadOnlyCollection<TodoItem> loaded = await todoRepository.GetByIdsAsync(
             items.Select(item => item.Id).ToArray(),
-            cancellationToken: cancellationToken);
+            includeDeleted,
+            cancellationToken);
         Dictionary<Guid, TodoItem> todosById = loaded.ToDictionary(todo => todo.Id);
 
         List<TodoItem> ordered = new List<TodoItem>(items.Count);

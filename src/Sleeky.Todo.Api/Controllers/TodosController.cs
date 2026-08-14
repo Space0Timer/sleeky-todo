@@ -9,6 +9,7 @@ using Sleeky.Todo.Application.Todos.Commands.AddDependency;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.Bulk.DeleteTodos;
+using Sleeky.Todo.Application.Todos.Commands.Bulk.RestoreTodos;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Commands.DeleteTodo;
@@ -17,6 +18,7 @@ using Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
 using Sleeky.Todo.Application.Todos.Commands.UpdateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
+using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 
 namespace Sleeky.Todo.Api.Controllers;
 
@@ -76,6 +78,24 @@ public sealed class TodosController : ControllerBase
         TodoDto todo = await sender.Send(command, cancellationToken);
 
         return CreatedAtAction(nameof(Get), new { id = todo.Id }, todo);
+    }
+
+    /// <summary>
+    /// Reports the current state of specific TODOs. Identifiers that no longer
+    /// resolve are absent from the response rather than failing it, so a client
+    /// holding a stale selection can discover what changed and what vanished.
+    /// </summary>
+    [HttpGet("selection")]
+    [ProducesResponseType<TodoSelection>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<TodoSelection>> GetSelection(
+        [FromQuery(Name = "id")] Guid[] ids,
+        CancellationToken cancellationToken)
+    {
+        TodoSelection selection = await sender.Send(
+            new GetTodoSelectionQuery(ids ?? Array.Empty<Guid>()),
+            cancellationToken);
+        return Ok(selection);
     }
 
     [HttpGet("{id:guid}")]
@@ -209,6 +229,22 @@ public sealed class TodosController : ControllerBase
     {
         BulkTodoResult result = await sender.Send(
             new BulkChangeTodoStatusCommand(request.Status, ToSelection(request.Items)),
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    [HttpPost("restore")]
+    [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<BulkTodoResult>> RestoreMany(
+        BulkRestoreTodosRequest request,
+        CancellationToken cancellationToken)
+    {
+        BulkTodoResult result = await sender.Send(
+            new BulkRestoreTodosCommand(ToSelection(request.Items)),
             cancellationToken);
 
         return Ok(result);

@@ -6,12 +6,15 @@ import {
   todoScope,
   todoSortField,
   todoStatus,
+  type BulkTodoResult,
   type CreateTodoDraft,
   type CursorPage,
   type Todo,
   type TodoDraft,
   type TodoListItem,
   type TodoListOptions,
+  type TodoSelection,
+  type TodoStatus,
   type TodoVersionReference,
 } from '../types/todo.ts'
 
@@ -115,11 +118,49 @@ export function removeTodoDependency(todo: Todo, dependencyId: string): Promise<
   )
 }
 
-export function deleteTodo(todo: TodoVersionReference): Promise<void> {
-  return send<void>(`/api/todos/${encodeURIComponent(todo.id)}`, {
+export function deleteTodo(todo: TodoVersionReference): Promise<Todo> {
+  return send<Todo>(`/api/todos/${encodeURIComponent(todo.id)}`, {
     method: 'DELETE',
     body: JSON.stringify({ version: todo.version }),
   })
+}
+
+export function bulkChangeTodoStatus(
+  status: TodoStatus,
+  items: TodoVersionReference[],
+): Promise<BulkTodoResult> {
+  // Enum names belong in query strings; a JSON body carries the numeric value,
+  // which is what the single-item status route already sends.
+  return send<BulkTodoResult>('/api/todos/status', {
+    method: 'PUT',
+    body: JSON.stringify({ status, items }),
+  })
+}
+
+export function bulkDeleteTodos(items: TodoVersionReference[]): Promise<BulkTodoResult> {
+  return send<BulkTodoResult>('/api/todos', {
+    method: 'DELETE',
+    body: JSON.stringify({ items }),
+  })
+}
+
+export function bulkRestoreTodos(items: TodoVersionReference[]): Promise<BulkTodoResult> {
+  return send<BulkTodoResult>('/api/todos/restore', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  })
+}
+
+/**
+ * Reads the current state of exactly these TODOs without touching list state,
+ * so a conflict path can diff a stale selection against the server without
+ * refreshing what the user is looking at.
+ */
+export function lookupTodoSelection(ids: string[]): Promise<TodoSelection> {
+  const query = new URLSearchParams()
+  for (const id of ids) query.append('id', id)
+
+  return send<TodoSelection>(`/api/todos/selection?${query.toString()}`)
 }
 
 export function restoreTodo(todo: TodoVersionReference): Promise<Todo> {

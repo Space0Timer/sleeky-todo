@@ -1,66 +1,19 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 import { signIn } from './auth.ts'
+import {
+  antiforgeryHeader,
+  apiOrigin,
+  createTodo,
+  currentUserId,
+  todoCard,
+} from './todos.ts'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url))
-const apiOrigin = 'http://127.0.0.1:5173'
-
-/**
- * Requests made through the Playwright request context carry the session
- * cookie but no antiforgery header, which the API requires for mutations.
- */
-async function antiforgeryHeader(page: Page): Promise<Record<string, string>> {
-  const response = await page.request.get(`${apiOrigin}/api/auth/antiforgery`)
-  const token = (await response.json()) as { headerName: string; token: string }
-
-  return { [token.headerName]: token.token }
-}
-
-/** Every TODO is owner-scoped, so seeded documents need the signed-in user. */
-async function currentUserId(page: Page): Promise<string> {
-  const response = await page.request.get(`${apiOrigin}/api/auth/me`)
-  const user = (await response.json()) as { userId: string | null }
-
-  if (user.userId === null) {
-    throw new Error('The current user endpoint reported no signed-in user.')
-  }
-
-  return user.userId
-}
-
-function todoCard(page: Page, name: string): Locator {
-  return page.locator('[data-testid^="todo-"]').filter({
-    has: page.getByRole('heading', { name, exact: true }),
-  })
-}
-
-async function createTodo(
-  page: Page,
-  name: string,
-  options: { dueDate?: string; recurring?: boolean } = {},
-): Promise<Locator> {
-  const form = page.getByRole('group', { name: 'Create a TODO' })
-  await form.getByLabel('Name').fill(name)
-  await form.getByLabel('Description').fill(`Details for ${name}`)
-  await form.getByLabel('Due date').fill(options.dueDate ?? '2026-08-31')
-  await form.getByLabel('Priority').selectOption({ label: 'High' })
-
-  if (options.recurring) {
-    await form.getByLabel('Repeat this TODO').check()
-    await form.getByLabel('Recurrence frequency').selectOption({ label: 'Monthly' })
-  }
-
-  await form.getByRole('button', { name: 'Add TODO' }).click()
-
-  const card = todoCard(page, name)
-  await expect(card).toHaveCount(1)
-  await expect(card).toBeVisible()
-  return card
-}
 
 test.beforeEach(async ({ page }) => {
   await signIn(page)
