@@ -1,4 +1,6 @@
-namespace Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Application.Abstractions.Identity;
+
+namespace Sleeky.Todo.Application.Abstractions.Persistence;
 
 public interface IUserDirectoryRepository
 {

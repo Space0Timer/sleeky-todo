@@ -1,6 +1,7 @@
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
+using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
