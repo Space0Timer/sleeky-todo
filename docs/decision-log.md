@@ -39,11 +39,15 @@ observed version and refreshes the list after success. A stale-version response
 is shown explicitly and requires a Reload Latest Version action, preserving the
 same no-silent-overwrite rule as the API.
 
-The dependency selector loads at most 100 active TODO projections ordered by
-name and searches within that bounded set. This keeps browser memory and network
-work bounded without adding a new API contract, at the cost of not exposing
-candidates beyond that first page. Server-side dependency search is the chosen
-follow-up if larger datasets must be supported.
+The dependency selector originally loaded at most 100 active TODO projections
+ordered by name and searched within that bounded set, which kept browser memory
+and network work bounded without a new API contract but left every candidate
+beyond that first page unreachable. That follow-up has since been taken: the
+selector sends what is typed to the list endpoint and the server matches it, so
+the reachable set is the whole collection rather than one page. Only the
+predicates the server cannot know stay in the client — the card excludes itself
+and the prerequisites it already has. The matching semantics are recorded under
+"Token-prefix search over stored search tokens".
 
 ## MongoDB
 
@@ -283,8 +287,8 @@ or persistence code to Serilog. Static Serilog access is restricted to bootstrap
 fatal startup reporting, and shutdown flushing in `Program.cs`.
 
 The logging pipeline produces a condensed HTTP completion event, trace context,
-MediatR request timing, index-initialization events, and a post-commit event when
-a recurring completion creates its next TODO. Successful TODO mutations emit
+MediatR request timing, index-initialization and startup-migration events, and a
+post-commit event when a recurring completion creates its next TODO. Successful TODO mutations emit
 Information audit events through direct typed `ILogger<T>` calls with stable
 event IDs and structured placeholders. Logging records identifiers, versions,
 and operational metadata, not request bodies, descriptions, cursor values, or
@@ -376,10 +380,9 @@ occurrence, while the stale request returns 409.
 
 ## Cookie session with OIDC login
 
-Authentication is designed as OpenID Connect for login and an encrypted
-ASP.NET Core cookie for the application session. Until that slice is
-implemented the API still has no authentication and must not be exposed
-publicly.
+Login is OpenID Connect and the application session is an encrypted ASP.NET
+Core cookie. Every TODO route requires an authenticated user, and a request
+without a valid session is answered with `401` rather than a redirect.
 
 Browser-held tokens were rejected. Any access or refresh token reachable from
 JavaScript is exposed to cross-site scripting, and client-side refresh adds
@@ -610,6 +613,61 @@ variants — and the remaining behaviour is `:focus`, `:disabled`,
 `[aria-selected]`, and one media query. An open-ended value, if one arrives, is
 a CSS custom property set from an inline style, which keeps the token and mixin
 layers intact.
+
+## Token-prefix search over stored search tokens
+
+Text search stores a normalized `searchTokens` array on each TODO and matches
+each typed term as an index-backed prefix of some token, with several terms
+combining as AND. Search is a plain filter joined into the existing list query,
+so sorting and keyset paging are untouched.
+
+MongoDB's own `$text` index was rejected: it matches whole words or stems, so
+"quart" would not find "quarterly", and its relevance ordering fights the
+keyset cursor the list already depends on. Embeddings were rejected because the
+feature would then only work for users who have configured a provider, every
+write would pay an API call, and `$vectorSearch` is not available on the
+self-hosted `mongo:7.0` this deployment targets. An external search engine was
+rejected as a second always-on service for one text box.
+
+Search queries `hint()` the search index. Left to itself the planner can pick a
+sort-supporting index and then apply the token regexes to the owner's entire
+range, which is the slow path the feature exists to avoid. Non-search queries
+are not hinted and keep whatever plan they have today. The hint costs the sort
+its index, but no index can serve both a range on the tokens and the sort
+order, so a top-K sort bounded by `limit + 1` is the best plan available rather
+than a concession.
+
+The accepted costs:
+
+- **Residual filtering.** The index bounds serve the first term only. Remaining
+  terms and the status, priority, and due-date filters are applied to fetched
+  documents, each already owner-scoped, so the worst case is bounded by one
+  user's own TODO count.
+- **Paging under search is O(match set) per page.** The cursor predicate has no
+  indexed field after the tokens key, so each Load More re-fetches and top-K
+  sorts every matching document. Keyset paging's O(page) property is given back
+  while a search is active, again bounded by the owner's own TODOs.
+- **Trash-scope search scans wide.** Selecting deleted TODOs is a range on
+  `deletedAt`, which sits before the tokens key, so the token bounds apply per
+  distinct value and the query effectively scans that owner's trash.
+- **Write amplification.** A 2000-character description can produce roughly 250
+  to 300 distinct tokens, all rewritten as multikey entries on every
+  full-document replace. This is likely the collection's largest index — fine
+  at this scale, recorded so `db.stats()` does not surprise anyone.
+- **Rollback is safe but leaves work for the next start.** `TodoDocument`
+  ignores unknown elements, so a rolled-back binary reads token-carrying
+  documents without complaint, but its full-document replaces drop
+  `searchTokens` from anything edited while rolled back. The next start's
+  backfill heals exactly those documents. A non-event on the single-instance
+  compose deployment; it matters only if deployment ever becomes rolling.
+- **A match can be invisible.** Search covers description words, while a card
+  renders only the first 120 characters of the description. A term matched deep
+  in a long description produces a card with no visible occurrence of it. This
+  is documented rather than fixed, so it is not reported as a bug.
+- **Prefix, not substring.** The dependency picker used to filter its loaded
+  candidates by substring, so "ilk" found "milk". It no longer does. That is
+  the price of an index-backed match, and it buys the picker the whole
+  collection instead of the first hundred candidates.
 
 ## Deferred decisions
 

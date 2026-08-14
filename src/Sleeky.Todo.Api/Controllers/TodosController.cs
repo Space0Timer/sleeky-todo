@@ -53,7 +53,8 @@ public sealed class TodosController : ControllerBase
             request.SortField,
             request.SortDirection,
             request.Limit,
-            request.Cursor);
+            request.Cursor,
+            request.Search);
         CursorPage<TodoListItemDto> page = await sender.Send(query, cancellationToken);
 
         return Ok(page);

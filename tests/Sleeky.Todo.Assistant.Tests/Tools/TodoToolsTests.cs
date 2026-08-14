@@ -10,7 +10,9 @@ using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
+using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
+using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Tests.Turns;
 using Sleeky.Todo.Assistant.Tools;
@@ -263,6 +265,85 @@ public sealed class TodoToolsTests
             .Which.Error.Should().Contain("limit");
     }
 
+    /// <summary>
+    /// Refused here rather than thrown by the query's validator, for the same
+    /// reason an out-of-range limit is: a thrown validation failure reaches the
+    /// model as a generic error naming no parameter, so it retries the same
+    /// call until the turn aborts.
+    /// </summary>
+    [TestMethod]
+    public async Task GetTodosRefusesOverlongSearchTextRatherThanThrowing()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+
+        object outcome = await harness.Tools.GetTodosAsync(
+            search: new string('a', TodoValidationLimits.SearchTextMaximumLength + 1));
+
+        outcome.Should().BeOfType<ToolFailure>()
+            .Which.Error.Should().Contain("search");
+        harness.Listed.Should().BeNull();
+    }
+
+    [TestMethod]
+    public async Task GetTodosAcceptsSearchTextAtTheLimit()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+        string atLimit = new string('a', TodoValidationLimits.SearchTextMaximumLength);
+
+        object outcome = await harness.Tools.GetTodosAsync(search: atLimit);
+
+        outcome.Should().BeOfType<TodoPage>();
+        harness.Listed!.SearchText.Should().Be(atLimit);
+    }
+
+    /// <summary>
+    /// The query trims before validating, so this has to trim before measuring.
+    /// Refusing padding the server would have accepted would send the model
+    /// hunting for a fault that is not there.
+    /// </summary>
+    [TestMethod]
+    public async Task GetTodosMeasuresSearchTextTheWayTheQueryDoes()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+        string padded = new string(' ', 50)
+            + new string('a', TodoValidationLimits.SearchTextMaximumLength)
+            + new string(' ', 50);
+
+        object outcome = await harness.Tools.GetTodosAsync(search: padded);
+
+        outcome.Should().BeOfType<TodoPage>();
+        harness.Listed!.SearchText.Should()
+            .HaveLength(TodoValidationLimits.SearchTextMaximumLength);
+    }
+
+    [TestMethod]
+    public async Task GetTodosForwardsSearchTextToTheQuery()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+
+        _ = await harness.Tools.GetTodosAsync(search: "tax return");
+
+        harness.Listed.Should().NotBeNull();
+        harness.Listed!.SearchText.Should().Be("tax return");
+    }
+
+    [TestMethod]
+    public async Task GetTodosWithoutSearchTextSendsNone()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+
+        _ = await harness.Tools.GetTodosAsync(status: "NotStarted");
+
+        harness.Listed.Should().NotBeNull();
+        harness.Listed!.SearchText.Should().BeNull();
+        harness.Listed.Status.Should().Be(TodoStatus.NotStarted);
+    }
+
     [TestMethod]
     public async Task CreateRecordsTheNewVersionSoItCanBeWrittenToNext()
     {
@@ -479,6 +560,23 @@ public sealed class TodoToolsTests
         public bool Halted { get; private set; }
 
         public CreateTodoCommand? Created { get; private set; }
+
+        public GetTodosQuery? Listed { get; private set; }
+
+        public void StageList(params TodoListItemDto[] items)
+        {
+            this.Sender
+                .Send(
+                    Arg.Any<IRequest<CursorPage<TodoListItemDto>>>(),
+                    Arg.Any<CancellationToken>())
+                .Returns(call =>
+                {
+                    this.Listed = (GetTodosQuery)call
+                        .Arg<IRequest<CursorPage<TodoListItemDto>>>();
+                    return Task.FromResult(
+                        new CursorPage<TodoListItemDto>(items, nextCursor: null));
+                });
+        }
 
         public void StageSelection(params TodoDto[] found)
         {

@@ -7,6 +7,7 @@ using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.Services;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Queries.GetTodos;
 
@@ -100,9 +101,7 @@ public sealed class GetTodosQueryHandlerTests
     public async Task CursorReusedWithDifferentFilterIsRejected()
     {
         GetTodosQuery firstQuery = new GetTodosQuery(priority: TodoPriority.High);
-        string signature = TodoCursorCodec.CreateFilterSignature(firstQuery);
-        string cursor = TodoCursorCodec.Encode(
-            TodoCursorCodec.Create(firstQuery, CreateItem(1), signature));
+        string cursor = CreateCursorFor(firstQuery);
         GetTodosQuery changedQuery = new GetTodosQuery(
             priority: TodoPriority.Low,
             cursor: cursor);
@@ -114,6 +113,142 @@ public sealed class GetTodosQueryHandlerTests
         await act.Should()
             .ThrowAsync<InvalidCursorException>()
             .WithMessage("The cursor does not match the current filters, scope, or sorting.");
+    }
+
+    [TestMethod]
+    public async Task SearchTextIsTokenizedIntoCriteriaTerms()
+    {
+        TodoListCriteria? capturedCriteria = null;
+        listReader.GetTodosAsync(
+                Arg.Do<TodoListCriteria>(criteria => capturedCriteria = criteria),
+                Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TodoListItemDto>());
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        _ = await handler.Handle(
+            new GetTodosQuery(searchText: "  Buy MILK, please "),
+            CancellationToken.None);
+
+        capturedCriteria.Should().NotBeNull();
+        capturedCriteria!.SearchTerms.Should().Equal("buy", "milk", "please");
+    }
+
+    /// <summary>
+    /// Text that tokenizes to nothing is not a search for the empty string. It
+    /// filters nothing, so the list reads exactly as it would with the box
+    /// empty rather than coming back empty.
+    /// </summary>
+    [TestMethod]
+    public async Task PunctuationOnlySearchTextFiltersNothing()
+    {
+        TodoListCriteria? capturedCriteria = null;
+        listReader.GetTodosAsync(
+                Arg.Do<TodoListCriteria>(criteria => capturedCriteria = criteria),
+                Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TodoListItemDto>());
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        _ = await handler.Handle(
+            new GetTodosQuery(searchText: "--- !!!"),
+            CancellationToken.None);
+
+        capturedCriteria.Should().NotBeNull();
+        capturedCriteria!.SearchTerms.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task NoSearchTextProducesNoTerms()
+    {
+        TodoListCriteria? capturedCriteria = null;
+        listReader.GetTodosAsync(
+                Arg.Do<TodoListCriteria>(criteria => capturedCriteria = criteria),
+                Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TodoListItemDto>());
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        _ = await handler.Handle(new GetTodosQuery(), CancellationToken.None);
+
+        capturedCriteria.Should().NotBeNull();
+        capturedCriteria!.SearchTerms.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task CursorFromOneSearchIsRejectedUnderAnother()
+    {
+        string cursor = CreateCursorFor(new GetTodosQuery(searchText: "milk"));
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        Func<Task> act = async () => await handler.Handle(
+            new GetTodosQuery(searchText: "bread", cursor: cursor),
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidCursorException>()
+            .WithMessage("The cursor does not match the current filters, scope, or sorting.");
+    }
+
+    [TestMethod]
+    public async Task CursorFromASearchIsRejectedWithNoSearch()
+    {
+        string cursor = CreateCursorFor(new GetTodosQuery(searchText: "milk"));
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        Func<Task> act = async () => await handler.Handle(
+            new GetTodosQuery(cursor: cursor),
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidCursorException>()
+            .WithMessage("The cursor does not match the current filters, scope, or sorting.");
+    }
+
+    /// <summary>
+    /// Cosmetic differences in what was typed reach the same tokens, so a
+    /// cursor minted under one spelling continues under the other rather than
+    /// failing on a keystroke the user cannot see.
+    /// </summary>
+    [TestMethod]
+    public async Task CursorSurvivesCosmeticDifferencesInTheSearchText()
+    {
+        TodoListItemDto[] storedItems = Enumerable.Range(1, 3)
+            .Select(index => CreateItem(index))
+            .ToArray();
+        listReader.GetTodosAsync(Arg.Any<TodoListCriteria>(), Arg.Any<CancellationToken>())
+            .Returns(storedItems);
+        string cursor = CreateCursorFor(new GetTodosQuery(searchText: "Buy Milk"));
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        CursorPage<TodoListItemDto> page = await handler.Handle(
+            new GetTodosQuery(searchText: "  buy   milk!  ", cursor: cursor, limit: 2),
+            CancellationToken.None);
+
+        page.Items.Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// A cursor minted before search existed carries a signature over six
+    /// components. Appending a seventh only when terms exist is what keeps that
+    /// cursor usable across the deployment that introduced this.
+    /// </summary>
+    [TestMethod]
+    public void SignatureOfAnUnsearchedQueryIsUnchangedByTheSearchComponent()
+    {
+        GetTodosQuery query = new GetTodosQuery(priority: TodoPriority.High);
+
+        TodoCursorCodec.CreateFilterSignature(query, Array.Empty<string>())
+            .Should().Be(TodoCursorCodec.CreateFilterSignature(
+                new GetTodosQuery(priority: TodoPriority.High, searchText: "   "),
+                Array.Empty<string>()));
+    }
+
+    private static string CreateCursorFor(GetTodosQuery query)
+    {
+        IReadOnlyList<string> terms = SearchTokenizer.Tokenize(query.SearchText);
+
+        return TodoCursorCodec.Encode(TodoCursorCodec.Create(
+            query,
+            CreateItem(1),
+            TodoCursorCodec.CreateFilterSignature(query, terms)));
     }
 
     private static TodoListItemDto CreateItem(int index)

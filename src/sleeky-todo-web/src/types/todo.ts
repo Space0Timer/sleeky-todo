@@ -171,6 +171,8 @@ export type TodoListOptions = {
   dueFrom: string
   dueTo: string
   dependencyStatus: DependencyStatus | null
+  /** Words to match, `''` for no search. Required so a caller cannot forget it. */
+  searchText: string
   sortField: TodoSortField
   sortDirection: SortDirection
   limit: number

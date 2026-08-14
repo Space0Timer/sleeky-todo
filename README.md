@@ -271,11 +271,23 @@ domain-rule conflicts return `409`. Every problem response includes a
 camel-cased request field.
 
 `GET /api/todos` accepts `status`, `priority`, `due-from`, `due-to`,
-`dependencyStatus`, `scope`, `sortField`, `sortDirection`, `limit`, and
-`cursor`. Scopes are `Active`, `Archived`, and `Deleted`; supported sort fields
-are `DueDate`, `Priority`, `Status`, and `Name`. The default page size is 50 and
-the maximum is 100. Each response contains `items` and a `nextCursor`; changing
-filters, scope, or sorting requires starting again without the old cursor.
+`dependencyStatus`, `scope`, `sortField`, `sortDirection`, `limit`, `cursor`,
+and `search`. Scopes are `Active`, `Archived`, and `Deleted`; supported sort
+fields are `DueDate`, `Priority`, `Status`, and `Name`. The default page size is
+50 and the maximum is 100. Each response contains `items` and a `nextCursor`;
+changing filters, scope, sorting, or search requires starting again without the
+old cursor.
+
+`search` matches the words of a TODO's name and description. The text is split
+into terms on anything that is not a letter or digit, and each term must be the
+**start** of some word: `quart` finds "Submit quarterly report", `uarter` finds
+nothing. Several terms all have to match, though they may match different words
+and one may come from the name while another comes from the description. Case
+and punctuation in what is typed do not matter, and text containing no letters
+or digits at all filters nothing rather than matching nothing. The parameter is
+capped at 200 characters. A match may be a word deep inside a description, so a
+returned card can show no visible occurrence of the term: list responses carry
+only the first 120 characters of the description.
 
 Dependency and status mutations require the TODO version last read by the
 client. A dependency target must be active, distinct from the source, and not

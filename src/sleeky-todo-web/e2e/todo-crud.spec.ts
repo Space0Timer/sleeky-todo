@@ -18,6 +18,16 @@ function seededId(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
 }
 
+/** Mirrors the domain tokenizer as far as these fixed names need. */
+function searchTokensFor(name: string): string[] {
+  return [
+    ...new Set(`${name} Cursor acceptance record`
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => token.length > 0)),
+  ]
+}
+
 /**
  * Seeds a page and a bit of TODOs straight into MongoDB. More than the create
  * form should have to type, and the ordering has to be exact.
@@ -41,6 +51,10 @@ async function seedTodos(ownerId: string, names: string[]): Promise<void> {
     name,
     nameNormalized: name.toLowerCase(),
     description: 'Cursor acceptance record',
+    // Search reads these rather than the text, and the startup backfill has
+    // already run by the time a spec seeds. A seed without them is a document
+    // no search can reach.
+    searchTokens: searchTokensFor(name),
     dueDate: '2027-04-19',
     // Status and priority persist as their numeric business order, so a
     // seeded document must match that representation to be queryable.
@@ -282,7 +296,14 @@ test('shows one card when an edit moves a seen TODO onto the next page', async (
     ${todoCollection}.updateOne(
       { _id: UUID('${seededId(0)}') },
       {
-        $set: { name: '${drifted}', nameNormalized: '${drifted.toLowerCase()}' },
+        $set: {
+          name: '${drifted}',
+          nameNormalized: '${drifted.toLowerCase()}',
+          // Written alongside the name, as every repository write does. A
+          // partial rename would leave the document searchable only by the
+          // name it no longer has.
+          searchTokens: ${JSON.stringify(searchTokensFor(drifted))},
+        },
         $inc: { version: 1 },
       },
     );

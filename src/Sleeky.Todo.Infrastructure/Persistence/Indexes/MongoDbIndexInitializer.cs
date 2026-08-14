@@ -10,6 +10,8 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Indexes;
 
 internal sealed class MongoDbIndexInitializer : IHostedService
 {
+    private const int IndexesInitializedEventId = 2001;
+    private const int IndexDroppedEventId = 2002;
     private const int IndexNotFoundErrorCode = 27;
     private const string IndexNameField = "name";
     private const int NamespaceNotFoundErrorCode = 26;
@@ -62,7 +64,7 @@ internal sealed class MongoDbIndexInitializer : IHostedService
             cancellationToken: cancellationToken);
 
         this.logger.LogInformation(
-            2001,
+            IndexesInitializedEventId,
             "Initialized {TodoIndexCount} MongoDB TODO indexes and {UserIndexCount} user indexes",
             todoIndexes.Length,
             userIndexes.Length);
@@ -124,6 +126,21 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                 new CreateIndexOptions<TodoDocument>
                 {
                     Name = "owner_active_dependency_ids",
+                }),
+
+            // The array key comes last here, unlike the dependency index above.
+            // A search matches an owner and a scope exactly and then scans a
+            // range of tokens, so equality has to precede the range for the
+            // bounds to be tight. The dependency lookup matches an exact
+            // identifier in the array instead, where the position does not
+            // carry the same cost.
+            new CreateIndexModel<TodoDocument>(
+                keys.Ascending(todo => todo.OwnerId)
+                    .Ascending(todo => todo.DeletedAt)
+                    .Ascending(todo => todo.SearchTokens),
+                new CreateIndexOptions<TodoDocument>
+                {
+                    Name = MongoTodoIndexNames.OwnerActiveSearchTokens,
                 }),
             new CreateIndexModel<TodoDocument>(
                 keys.Ascending(todo => todo.PurgeAt),
@@ -215,7 +232,7 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                     indexName,
                     cancellationToken);
                 this.logger.LogInformation(
-                    2002,
+                    IndexDroppedEventId,
                     "Dropped superseded MongoDB TODO index {IndexName}",
                     indexName);
             }

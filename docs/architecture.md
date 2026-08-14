@@ -40,18 +40,32 @@ callback the bulk toolbar uses, because its writes are the same writes. Turn
 events are read off the `fetch` body by a small parser beside the API module;
 the transcript it holds is opaque to the client, which only carries it back.
 
-Dependency selection is deliberately bounded. The client requests one active
-page of at most 100 TODOs sorted by normalized name and searches only within
-that loaded set, excluding the current TODO and already-selected dependencies.
-This avoids loading an unbounded collection, but it also means TODOs beyond the
-first 100 candidates cannot currently be selected. A server-side dependency
-search endpoint is required before removing that limitation.
+The filter panel leads with a search box. Its own state holds what is typed;
+only the debounced value is merged into the filters the list reads, so a
+keystroke cannot invalidate a cursor the Load More button is still holding. The
+merge returns the existing filters object when the value has not changed, which
+is what stops the mount and the Clear reset from each firing a second identical
+request. Load More is hidden while a first page is in flight, because the cursor
+still on screen belongs to the page being replaced.
+
+Dependency selection is no longer bounded by what the client has loaded. The
+picker sends the typed text to the same list endpoint the page uses, scoped to
+active TODOs and sorted by normalized name, and the server matches it. Only the
+two predicates the server cannot know stay in the client: the card excludes
+itself and the prerequisites it already has. A selection that stops being
+offered as the list narrows is cleared, so Add cannot send an identifier the
+picker no longer shows. While a fetch is in flight the previous options remain
+visible and selectable and the group is marked busy, rather than flickering
+empty on every pause in typing.
+
+The match is by token prefix rather than by substring, so a word has to be
+typed from its start. That is the deliberate cost of making the match
+index-backed; see the decision log.
 
 ## Authentication and session boundary
 
-The authentication slice is designed but not yet implemented. This section
-records the boundary that slice must produce so the ownership, transport, and
-test decisions stay consistent while it is built.
+This section records the boundary the authentication slice holds, because the
+ownership, transport, and test decisions all rest on it.
 
 Login uses OpenID Connect, and the application session is an ASP.NET Core
 encrypted cookie. The React client never receives or stores an access, ID, or
@@ -146,6 +160,21 @@ initializer creates indexes but does not remove superseded ones, so the
 replaced index names are dropped explicitly before creation; otherwise an
 existing deployment would retain unused indexes that still cost write time.
 
+`owner_active_search_tokens` puts its array key last — `ownerId`, `deletedAt`,
+then `searchTokens` — unlike `owner_active_dependency_ids`, which carries its
+array second. The difference is deliberate: a search matches owner and scope
+exactly and then scans a range of tokens, so the equality keys have to precede
+the range for the bounds to be tight, while a dependency lookup matches an
+exact identifier inside the array and does not pay the same cost.
+
+**Operationally, a missing search index breaks search alone, and loudly.** The
+list query hints that index by name whenever there is something to search for,
+and a hint naming an index that does not exist fails the query rather than
+falling back to a scan. If search returns 500 while every other list, filter,
+and sort keeps working — after a hand-dropped index, a restored database, or a
+harness that drops the database behind a running instance — check that
+`owner_active_search_tokens` exists. Restarting the application rebuilds it.
+
 Recurring occurrences inherit the completed occurrence's owner through the
 domain entity, so the transactional insert requires no separate ownership rule.
 
@@ -179,6 +208,22 @@ and fetches `limit + 1`. Application owns cursor encoding and validation so the
 HTTP and persistence layers share one filter-bound cursor contract without
 exposing BSON types.
 
+Search reaches the reader as `TodoListCriteria.SearchTerms`, already tokenized.
+Splitting stays above the persistence boundary, so Infrastructure never learns
+the tokenizer's rules and cannot drift from what the write path stored. The
+reader hints the search index only when that list is non-empty; a query with
+nothing to search for is left to the planner exactly as before. Terms are
+ordered longest first in the hope that the most selective one receives the
+index bounds, which is a heuristic rather than a guarantee — an explain-based
+integration test asserts the bounds themselves, so a server or driver upgrade
+that changes which predicate is chosen fails there rather than silently
+becoming a scan.
+
+The cursor's filter signature gains a seventh component carrying the tokens,
+appended only when there are any. An unsearched query therefore hashes exactly
+as it did before search existed, and cursors already in flight survive the
+deployment that introduced it.
+
 ### Enum storage
 
 `TodoStatus` and `TodoPriority` are stored as BSON `int32` values. Their explicit
@@ -198,6 +243,31 @@ Legacy string values are validated and converted by
 `MongoDbEnumStorageMigrator` during startup before index initialization. The
 migration is idempotent, rejects unknown values before changing data, and is
 not a mixed-version rollout: old writers must be stopped first.
+
+### Search tokens
+
+Each TODO stores `searchTokens`, the deduplicated lowercase words of its name
+and description. `SearchTokenizer` in Domain produces them, splitting on runs
+of anything that is not a letter or digit and truncating a token at 64
+characters. The entity exposes them as a computed property rather than stored
+state, so no creation, rehydration, edit, or recurring occurrence can persist
+tokens that disagree with the text they came from. Every repository write is a
+full-document insert or replace through `TodoDocumentMapper`, which is what
+makes that guarantee reach persistence; a repository write must not be narrowed
+into a partial `$set` that leaves the field behind.
+
+The query side calls the same tokenizer on what the user typed, so a stored
+token and a typed term are produced by one set of rules by construction. Each
+term becomes an anchored, case-sensitive regex on `searchTokens`, and all of
+them must match; both sides are already lowercased, and a case-insensitive flag
+would discard the index bounds.
+
+`MongoDbSearchTokensMigrator` backfills documents written before the field
+existed, filtering on `searchTokens` being absent and writing per-document
+`$set`s in batches. It is registered between the enum migrator and the index
+initializer so the tokens exist before the index covering them is built. Its
+filter is unindexed and therefore costs one collection scan per start, which
+matches what the enum migration beside it already costs.
 
 ### Fluent aggregation design
 
@@ -486,7 +556,8 @@ configuration-driven Serilog pipeline after dependency injection is available.
 One HTTP completion event records method, path, status, duration, request ID,
 and trace ID. A MediatR behavior records the application request type and
 successful handling duration, and Infrastructure records successful MongoDB
-index initialization. Successful health-check completion events are reduced to
+index initialization and each startup migration that changed data. Successful
+health-check completion events are reduced to
 Debug, while unhealthy health checks remain Warning events. A recurring TODO
 completion records the series, completed TODO, and newly created TODO identifiers
 only after the transaction commits. Successful TODO create, update, status,
@@ -520,8 +591,10 @@ class and event shape remain explicit without provider-specific APIs.
 
 Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
-repository and health check, and initializes MongoDB indexes through a hosted
-service. This keeps `Program.cs` limited to composition and application startup.
+repository and health check, and runs its schema and data bootstrap through
+hosted services: the enum migration, the search-token backfill, and index
+initialization, in that registration order. This keeps `Program.cs` limited to
+composition and application startup.
 
 `AddAssistant` binds provider options without validating them on start: an
 application-level API key is optional, and a deployment where every user brings

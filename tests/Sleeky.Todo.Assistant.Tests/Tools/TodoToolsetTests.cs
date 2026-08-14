@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
+using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Tools;
 using Sleeky.Todo.Assistant.Turns;
@@ -111,6 +112,32 @@ public sealed class TodoToolsetTests
         Required(toolset, TodoToolNames.DeleteTodos).Should().BeEquivalentTo("ids");
         Required(toolset, TodoToolNames.RestoreTodos).Should().BeEquivalentTo("ids");
         Required(toolset, TodoToolNames.GetTodoSelection).Should().BeEquivalentTo("ids");
+    }
+
+    /// <summary>
+    /// Search is a plain optional string on the read tool. The tool list has to
+    /// be identical on every request for a provider's prefix caching to hold,
+    /// so this parameter is declared unconditionally rather than added when a
+    /// turn happens to need it.
+    /// </summary>
+    [TestMethod]
+    public void CreateOffersSearchAsAnOptionalStringOnTheReadTool()
+    {
+        AIFunction getTodos = Find(TodoToolset.Create(BuildTools()), TodoToolNames.GetTodos);
+
+        JsonElement search = getTodos.JsonSchema
+            .GetProperty("properties")
+            .GetProperty("search");
+
+        string description = search.GetProperty("description").GetString()!;
+        description.Should().Contain("start of a word");
+
+        // Declared as well as enforced, like the batch cap above, so a model
+        // does not compose a call that was going to be refused.
+        description.Should()
+            .Contain(TodoValidationLimits.SearchTextMaximumLength.ToString());
+        Required(TodoToolset.Create(BuildTools()), TodoToolNames.GetTodos)
+            .Should().NotContain("search");
     }
 
     [TestMethod]

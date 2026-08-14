@@ -57,3 +57,21 @@ export async function resetOwnedData(page: Page): Promise<void> {
 export function dropDatabase(): Promise<void> {
   return evaluate(`db.getSiblingDB('${databaseName}').dropDatabase()`)
 }
+
+/**
+ * Empties every collection without dropping them, which is the difference that
+ * matters at the start of a run: Playwright launches the API before global
+ * setup, so the API has already created its indexes by the time this runs.
+ * Dropping the database would take those indexes with it, and the list query
+ * pins itself to the search index by name — a hint that names a missing index
+ * fails the query outright rather than falling back to a scan. Only search
+ * would break, and only inside the browser suite.
+ */
+export function emptyDatabase(): Promise<void> {
+  return evaluate(`
+    const database = db.getSiblingDB('${databaseName}');
+    database.getCollectionNames().forEach((name) => {
+      database.getCollection(name).deleteMany({});
+    });
+  `)
+}

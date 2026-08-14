@@ -88,8 +88,29 @@ public static class TodoCursorCodec
         };
     }
 
-    public static string CreateFilterSignature(GetTodosQuery query)
+    /// <summary>
+    /// Binds a cursor to the filters that produced it, so a page cannot be
+    /// continued under a different question.
+    /// </summary>
+    /// <remarks>
+    /// The search component is appended only when terms exist, which keeps the
+    /// canonical form of every unsearched query byte-identical to what earlier
+    /// versions produced: cursors already in flight survive a deployment.
+    /// Terms are letters and digits only, so joining them with the same
+    /// separator cannot be read two ways.
+    ///
+    /// Two orderings of the same words hash differently despite selecting the
+    /// same TODOs. That is accepted rather than sorted away: reordering a search
+    /// is a filter change, and the client already refetches from the first page
+    /// whenever a filter changes.
+    /// </remarks>
+    public static string CreateFilterSignature(
+        GetTodosQuery query,
+        IReadOnlyList<string> searchTerms)
     {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(searchTerms);
+
         string canonical = string.Join(
             '|',
             query.Status?.ToString() ?? string.Empty,
@@ -98,6 +119,12 @@ public static class TodoCursorCodec
             query.DueTo?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
             query.DependencyStatus?.ToString() ?? string.Empty,
             query.Scope.ToString());
+
+        if (searchTerms.Count > 0)
+        {
+            canonical = string.Concat(canonical, "|", string.Join('|', searchTerms));
+        }
+
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return ToBase64Url(hash);
     }

@@ -42,6 +42,13 @@ internal sealed class TodoDocument
     [BsonGuidRepresentation(GuidRepresentation.Standard)]
     public List<Guid> DependencyIds { get; set; } = new List<Guid>();
 
+    /// <summary>
+    /// The searchable words of the name and description, derived by the domain
+    /// tokenizer and rewritten by every full-document write.
+    /// </summary>
+    [BsonElement(MongoTodoFields.SearchTokens)]
+    public List<string> SearchTokens { get; set; } = new List<string>();
+
     [BsonElement(MongoTodoFields.Recurrence)]
     public RecurrenceDocument? Recurrence { get; set; }
 

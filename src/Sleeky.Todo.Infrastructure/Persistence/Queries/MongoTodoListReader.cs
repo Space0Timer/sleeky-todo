@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Linq.Expressions;
+using System.Text.RegularExpressions;
 
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -10,6 +11,7 @@ using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
+using Sleeky.Todo.Infrastructure.Persistence.Indexes;
 
 using TodoSortDirection = Sleeky.Todo.Application.Todos.Queries.GetTodos.SortDirection;
 
@@ -62,13 +64,41 @@ internal sealed class MongoTodoListReader : ITodoListReader
         return rows.ConvertAll(ToDto);
     }
 
+    /// <summary>
+    /// Pins a searching query to the search index instead of letting the
+    /// planner choose.
+    /// </summary>
+    /// <remarks>
+    /// Left to itself the planner can pick one of the sort-supporting indexes
+    /// and then scan the owner's whole range applying the token regexes to
+    /// every document — the exact cost this feature exists to avoid. Hinting
+    /// costs the sort its index, but no index can serve both a range on the
+    /// tokens and the sort order, so a bounded top-K sort over the matches is
+    /// the best outcome available rather than a concession.
+    ///
+    /// Only searching queries are hinted. Everything else keeps the plan it has
+    /// today.
+    /// </remarks>
+    private static AggregateOptions? BuildAggregateOptions(TodoListCriteria criteria)
+    {
+        if (criteria.SearchTerms.Count == 0)
+        {
+            return null;
+        }
+
+        return new AggregateOptions
+        {
+            Hint = MongoTodoIndexNames.OwnerActiveSearchTokens,
+        };
+    }
+
     private static IAggregateFluent<TodoDocument> BuildFilteredPipeline(
         IMongoCollection<TodoDocument> todoItems,
         TodoListCriteria criteria,
         Guid ownerId)
     {
         IAggregateFluent<TodoDocument> pipeline = todoItems
-            .Aggregate()
+            .Aggregate(BuildAggregateOptions(criteria))
             .Match(BuildFilter(criteria, ownerId));
 
         if (criteria.LastSortValue is null || criteria.LastTodoId is null)
@@ -171,7 +201,43 @@ internal sealed class MongoTodoListReader : ITodoListReader
             filter &= filters.Lte(todo => todo.DueDate, criteria.DueTo.Value);
         }
 
-        return filter;
+        return filter & BuildSearchFilter(criteria.SearchTerms);
+    }
+
+    /// <summary>
+    /// Requires every term to be the prefix of some stored token.
+    /// </summary>
+    /// <remarks>
+    /// Anchored so the regex can be answered from the index rather than by
+    /// reading every token, and case-sensitive because both sides are already
+    /// lowercased by the tokenizer — adding a case-insensitive flag would
+    /// discard the index bounds and scan instead.
+    ///
+    /// Longest first is a heuristic, not a contract: which of several
+    /// predicates over the same multikey field receives the index bounds is not
+    /// documented behaviour, and a longer term is only usually the more
+    /// selective one. The explain-based test asserting the bounds is what
+    /// catches a server or driver upgrade that changes the choice.
+    ///
+    /// The terms hold letters and digits only, so escaping changes nothing
+    /// today. It is here so a later change to the tokenizer cannot silently
+    /// turn a term into a pattern.
+    /// </remarks>
+    private static FilterDefinition<TodoDocument> BuildSearchFilter(
+        IReadOnlyList<string> searchTerms)
+    {
+        FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;
+
+        if (searchTerms.Count == 0)
+        {
+            return filters.Empty;
+        }
+
+        return filters.And(searchTerms
+            .OrderByDescending(term => term.Length)
+            .Select(term => filters.Regex(
+                todo => todo.SearchTokens,
+                new BsonRegularExpression($"^{Regex.Escape(term)}"))));
     }
 
     private static FilterDefinition<TodoDocument> BuildScopeFilter(TodoListScope scope)

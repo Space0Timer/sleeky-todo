@@ -11,6 +11,8 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Migrations;
 
 internal sealed class MongoDbEnumStorageMigrator : IHostedService
 {
+    private const int EnumStorageMigratedEventId = 2011;
+
     private static readonly IReadOnlyDictionary<string, int> StatusValues =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
@@ -71,7 +73,7 @@ internal sealed class MongoDbEnumStorageMigrator : IHostedService
         if (migratedStatuses > 0 || migratedPriorities > 0)
         {
             this.logger.LogInformation(
-                2002,
+                EnumStorageMigratedEventId,
                 "Migrated MongoDB TODO enum storage to integers: {StatusCount} statuses and {PriorityCount} priorities",
                 migratedStatuses,
                 migratedPriorities);

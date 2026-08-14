@@ -22,6 +22,7 @@ import { TodoCard } from '../components/TodoCard.tsx'
 import { UserMenu } from '../components/UserMenu.tsx'
 import { Button, EmptyState } from '../components/common/index.ts'
 import { useBulkActions, type BulkOperation } from '../hooks/useBulkActions.ts'
+import { useDebouncedValue } from '../hooks/useDebouncedValue.ts'
 import {
   dependencyStatus,
   sortDirection,
@@ -55,10 +56,14 @@ const initialFilters: Omit<TodoListOptions, 'scope' | 'cursor'> = {
   dueFrom: '',
   dueTo: '',
   dependencyStatus: null,
+  searchText: '',
   sortField: todoSortField.dueDate,
   sortDirection: sortDirection.ascending,
   limit: 12,
 }
+
+/** How many prerequisites the dependency picker asks the server for at a time. */
+const dependencySearchLimit = 50
 
 const tabs: { label: string; scope: TodoScope }[] = [
   { label: 'Active', scope: todoScope.active },
@@ -70,7 +75,6 @@ export function TodosPage() {
   const [scope, setScope] = useState<TodoScope>(todoScope.active)
   const [filters, setFilters] = useState(initialFilters)
   const [items, setItems] = useState<TodoListItem[]>([])
-  const [dependencyCandidates, setDependencyCandidates] = useState<TodoListItem[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -79,6 +83,11 @@ export function TodosPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [pendingDelete, setPendingDelete] = useState<TodoVersionReference[] | null>(null)
+
+  // The box's own state. Only its debounced value reaches `filters`, so a
+  // keystroke never invalidates a cursor the Load more button is still holding.
+  const [searchInput, setSearchInput] = useState('')
+  const debouncedSearch = useDebouncedValue(searchInput)
   const navigate = useNavigate()
   const { endSession } = useAuth()
 
@@ -122,10 +131,27 @@ export function TodosPage() {
     }
   }, [captureError])
 
+  // Bails out when nothing changed rather than spreading unconditionally. A new
+  // object here would be a new value for the load effect below, so mount and
+  // the moment Clear's reset drains through the debounce would each fire a
+  // second identical request racing the first.
+  useEffect(() => {
+    setFilters((current) => (
+      current.searchText === debouncedSearch
+        ? current
+        : { ...current, searchText: debouncedSearch }
+    ))
+  }, [debouncedSearch])
+
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
+
+    // Dropped before the request rather than after it. The cursor was minted
+    // under the previous filters, so leaving it in place would let Load more
+    // send it alongside the new ones and be refused.
+    setNextCursor(null)
 
     void listTodos({ ...filters, scope }).then((page) => {
       if (cancelled) return
@@ -140,20 +166,23 @@ export function TodosPage() {
     return () => { cancelled = true }
   }, [captureError, filters, refreshKey, scope])
 
-  useEffect(() => {
-    let cancelled = false
-    void listTodos({
+  /**
+   * Searches active TODOs for the dependency picker. The server does the
+   * matching, so a prerequisite outside the first page of the list is
+   * reachable — which the picker's old client-side filter over a fixed
+   * hundred candidates was not.
+   */
+  const searchCandidates = useCallback(async (search: string) => {
+    const page = await listTodos({
       ...initialFilters,
       scope: todoScope.active,
       sortField: todoSortField.name,
-      limit: 100,
-    }).then((page) => {
-      if (!cancelled) setDependencyCandidates(page.items)
-    }).catch(() => {
-      if (!cancelled) setDependencyCandidates([])
+      limit: dependencySearchLimit,
+      searchText: search,
     })
-    return () => { cancelled = true }
-  }, [refreshKey])
+
+    return page.items
+  }, [])
 
   // Returning to the tab is when another tab's edits are most likely to have
   // landed. Refreshing then keeps versions fresh, but only while nothing is
@@ -408,6 +437,16 @@ export function TodosPage() {
       </div>
 
       <section className={styles.filterPanel} aria-label="TODO filters">
+        <label className={styles.searchField}>
+          Search
+          <input
+            aria-label="Search filter"
+            type="search"
+            placeholder="Words from the name or description"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
+        </label>
         <label>
           Status
           <select
@@ -513,7 +552,13 @@ export function TodosPage() {
         <Button
           variant="secondary"
           className={styles.clearFilters}
-          onClick={() => setFilters(initialFilters)}
+          onClick={() => {
+            // The box holds its own state, so resetting `filters` alone would
+            // leave the typed text on screen and re-apply it on the next
+            // keystroke while the list showed everything.
+            setSearchInput('')
+            setFilters(initialFilters)
+          }}
         >
           Clear filters
         </Button>
@@ -543,14 +588,17 @@ export function TodosPage() {
         {loading ? (
           <EmptyState>Loading TODOs…</EmptyState>
         ) : items.length === 0 ? (
-          <EmptyState>No TODOs match this view.</EmptyState>
+          <EmptyState>
+            {filters.searchText
+              ? 'No TODOs match your search.'
+              : 'No TODOs match this view.'}
+          </EmptyState>
         ) : (
           <div className={styles.todoGrid}>
             {items.map((item) => (
               <TodoCard
                 key={`${item.id}:${item.version}`}
                 busy={busyId === item.id || bulk.bulkBusy}
-                candidates={dependencyCandidates}
                 drifted={bulk.repair?.driftedIds.includes(item.id) ?? false}
                 errors={error?.affectedTodoId === item.id ? error.problem.errors : undefined}
                 item={item}
@@ -562,6 +610,7 @@ export function TodosPage() {
                 onLoad={loadTodo}
                 onRemoveDependency={handleRemoveDependency}
                 onRestore={handleRestore}
+                onSearchCandidates={searchCandidates}
                 onStatus={handleStatus}
                 onToggleSelected={bulk.toggle}
                 onUpdate={handleUpdate}
@@ -570,7 +619,12 @@ export function TodosPage() {
           </div>
         )}
 
-        {nextCursor && (
+        {/*
+          Hidden while a fresh first page is in flight. The cursor on screen
+          belongs to the page being replaced, so offering it during that window
+          is offering a continuation of a list that no longer exists.
+        */}
+        {nextCursor && !loading && (
           <div className={styles.loadMoreRow}>
             <Button
               variant="primary"

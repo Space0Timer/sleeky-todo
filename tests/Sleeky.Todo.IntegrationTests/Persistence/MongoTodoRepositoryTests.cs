@@ -155,6 +155,49 @@ public sealed class MongoTodoRepositoryTests
     }
 
     /// <summary>
+    /// Search matches the persisted tokens rather than the text, so what a
+    /// repository write leaves behind is the contract search depends on.
+    /// </summary>
+    [TestMethod]
+    public async Task WritesPersistSearchTokensForTheNameAndDescription()
+    {
+        TodoItem todoItem = TodoItem.Create(
+            Id("searchable"),
+            OwnerId,
+            "Submit Quarterly Report",
+            "Include the VAT summary",
+            new DateOnly(2026, 8, 31),
+            TodoPriority.High,
+            Timestamp);
+
+        await repository.AddAsync(todoItem);
+        BsonDocument added = await ReadRawDocumentAsync(todoItem.Id);
+
+        added["searchTokens"].AsBsonArray.Select(token => token.AsString)
+            .Should().Equal(
+                "submit",
+                "quarterly",
+                "report",
+                "include",
+                "the",
+                "vat",
+                "summary");
+
+        TodoItem stored = await GetRequiredTodoAsync(todoItem.Id);
+        stored.UpdateDetails(
+            "Review Invoice",
+            null,
+            new DateOnly(2026, 9, 1),
+            TodoPriority.Low,
+            Timestamp.AddHours(1));
+        _ = await repository.UpdateAsync(stored);
+        BsonDocument updated = await ReadRawDocumentAsync(todoItem.Id);
+
+        updated["searchTokens"].AsBsonArray.Select(token => token.AsString)
+            .Should().Equal("review", "invoice");
+    }
+
+    /// <summary>
     /// Every identifier is stored as a standard UUID rather than the driver's
     /// legacy C# subtype, so documents stay readable by other drivers and by
     /// queries built outside this codebase.

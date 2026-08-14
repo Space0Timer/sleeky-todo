@@ -95,6 +95,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IUserDirectoryRepository, MongoUserDirectoryRepository>();
         services.AddScoped<IAssistantSettingsRepository, MongoAssistantSettingsRepository>();
         services.AddHostedService<MongoDbEnumStorageMigrator>();
+
+        // Hosted services start in registration order, so the tokens exist
+        // before the index that covers them is built.
+        services.AddHostedService<MongoDbSearchTokensMigrator>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services
             .AddHealthChecks()

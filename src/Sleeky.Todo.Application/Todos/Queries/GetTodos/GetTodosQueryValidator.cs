@@ -1,5 +1,7 @@
 using FluentValidation;
 
+using Sleeky.Todo.Application.Todos.Validation;
+
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
 public sealed class GetTodosQueryValidator : AbstractValidator<GetTodosQuery>
@@ -29,6 +31,11 @@ public sealed class GetTodosQueryValidator : AbstractValidator<GetTodosQuery>
 
         RuleFor(query => query.Limit)
             .InclusiveBetween(1, GetTodosQuery.MaximumPageSize);
+
+        // The query already trimmed and emptied this, so the rule measures the
+        // canonical value rather than the raw one.
+        RuleFor(query => query.SearchText)
+            .MaximumSearchTextLength();
 
         RuleFor(query => query.DueTo)
             .GreaterThanOrEqualTo(query => query.DueFrom)
