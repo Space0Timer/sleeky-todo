@@ -1,3 +1,6 @@
+using System.Net.Sockets;
+using System.Security.Authentication;
+
 using FluentAssertions;
 
 using Microsoft.Extensions.AI;
@@ -10,6 +13,19 @@ namespace Sleeky.Todo.Assistant.Tests.Providers;
 public sealed class AssistantConnectionProbeTests
 {
     private const string Key = "sk-probe-secret-value";
+
+    /// <summary>
+    /// Four distinct exceptions carrying four distinct messages, each of which
+    /// would otherwise describe the network rather than the configuration.
+    /// </summary>
+    public static IEnumerable<object[]> TransportFailures =>
+    [
+        [new HttpRequestException("No such host is known.")],
+        [new HttpRequestException("Connection refused (10.0.0.5:6379)")],
+        [new SocketException(10061)],
+        [new AuthenticationException("The remote certificate is invalid.")],
+        [new IOException("The response ended prematurely.")],
+    ];
 
     [TestMethod]
     public async Task ProbeReportsSuccessWhenTheProviderAnswers()
@@ -37,7 +53,53 @@ public sealed class AssistantConnectionProbeTests
         AssistantProbeResult result = await probe.ProbeAsync(Connection());
 
         result.Succeeded.Should().BeFalse();
-        result.Error.Should().Be("No such host is known.");
+        result.Error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// Every way of failing to reach a host reports as one thing.
+    /// </summary>
+    /// <remarks>
+    /// A caller who can tell a refused connection from a name that does not
+    /// resolve, or from a TLS handshake that is rejected, can read the shape of
+    /// the network behind this server one endpoint at a time. These are four
+    /// distinct exceptions carrying four distinct messages, and the assertion
+    /// that matters is that none of it survives to the caller.
+    /// </remarks>
+    [TestMethod]
+    [DynamicData(nameof(TransportFailures))]
+    public async Task ProbeReportsEveryUnreachableEndpointIdentically(Exception failure)
+    {
+        AssistantConnectionProbe probe = new AssistantConnectionProbe(
+            new StubChatClientFactory(new StubChatClient(failure)));
+
+        AssistantProbeResult result = await probe.ProbeAsync(Connection());
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Be(
+            "The endpoint could not be reached. Check the base URL and that the "
+            + "provider is running and accepting requests.");
+        result.Error.Should().NotContain(failure.Message);
+    }
+
+    /// <summary>
+    /// An endpoint the policy refused is reported as refused rather than as
+    /// unreachable, because the user named that address themselves and a
+    /// network-fault message would explain a decision as a failure.
+    /// </summary>
+    [TestMethod]
+    public async Task ProbeReportsABlockedEndpointAsBlocked()
+    {
+        AssistantConnectionProbe probe = new AssistantConnectionProbe(
+            new StubChatClientFactory(new StubChatClient(
+                new HttpRequestException(
+                    "outer",
+                    new EndpointBlockedException("169.254.169.254")))));
+
+        AssistantProbeResult result = await probe.ProbeAsync(Connection());
+
+        result.Succeeded.Should().BeFalse();
+        result.Error.Should().Contain("private or loopback");
     }
 
     /// <summary>
