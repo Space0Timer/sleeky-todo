@@ -44,7 +44,7 @@ public sealed class MongoDbSearchTokensMigratorTests
             return;
         }
 
-        mongoDbContainer = new MongoDbBuilder("mongo:7.0").Build();
+        mongoDbContainer = new MongoDbBuilder("mongo:8.0").Build();
         await mongoDbContainer.StartAsync(testContext.CancellationToken);
     }
 

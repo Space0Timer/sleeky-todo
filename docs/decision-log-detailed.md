@@ -350,7 +350,7 @@ transition rules.
 
 ## Local replica set
 
-Local development uses one MongoDB 7.0 replica-set member. The Compose
+Local development uses one MongoDB 8.0 replica-set member. The Compose
 initializer is idempotent: it checks replica-set status and initiates `rs0` only
 for an uninitialized database. The member advertises `localhost:27017` so the
 host-run API can use the committed connection string. This single-member setup
@@ -626,7 +626,7 @@ MongoDB's own `$text` index was rejected: it matches whole words or stems, so
 keyset cursor the list already depends on. Embeddings were rejected because the
 feature would then only work for users who have configured a provider, every
 write would pay an API call, and `$vectorSearch` is not available on the
-self-hosted `mongo:7.0` this deployment targets. An external search engine was
+self-hosted `mongo:8.0` this deployment targets. An external search engine was
 rejected as a second always-on service for one text box.
 
 Search queries `hint()` the search index. Left to itself the planner can pick a
