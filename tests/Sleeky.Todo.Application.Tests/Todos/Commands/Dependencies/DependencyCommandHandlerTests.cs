@@ -159,24 +159,23 @@ public sealed class DependencyCommandHandlerTests
     }
 
     /// <summary>
-    /// The add handler reads both ends in one batch, so the double is stubbed on
-    /// the batch read rather than on two single reads. Identifiers with no
-    /// matching TODO are simply absent from the result, exactly as Mongo
-    /// returns them.
+    /// The add handler loads the TODO it mutates whole and only counts the other
+    /// end, so the double answers both reads from one set of stored TODOs.
     /// </summary>
     private static void StubEndpoints(
         ITodoRepository repository,
         params TodoItem[] todos)
     {
         Dictionary<Guid, TodoItem> stored = todos.ToDictionary(todo => todo.Id);
-        repository.GetByIdsAsync(
-                Arg.Any<IEnumerable<Guid>>(),
+        repository.GetByIdAsync(
+                Arg.Any<Guid>(),
                 false,
                 Arg.Any<CancellationToken>())
-            .Returns(call => call.Arg<IEnumerable<Guid>>()
-                .Distinct()
-                .Where(stored.ContainsKey)
-                .Select(id => stored[id])
-                .ToArray());
+            .Returns(call => stored.GetValueOrDefault(call.Arg<Guid>()));
+        repository.ExistsAsync(
+                Arg.Any<Guid>(),
+                false,
+                Arg.Any<CancellationToken>())
+            .Returns(call => stored.ContainsKey(call.Arg<Guid>()));
     }
 }

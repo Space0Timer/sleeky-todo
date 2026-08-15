@@ -41,24 +41,28 @@ public sealed class AddDependencyCommandHandler
         AddDependencyCommand request,
         CancellationToken cancellationToken)
     {
-        // Both ends are read in one round trip. They are checked in the order
-        // the caller sees them reported: the TODO itself, then its version,
-        // then the dependency.
-        IReadOnlyCollection<TodoItem> endpoints = await todoRepository.GetByIdsAsync(
-            [request.Id, request.DependencyId],
-            cancellationToken: cancellationToken);
-        TodoItem todoItem = endpoints.FirstOrDefault(todo => todo.Id == request.Id)
+        // Only this end is mutated and persisted, so only this end is loaded
+        // whole.
+        TodoItem todoItem = await todoRepository.GetByIdAsync(
+            request.Id,
+            cancellationToken: cancellationToken)
             ?? throw new NotFoundException("TODO", request.Id);
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
 
-        // Ahead of the cycle check, which would otherwise report a self
-        // dependency as a cycle: a node is trivially reachable from itself.
+        // Ahead of the existence check, which a self dependency would pass, and
+        // ahead of the cycle check, which would report it as a cycle instead: a
+        // node is trivially reachable from itself.
         if (todoItem.Id == request.DependencyId)
         {
             throw new DomainException("A TODO cannot depend on itself.");
         }
 
-        if (endpoints.All(todo => todo.Id != request.DependencyId))
+        // The other end is only ever asked whether it exists, so it is counted
+        // rather than fetched.
+        bool dependencyExists = await todoRepository.ExistsAsync(
+            request.DependencyId,
+            cancellationToken: cancellationToken);
+        if (!dependencyExists)
         {
             throw new NotFoundException("Dependency TODO", request.DependencyId);
         }
