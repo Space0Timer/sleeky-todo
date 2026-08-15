@@ -31,9 +31,7 @@ public static class PrivateNetworkPolicy
         // loopback written as IPv6, and every range test below reads the wrong
         // bytes while it stays in that form — which is the usual way a check
         // like this one is walked past.
-        IPAddress candidate = address.IsIPv4MappedToIPv6
-            ? address.MapToIPv4()
-            : address;
+        IPAddress candidate = UnwrapEmbeddedIPv4(address);
 
         if (IPAddress.IsLoopback(candidate))
         {
@@ -43,6 +41,103 @@ public static class PrivateNetworkPolicy
         return candidate.AddressFamily == AddressFamily.InterNetwork
             ? IsBlockedIPv4(candidate)
             : IsBlockedIPv6(candidate);
+    }
+
+    /// <summary>
+    /// Rewrites an IPv6 address that carries an IPv4 one inside it to the
+    /// address it actually reaches, so the IPv4 ranges below judge it.
+    /// </summary>
+    /// <remarks>
+    /// There are three of these encodings and only the first is well known.
+    /// "::ffff:169.254.169.254" is the IPv4-mapped form. "::169.254.169.254" is
+    /// the IPv4-compatible form, deprecated by RFC 4291 and not put onto IPv4 by
+    /// a current stack, but free to be written. "64:ff9b::169.254.169.254" is
+    /// the NAT64 well-known prefix of RFC 6052, and on a network with a NAT64
+    /// gateway — the ordinary shape of an IPv6-only cloud subnet — it is
+    /// translated onto the embedded address and arrives at the metadata service.
+    ///
+    /// Judging all three by what they embed costs nothing and removes the need
+    /// to know which of them the host network happens to translate.
+    /// </remarks>
+    private static IPAddress UnwrapEmbeddedIPv4(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return address;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            return address.MapToIPv4();
+        }
+
+        byte[] octets = address.GetAddressBytes();
+
+        // "::" and "::1" are answered as themselves by IPv6Any and IsLoopback,
+        // so they are the only two the IPv4-compatible range hands back
+        // untouched. Everything else in ::/96 is read as what it embeds —
+        // including 0.0.0.0/8, which the IPv4 rules refuse and which a wider
+        // guard here would otherwise let through.
+        if (IsZeroThrough(octets, 0, 12)
+            && !(IsZeroThrough(octets, 12, 15) && octets[15] <= 1))
+        {
+            return new IPAddress(octets[12..]);
+        }
+
+        if (IsNat64WellKnownPrefix(octets))
+        {
+            return new IPAddress(octets[12..]);
+        }
+
+        return address;
+    }
+
+    /// <summary>
+    /// Whether the address is the NAT64 well-known prefix of RFC 6052,
+    /// 64:ff9b::/96, whose last four octets are the IPv4 address verbatim.
+    /// </summary>
+    private static bool IsNat64WellKnownPrefix(byte[] octets)
+    {
+        return IsNat64Range(octets) && IsZeroThrough(octets, 4, 12);
+    }
+
+    /// <summary>
+    /// Whether the address sits anywhere in 64:ff9b::/32, the range reserved for
+    /// NAT64 translation.
+    /// </summary>
+    /// <remarks>
+    /// Covers the RFC 8215 local-use prefix 64:ff9b:1::/48 as well as the
+    /// well-known one. Only the well-known prefix carries the IPv4 address in
+    /// its last four octets; at other prefix lengths RFC 6052 splits it around
+    /// the reserved octet, so the rest of the range is refused outright rather
+    /// than decoded. Nothing is lost by that: the whole range exists to be
+    /// translated onto IPv4, so no provider is reachable at one of these
+    /// addresses in its own right.
+    ///
+    /// Operator-chosen network-specific prefixes are ordinary global unicast and
+    /// cannot be recognised from the address alone. A deployment using one, and
+    /// wanting this guard to hold, has to keep the assistant off a NAT64 path or
+    /// name the prefix in configuration.
+    /// </remarks>
+    private static bool IsNat64Range(byte[] octets)
+    {
+        return octets[0] == 0x00
+            && octets[1] == 0x64
+            && octets[2] == 0xFF
+            && octets[3] == 0x9B;
+    }
+
+    private static bool IsZeroThrough(byte[] octets, int start, int end)
+    {
+        for (int index = start; index < end; index++)
+        {
+            if (octets[index] != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsBlockedIPv4(IPAddress address)
@@ -80,6 +175,13 @@ public static class PrivateNetworkPolicy
         }
 
         if (address.Equals(IPAddress.IPv6Any))
+        {
+            return true;
+        }
+
+        // Anything still in 64:ff9b::/32 here carries its IPv4 address in a
+        // position this code does not decode, so it is refused rather than read.
+        if (IsNat64Range(address.GetAddressBytes()))
         {
             return true;
         }

@@ -24,6 +24,16 @@ public interface ITodoRepository
         bool includeDeleted = false,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reads the dependency-relevant fields of the given TODOs without
+    /// materialising whole aggregates. Missing identifiers are simply absent
+    /// from the result, exactly as with <see cref="GetByIdsAsync"/>.
+    /// </summary>
+    Task<IReadOnlyCollection<TodoDependencyNode>> GetDependencyNodesAsync(
+        IEnumerable<Guid> ids,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default);
+
     Task<bool> HasActiveDependentsAsync(
         Guid dependencyId,
         CancellationToken cancellationToken = default);

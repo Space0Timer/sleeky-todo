@@ -90,10 +90,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<MongoTransactionContext>();
         services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
-        services.AddScoped<ITodoRepository, MongoTodoRepository>();
+        services.AddScoped<ITodoRepository, TodoRepository>();
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
-        services.AddScoped<IUserDirectoryRepository, MongoUserDirectoryRepository>();
-        services.AddScoped<IAssistantSettingsRepository, MongoAssistantSettingsRepository>();
+        services.AddScoped<IUserDirectoryRepository, UserDirectoryRepository>();
+        services.AddScoped<IAssistantSettingsRepository, AssistantSettingsRepository>();
         services.AddHostedService<MongoDbEnumStorageMigrator>();
 
         // Hosted services start in registration order, so the tokens exist

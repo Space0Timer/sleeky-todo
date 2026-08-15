@@ -41,21 +41,31 @@ public sealed class AddDependencyCommandHandler
         AddDependencyCommand request,
         CancellationToken cancellationToken)
     {
+        // Only this end is mutated and persisted, so only this end is loaded
+        // whole.
         TodoItem todoItem = await todoRepository.GetByIdAsync(
             request.Id,
             cancellationToken: cancellationToken)
             ?? throw new NotFoundException("TODO", request.Id);
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
 
+        // Ahead of the existence check, which a self dependency would pass, and
+        // ahead of the cycle check, which would report it as a cycle instead: a
+        // node is trivially reachable from itself.
         if (todoItem.Id == request.DependencyId)
         {
-            todoItem.AddDependency(request.DependencyId, clock.UtcNow);
+            throw new DomainException("A TODO cannot depend on itself.");
         }
 
-        _ = await todoRepository.GetByIdAsync(
+        // The other end is only ever asked whether it exists, so it is counted
+        // rather than fetched.
+        bool dependencyExists = await todoRepository.ExistsAsync(
             request.DependencyId,
-            cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("Dependency TODO", request.DependencyId);
+            cancellationToken: cancellationToken);
+        if (!dependencyExists)
+        {
+            throw new NotFoundException("Dependency TODO", request.DependencyId);
+        }
 
         bool createsCycle = await dependencyGraphService.WouldCreateCycleAsync(
             todoItem.Id,

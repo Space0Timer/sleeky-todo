@@ -7,14 +7,14 @@ using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-internal sealed class MongoUserDirectoryRepository : IUserDirectoryRepository
+internal sealed class UserDirectoryRepository : IUserDirectoryRepository
 {
     private const int DuplicateKeyErrorCode = 11000;
 
     private readonly IClock clock;
     private readonly IMongoCollection<UserDocument> users;
 
-    public MongoUserDirectoryRepository(
+    public UserDirectoryRepository(
         IMongoCollection<UserDocument> users,
         IClock clock)
     {
@@ -77,6 +77,17 @@ internal sealed class MongoUserDirectoryRepository : IUserDirectoryRepository
             & Builders<UserDocument>.Filter.Eq(user => user.Subject, subject);
     }
 
+    /// <summary>
+    /// Writes the display name only when the provider supplied one.
+    /// </summary>
+    /// <remarks>
+    /// The name is an optional claim: a response carrying neither
+    /// <c>name</c> nor <c>preferred_username</c> resolves it to null, and
+    /// setting that unconditionally would erase a name an earlier login had
+    /// stored. <c>SetOnInsert</c> would not do either — it would pin the name
+    /// at first login and never track a rename at the provider — so the write
+    /// is kept and made conditional instead.
+    /// </remarks>
     private static UpdateDefinition<UserDocument> BuildResolveUpdate(
         string issuer,
         string subject,
@@ -84,14 +95,21 @@ internal sealed class MongoUserDirectoryRepository : IUserDirectoryRepository
         DateTime timestamp)
     {
         UpdateDefinitionBuilder<UserDocument> updates = Builders<UserDocument>.Update;
-
-        return updates.Combine(
+        List<UpdateDefinition<UserDocument>> definitions =
+        [
             updates.SetOnInsert(user => user.Id, Guid.NewGuid()),
             updates.SetOnInsert(user => user.CreatedAt, timestamp),
             updates.SetOnInsert(user => user.Issuer, issuer),
             updates.SetOnInsert(user => user.Subject, subject),
-            updates.Set(user => user.DisplayName, displayName),
-            updates.Set(user => user.LastLoginAt, timestamp));
+            updates.Set(user => user.LastLoginAt, timestamp),
+        ];
+
+        if (!string.IsNullOrWhiteSpace(displayName))
+        {
+            definitions.Add(updates.Set(user => user.DisplayName, displayName));
+        }
+
+        return updates.Combine(definitions);
     }
 
     private static UserIdentity ToIdentity(UserDocument document)

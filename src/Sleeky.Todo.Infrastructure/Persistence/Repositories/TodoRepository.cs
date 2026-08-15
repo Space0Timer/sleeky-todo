@@ -10,7 +10,7 @@ using Sleeky.Todo.Infrastructure.Persistence.Transactions;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-internal sealed class MongoTodoRepository : ITodoRepository
+internal sealed class TodoRepository : ITodoRepository
 {
     private const int WriteConflictErrorCode = 112;
 
@@ -28,11 +28,28 @@ internal sealed class MongoTodoRepository : ITodoRepository
     private static readonly ProjectionDefinition<TodoDocument> WithoutSearchTokens =
         Builders<TodoDocument>.Projection.Exclude(document => document.SearchTokens);
 
-    private readonly ICurrentUser currentUser;
-    private readonly IMongoCollection<TodoDocument> todoItems;
-    private readonly MongoTransactionContext transactionContext;
+    /// <summary>
+    /// The fields <see cref="TodoDependencyNode"/> is built from.
+    /// </summary>
+    /// <remarks>
+    /// An include projection, unlike <see cref="WithoutSearchTokens"/>, because
+    /// dependency reasoning wants the short list rather than everything but one
+    /// field. <see cref="TodoDocument"/> is
+    /// <see cref="MongoDB.Bson.Serialization.Attributes.BsonIgnoreExtraElementsAttribute"/>
+    /// and every property carries a default, so the fields left out deserialise
+    /// harmlessly and are never read.
+    /// </remarks>
+    private static readonly ProjectionDefinition<TodoDocument> DependencyFields =
+        Builders<TodoDocument>.Projection
+            .Include(document => document.Id)
+            .Include(document => document.Status)
+            .Include(document => document.DeletedAt)
+            .Include(document => document.DependencyIds);
 
-    public MongoTodoRepository(
+    private readonly ICurrentUser currentUser;
+    private readonly SessionAwareCollection<TodoDocument> todoItems;
+
+    public TodoRepository(
         IMongoCollection<TodoDocument> todoItems,
         ICurrentUser currentUser,
         MongoTransactionContext? transactionContext = null)
@@ -40,9 +57,10 @@ internal sealed class MongoTodoRepository : ITodoRepository
         ArgumentNullException.ThrowIfNull(todoItems);
         ArgumentNullException.ThrowIfNull(currentUser);
 
-        this.todoItems = todoItems;
+        this.todoItems = new SessionAwareCollection<TodoDocument>(
+            todoItems,
+            transactionContext ?? new MongoTransactionContext());
         this.currentUser = currentUser;
-        this.transactionContext = transactionContext ?? new MongoTransactionContext();
     }
 
     private Guid OwnerId => currentUser.UserId;
@@ -55,18 +73,7 @@ internal sealed class MongoTodoRepository : ITodoRepository
         EnsureOwned(todoItem);
 
         TodoDocument document = TodoDocumentMapper.FromDomain(todoItem);
-        if (transactionContext.Session is null)
-        {
-            await todoItems.InsertOneAsync(
-                document,
-                cancellationToken: cancellationToken);
-            return;
-        }
-
-        await todoItems.InsertOneAsync(
-            transactionContext.Session,
-            document,
-            cancellationToken: cancellationToken);
+        await todoItems.InsertOneAsync(document, cancellationToken);
     }
 
     public async Task<TodoItem?> GetByIdAsync(
@@ -75,10 +82,8 @@ internal sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
-        IFindFluent<TodoDocument, TodoDocument> find = transactionContext.Session is null
-            ? todoItems.Find(filter)
-            : todoItems.Find(transactionContext.Session, filter);
-        TodoDocument? document = await find
+        TodoDocument? document = await todoItems
+            .Find(filter)
             .Project<TodoDocument>(WithoutSearchTokens)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -91,16 +96,10 @@ internal sealed class MongoTodoRepository : ITodoRepository
         CancellationToken cancellationToken = default)
     {
         FilterDefinition<TodoDocument> filter = BuildIdFilter(id, includeDeleted);
-        long count = transactionContext.Session is null
-            ? await todoItems.CountDocumentsAsync(
-                filter,
-                new CountOptions { Limit = 1 },
-                cancellationToken)
-            : await todoItems.CountDocumentsAsync(
-                transactionContext.Session,
-                filter,
-                new CountOptions { Limit = 1 },
-                cancellationToken);
+        long count = await todoItems.CountDocumentsAsync(
+            filter,
+            new CountOptions { Limit = 1 },
+            cancellationToken);
 
         return count > 0;
     }
@@ -112,27 +111,45 @@ internal sealed class MongoTodoRepository : ITodoRepository
     {
         ArgumentNullException.ThrowIfNull(ids);
 
-        Guid[] distinctIds = ids.Distinct().ToArray();
-        if (distinctIds.Length == 0)
+        FilterDefinition<TodoDocument>? filter = BuildIdsFilter(ids, includeDeleted);
+        if (filter is null)
         {
             return Array.Empty<TodoItem>();
         }
 
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
-            & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
-        if (!includeDeleted)
-        {
-            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
-        }
-
-        IFindFluent<TodoDocument, TodoDocument> find = transactionContext.Session is null
-            ? todoItems.Find(filter)
-            : todoItems.Find(transactionContext.Session, filter);
-        List<TodoDocument> documents = await find
+        List<TodoDocument> documents = await todoItems
+            .Find(filter)
             .Project<TodoDocument>(WithoutSearchTokens)
             .ToListAsync(cancellationToken);
 
         return documents.Select(TodoDocumentMapper.ToDomain).ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<TodoDependencyNode>> GetDependencyNodesAsync(
+        IEnumerable<Guid> ids,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+
+        FilterDefinition<TodoDocument>? filter = BuildIdsFilter(ids, includeDeleted);
+        if (filter is null)
+        {
+            return Array.Empty<TodoDependencyNode>();
+        }
+
+        List<TodoDocument> documents = await todoItems
+            .Find(filter)
+            .Project<TodoDocument>(DependencyFields)
+            .ToListAsync(cancellationToken);
+
+        return documents
+            .Select(document => new TodoDependencyNode(
+                document.Id,
+                document.Status,
+                document.DeletedAt is not null,
+                document.DependencyIds))
+            .ToArray();
     }
 
     public async Task<bool> HasActiveDependentsAsync(
@@ -147,16 +164,10 @@ internal sealed class MongoTodoRepository : ITodoRepository
             & Builders<TodoDocument>.Filter.Ne(
                 document => document.Status,
                 TodoStatus.Archived);
-        long count = transactionContext.Session is null
-            ? await todoItems.CountDocumentsAsync(
-                filter,
-                new CountOptions { Limit = 1 },
-                cancellationToken)
-            : await todoItems.CountDocumentsAsync(
-                transactionContext.Session,
-                filter,
-                new CountOptions { Limit = 1 },
-                cancellationToken);
+        long count = await todoItems.CountDocumentsAsync(
+            filter,
+            new CountOptions { Limit = 1 },
+            cancellationToken);
 
         return count > 0;
     }
@@ -189,13 +200,10 @@ internal sealed class MongoTodoRepository : ITodoRepository
                 Projection = Builders<TodoDocument>.Projection.Include(
                     document => document.Id),
             };
-        using IAsyncCursor<TodoDocument> cursor = transactionContext.Session is null
-            ? await todoItems.FindAsync(filter, options, cancellationToken)
-            : await todoItems.FindAsync(
-                transactionContext.Session,
-                filter,
-                options,
-                cancellationToken);
+        using IAsyncCursor<TodoDocument> cursor = await todoItems.FindAsync(
+            filter,
+            options,
+            cancellationToken);
         List<TodoDocument> documents = await cursor.ToListAsync(cancellationToken);
 
         return documents.Select(document => document.Id).ToArray();
@@ -302,13 +310,7 @@ internal sealed class MongoTodoRepository : ITodoRepository
         BulkWriteResult<TodoDocument> result;
         try
         {
-            result = transactionContext.Session is null
-                ? await todoItems.BulkWriteAsync(writes, options, cancellationToken)
-                : await todoItems.BulkWriteAsync(
-                    transactionContext.Session,
-                    writes,
-                    options,
-                    cancellationToken);
+            result = await todoItems.BulkWriteAsync(writes, options, cancellationToken);
         }
         catch (MongoBulkWriteException exception)
             when (GetConflictingIds(exception, writtenIds) is { Count: > 0 } conflictingIds)
@@ -370,6 +372,37 @@ internal sealed class MongoTodoRepository : ITodoRepository
         return filter;
     }
 
+    /// <summary>
+    /// The many-id counterpart to <see cref="BuildIdFilter"/>, returning null
+    /// when the caller asked for nothing.
+    /// </summary>
+    /// <remarks>
+    /// Null rather than an empty filter, because an empty filter would match the
+    /// owner's whole collection — the caller has to short-circuit, and making
+    /// that the only way to read the result is what stops the mistake. Owner
+    /// scoping and soft-delete handling live here so a change to either reaches
+    /// every batch read at once.
+    /// </remarks>
+    private FilterDefinition<TodoDocument>? BuildIdsFilter(
+        IEnumerable<Guid> ids,
+        bool includeDeleted)
+    {
+        Guid[] distinctIds = ids.Distinct().ToArray();
+        if (distinctIds.Length == 0)
+        {
+            return null;
+        }
+
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
+        if (!includeDeleted)
+        {
+            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
+        }
+
+        return filter;
+    }
+
     private FilterDefinition<TodoDocument> BuildMutationFilter(
         Guid id,
         long expectedVersion,
@@ -420,18 +453,11 @@ internal sealed class MongoTodoRepository : ITodoRepository
             ReturnDocument = ReturnDocument.After,
             Projection = WithoutSearchTokens,
         };
-        TodoDocument? persistedDocument = transactionContext.Session is null
-            ? await todoItems.FindOneAndReplaceAsync(
-                filter,
-                replacement,
-                options,
-                cancellationToken)
-            : await todoItems.FindOneAndReplaceAsync(
-                transactionContext.Session,
-                filter,
-                replacement,
-                options,
-                cancellationToken);
+        TodoDocument? persistedDocument = await todoItems.FindOneAndReplaceAsync(
+            filter,
+            replacement,
+            options,
+            cancellationToken);
 
         return persistedDocument is null
             ? throw new ConcurrencyConflictException("TODO", todoItem.Id, expectedVersion)

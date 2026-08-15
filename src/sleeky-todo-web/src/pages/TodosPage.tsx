@@ -386,7 +386,9 @@ export function TodosPage() {
             <p>{error.problem.detail}</p>
             {error.problem.traceId && <small>Trace: {error.problem.traceId}</small>}
           </div>
-          {error.kind === 'concurrency' && error.affectedTodoId && (
+          {/* Not gated on affectedTodoId: a bulk conflict is captured without
+              one, and reloading is the recovery for both. */}
+          {error.kind === 'concurrency' && (
             <Button variant="secondary" onClick={reloadLatestVersion}>
               Reload latest version
             </Button>
