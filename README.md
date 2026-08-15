@@ -262,6 +262,7 @@ The API routes are:
 - `POST /api/auth/logout`
 - `GET /api/todos`
 - `POST /api/todos`
+- `GET /api/todos/selection`
 - `GET /api/todos/{id}`
 - `PUT /api/todos/{id}`
 - `DELETE /api/todos/{id}`
@@ -269,12 +270,28 @@ The API routes are:
 - `POST /api/todos/{id}/dependencies`
 - `DELETE /api/todos/{id}/dependencies/{dependencyId}`
 - `PUT /api/todos/{id}/status`
+- `PUT /api/todos/status`
+- `POST /api/todos/restore`
+- `DELETE /api/todos`
+- `POST /api/assistant/turns`
+- `GET /api/assistant/settings`
+- `PUT /api/assistant/settings`
+- `DELETE /api/assistant/settings`
+- `POST /api/assistant/settings/test`
+- `GET /health`
+
+`GET /health`, `GET /api/auth/login`, `GET /api/auth/me`, and
+`GET /api/auth/antiforgery` are the only routes that answer without a signed-in
+user.
 
 Swagger UI is available at `/swagger`. Known failures use RFC Problem Details:
 validation returns `400`, missing TODOs return `404`, and stale versions or
 domain-rule conflicts return `409`. Every problem response includes a
 `traceId`; validation responses also contain a stable `errors` object keyed by
-camel-cased request field.
+camel-cased request field. `POST /api/assistant/turns` is the one route that
+does not end in that contract: it streams, so a failure after the first event
+cannot become a problem body and the stream faults instead. Failures before the
+stream opens, and every other assistant route, answer as above.
 
 `GET /api/todos` accepts `status`, `priority`, `due-from`, `due-to`,
 `dependencyStatus`, `scope`, `sortField`, `sortDirection`, `limit`, `cursor`,
@@ -307,6 +324,64 @@ non-archived dependent cannot be deleted.
 through the status endpoint returns `nextOccurrenceId`. The completed update
 and next-occurrence insert commit in one MongoDB transaction; the next TODO
 copies the schedule and editable details but starts without dependencies.
+
+`PUT /api/todos/status`, `POST /api/todos/restore`, and `DELETE /api/todos` are
+the batch forms of the single-item routes above; what distinguishes them is the
+absence of `{id}` from the path. Each takes an `items` array of `id` and
+`version` pairs — at least one, at most 100, no identifier twice — and the
+status batch also takes a `status`. A batch is all-or-nothing: an identifier
+that does not resolve fails the whole request with `404` before any version is
+compared, and a version that has moved on fails it with `409` naming every
+stale identifier, so the caller retries the whole read-modify-write. The
+response is an `items` array giving each TODO's resulting `version`, `status`,
+`deletedAt`, and `nextOccurrenceId`.
+
+`GET /api/todos/selection` takes repeated `id` parameters, bounded the same way,
+and reports what those identifiers still refer to. Unlike a batch write, it
+does not fail on one that no longer resolves: missing TODOs are absent from the
+response, so a client holding a stale selection can discover what changed and
+what vanished. Soft-deleted TODOs do resolve, because the trash lists them and a
+selection there is restorable.
+
+## Assistant API
+
+`POST /api/assistant/turns` runs one assistant turn inside the caller's own
+authenticated request and streams the result as server-sent events. The body
+carries the user's `message`, the `transcript` the previous turn handed back,
+and, when answering a destructive proposal, a `confirmation` naming the tool and
+the versions the proposal displayed. It is a POST read off the response body
+rather than an `EventSource`, because antiforgery applies here too and
+`EventSource` can only issue a GET. Requests are capped at 4 MB, above which the
+route answers `413`.
+
+Events are typed `turn_started`, `tool_executed`, `confirmation_required`,
+`todos_changed`, `message`, `turn_completed`, and `heartbeat`. The server keeps
+no conversation history: `turn_completed` carries the transcript forward, and
+the next turn is expected to echo it back. `heartbeat` is transport rather than
+turn — it keeps an idle stream and any proxy in front of it from timing out
+while the model thinks — and clients ignore it. Dropping the stream loses
+nothing, because a tool call that committed stays committed.
+
+The `settings` routes hold the user's own provider configuration, and are
+write-only where the key is concerned: `GET` reports `provider`, `baseUrl`,
+`model`, `hasKey`, `isUsable`, and `source`, but never the key, and no route
+can return it. `source` is `User` or `Application`, naming whose credentials a
+turn would actually spend. `PUT` saves a configuration, taking the provider by
+name — `Anthropic` or `OpenAiCompatible` — and treating `apiKey` as optional,
+since omitting it keeps the stored key and is the only way to edit a model or an
+endpoint without re-entering a credential. `DELETE` removes the stored
+configuration, answering `204`, or `404` when there was none.
+
+`POST /api/assistant/settings/test` probes a configuration without saving it, so
+a wrong key or an unknown model is caught while the user is still on the form.
+The body is optional and carries the values on the form; without one, the stored
+settings are probed instead. It answers `200` either way, with `succeeded` and
+an `error` the probe has stripped the key from. A base URL naming a private or
+loopback address is refused — as a field error on save, and as a failed probe or
+turn for a host name that only resolves to one — because the request to the
+provider is made by the server rather than the browser. Development sets
+`Assistant:AllowPrivateEndpoints` to `true` so a local Ollama still works; the
+default is `false`.
 
 ## Run the API
 
