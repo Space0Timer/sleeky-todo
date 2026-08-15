@@ -161,6 +161,68 @@ public sealed class SpaHostingTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// The client shell is the response these headers exist for, because it is
+    /// the one a browser parses as a document.
+    /// </summary>
+    [TestMethod]
+    public async Task ClientShellCarriesTheSecurityHeaders()
+    {
+        using HttpClient client = CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/");
+
+        response.Headers.GetValues("X-Content-Type-Options")
+            .Should().ContainSingle().Which.Should().Be("nosniff");
+        response.Headers.GetValues("Referrer-Policy")
+            .Should().ContainSingle().Which.Should().Be("no-referrer");
+        response.Headers.GetValues("X-Frame-Options")
+            .Should().ContainSingle().Which.Should().Be("DENY");
+    }
+
+    /// <summary>
+    /// The directives the policy is actually for. A renderer added to the
+    /// assistant panel is what would put stored TODO text in front of a script
+    /// parser, and `script-src 'self'` without `unsafe-inline` is what keeps
+    /// that from being the end of the story. Asserted individually so relaxing
+    /// one of them has to be deliberate.
+    /// </summary>
+    [TestMethod]
+    [DataRow("default-src 'self'")]
+    [DataRow("script-src 'self'")]
+    [DataRow("object-src 'none'")]
+    [DataRow("frame-ancestors 'none'")]
+    [DataRow("base-uri 'self'")]
+    public async Task ContentSecurityPolicyCarriesItsDirectives(string directive)
+    {
+        using HttpClient client = CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/");
+        string policy = response.Headers
+            .GetValues("Content-Security-Policy")
+            .Single();
+
+        policy.Should().Contain(directive);
+        policy.Should().NotContain("unsafe-inline");
+        policy.Should().NotContain("unsafe-eval");
+    }
+
+    /// <summary>
+    /// An API response carries them too. A JSON body is not parsed as a
+    /// document, but nosniff is what keeps a browser from deciding otherwise.
+    /// </summary>
+    [TestMethod]
+    public async Task ApiResponsesCarryTheSecurityHeaders()
+    {
+        using HttpClient client = CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/api/todos");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.GetValues("X-Content-Type-Options")
+            .Should().ContainSingle().Which.Should().Be("nosniff");
+    }
+
     private HttpClient CreateClient()
     {
         return factory.CreateClient(

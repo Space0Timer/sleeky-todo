@@ -16,6 +16,16 @@ const apiProxy = {
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    /*
+     * The polyfill is emitted as an inline script, which the content security
+     * policy the API serves does not allow — and the alternative, widening the
+     * policy to `unsafe-inline`, gives up most of what having one is for. Every
+     * browser that supports the module scripts this build emits also supports
+     * `modulepreload`, so the polyfill has nothing left to do.
+     */
+    modulePreload: { polyfill: false },
+  },
   css: {
     modules: {
       /*
