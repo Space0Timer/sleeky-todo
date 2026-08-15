@@ -1,5 +1,4 @@
 using Sleeky.Todo.Application.Abstractions.Persistence;
-using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Todos.Dependencies;
@@ -29,13 +28,16 @@ public sealed class TodoDependencyEvaluator : ITodoDependencyEvaluator
             return new TodoDependencyState(0);
         }
 
-        IReadOnlyCollection<TodoItem> dependencies = await todoRepository.GetByIdsAsync(
-            distinctIds,
-            includeDeleted: true,
-            cancellationToken);
+        // Only the status of each prerequisite matters, so this reads a
+        // projection rather than materialising an aggregate per dependency.
+        IReadOnlyCollection<TodoDependencyNode> dependencies =
+            await todoRepository.GetDependencyNodesAsync(
+                distinctIds,
+                includeDeleted: true,
+                cancellationToken);
         int missingCount = distinctIds.Length - dependencies.Count;
         int incompleteCount = dependencies.Count(dependency =>
-            dependency.DeletedAt is not null
+            dependency.IsDeleted
             || dependency.Status != TodoStatus.Completed);
 
         return new TodoDependencyState(missingCount + incompleteCount);
