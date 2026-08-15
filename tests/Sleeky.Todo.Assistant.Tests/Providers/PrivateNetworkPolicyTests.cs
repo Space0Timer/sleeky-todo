@@ -69,7 +69,26 @@ public sealed class PrivateNetworkPolicyTests
     [DataRow("64:ff9b::169.254.169.254")]
     [DataRow("64:ff9b::10.0.0.1")]
     [DataRow("64:ff9b::127.0.0.1")]
+    [DataRow("::0.1.2.3")]
     public void AddressesEmbeddedInIPv6ByAnotherEncodingAreBlocked(string address)
+    {
+        PrivateNetworkPolicy.IsBlocked(IPAddress.Parse(address)).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The rest of 64:ff9b::/32, which exists only to be translated onto IPv4.
+    /// </summary>
+    /// <remarks>
+    /// Only the well-known /96 keeps the IPv4 address in its last four octets.
+    /// RFC 8215's local-use 64:ff9b:1::/48 and the other RFC 6052 prefix lengths
+    /// split it around the reserved octet, so they are refused rather than
+    /// decoded — a gateway would still put them onto the embedded address.
+    /// </remarks>
+    [TestMethod]
+    [DataRow("64:ff9b:1::a9fe:a9fe")]
+    [DataRow("64:ff9b:1::1")]
+    [DataRow("64:ff9b:abcd::1")]
+    public void TheRestOfTheNat64RangeIsBlocked(string address)
     {
         PrivateNetworkPolicy.IsBlocked(IPAddress.Parse(address)).Should().BeTrue();
     }

@@ -73,24 +73,58 @@ public static class PrivateNetworkPolicy
 
         byte[] octets = address.GetAddressBytes();
 
-        // The unspecified and loopback addresses live at the bottom of ::/96
-        // and are already answered as themselves, so the embedded form is only
-        // read when it names something outside 0.0.0.0/8.
-        if (octets[12] != 0 && IsZeroThrough(octets, 0, 12))
+        // "::" and "::1" are answered as themselves by IPv6Any and IsLoopback,
+        // so they are the only two the IPv4-compatible range hands back
+        // untouched. Everything else in ::/96 is read as what it embeds —
+        // including 0.0.0.0/8, which the IPv4 rules refuse and which a wider
+        // guard here would otherwise let through.
+        if (IsZeroThrough(octets, 0, 12)
+            && !(IsZeroThrough(octets, 12, 15) && octets[15] <= 1))
         {
             return new IPAddress(octets[12..]);
         }
 
-        if (octets[0] == 0x00
-            && octets[1] == 0x64
-            && octets[2] == 0xFF
-            && octets[3] == 0x9B
-            && IsZeroThrough(octets, 4, 12))
+        if (IsNat64WellKnownPrefix(octets))
         {
             return new IPAddress(octets[12..]);
         }
 
         return address;
+    }
+
+    /// <summary>
+    /// Whether the address is the NAT64 well-known prefix of RFC 6052,
+    /// 64:ff9b::/96, whose last four octets are the IPv4 address verbatim.
+    /// </summary>
+    private static bool IsNat64WellKnownPrefix(byte[] octets)
+    {
+        return IsNat64Range(octets) && IsZeroThrough(octets, 4, 12);
+    }
+
+    /// <summary>
+    /// Whether the address sits anywhere in 64:ff9b::/32, the range reserved for
+    /// NAT64 translation.
+    /// </summary>
+    /// <remarks>
+    /// Covers the RFC 8215 local-use prefix 64:ff9b:1::/48 as well as the
+    /// well-known one. Only the well-known prefix carries the IPv4 address in
+    /// its last four octets; at other prefix lengths RFC 6052 splits it around
+    /// the reserved octet, so the rest of the range is refused outright rather
+    /// than decoded. Nothing is lost by that: the whole range exists to be
+    /// translated onto IPv4, so no provider is reachable at one of these
+    /// addresses in its own right.
+    ///
+    /// Operator-chosen network-specific prefixes are ordinary global unicast and
+    /// cannot be recognised from the address alone. A deployment using one, and
+    /// wanting this guard to hold, has to keep the assistant off a NAT64 path or
+    /// name the prefix in configuration.
+    /// </remarks>
+    private static bool IsNat64Range(byte[] octets)
+    {
+        return octets[0] == 0x00
+            && octets[1] == 0x64
+            && octets[2] == 0xFF
+            && octets[3] == 0x9B;
     }
 
     private static bool IsZeroThrough(byte[] octets, int start, int end)
@@ -141,6 +175,13 @@ public static class PrivateNetworkPolicy
         }
 
         if (address.Equals(IPAddress.IPv6Any))
+        {
+            return true;
+        }
+
+        // Anything still in 64:ff9b::/32 here carries its IPv4 address in a
+        // position this code does not decode, so it is refused rather than read.
+        if (IsNat64Range(address.GetAddressBytes()))
         {
             return true;
         }
