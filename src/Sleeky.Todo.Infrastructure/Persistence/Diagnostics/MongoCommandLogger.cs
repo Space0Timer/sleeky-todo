@@ -30,12 +30,12 @@ internal static class MongoCommandLogger
         // by the identifier the driver puts on both. Scoped to this client
         // rather than held statically, because a process can run more than one —
         // every integration test host builds its own.
-        ConcurrentDictionary<int, MongoCommandTally> inFlight =
-            new ConcurrentDictionary<int, MongoCommandTally>();
+        ConcurrentDictionary<int, DatabaseCommandTally> inFlight =
+            new ConcurrentDictionary<int, DatabaseCommandTally>();
 
         _ = builder.Subscribe<CommandStartedEvent>(commandEvent =>
         {
-            MongoCommandTally? tally = MongoCommandTally.Ambient;
+            DatabaseCommandTally? tally = DatabaseCommandTally.Ambient;
             if (tally is not null)
             {
                 inFlight[commandEvent.RequestId] = tally;
@@ -75,11 +75,11 @@ internal static class MongoCommandLogger
     }
 
     private static void Record(
-        ConcurrentDictionary<int, MongoCommandTally> inFlight,
+        ConcurrentDictionary<int, DatabaseCommandTally> inFlight,
         int requestId,
         TimeSpan duration)
     {
-        if (inFlight.TryRemove(requestId, out MongoCommandTally? tally))
+        if (inFlight.TryRemove(requestId, out DatabaseCommandTally? tally))
         {
             tally.Add(duration);
         }

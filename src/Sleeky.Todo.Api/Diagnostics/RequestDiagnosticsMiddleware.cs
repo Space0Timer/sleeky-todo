@@ -38,7 +38,7 @@ public sealed class RequestDiagnosticsMiddleware
         // Held on the request rather than passed along, because the code that
         // reads it — the request logger's enricher — runs outside this
         // middleware, after the ambient value has already been cleared.
-        using MongoCommandTally tally = MongoCommandTally.BeginRequest();
+        using DatabaseCommandTally tally = DatabaseCommandTally.BeginRequest();
         context.Features.Set(tally);
 
         using IDisposable? scope = this.logger.BeginScope(BuildScope(context));

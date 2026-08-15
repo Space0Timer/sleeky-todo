@@ -1,8 +1,8 @@
 namespace Sleeky.Todo.Infrastructure.Persistence.Diagnostics;
 
 /// <summary>
-/// Totals the MongoDB commands one request issued, so the request's own log
-/// entry can report what the database cost it.
+/// Totals the database commands one request issued, so the request's own log
+/// entry can report what persistence cost it.
 /// </summary>
 /// <remarks>
 /// Ambient rather than injected, because command monitoring is configured once
@@ -11,13 +11,14 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Diagnostics;
 /// and giving it one would put a diagnostic concern into every signature it
 /// crossed.
 /// </remarks>
-public sealed class MongoCommandTally : IDisposable
+public sealed class DatabaseCommandTally : IDisposable
 {
     public const string CommandCountPropertyName = "MongoCommands";
 
     public const string DurationPropertyName = "MongoMs";
 
-    private static readonly AsyncLocal<MongoCommandTally?> CurrentTally = new AsyncLocal<MongoCommandTally?>();
+    private static readonly AsyncLocal<DatabaseCommandTally?> CurrentTally =
+        new AsyncLocal<DatabaseCommandTally?>();
 
     private long commandCount;
     private long durationTicks;
@@ -32,11 +33,11 @@ public sealed class MongoCommandTally : IDisposable
     /// handshakes, the index initializer — runs with no ambient tally, which is
     /// what keeps it out of a request's totals without matching command names.
     /// </summary>
-    internal static MongoCommandTally? Ambient => CurrentTally.Value;
+    internal static DatabaseCommandTally? Ambient => CurrentTally.Value;
 
-    public static MongoCommandTally BeginRequest()
+    public static DatabaseCommandTally BeginRequest()
     {
-        MongoCommandTally tally = new MongoCommandTally();
+        DatabaseCommandTally tally = new DatabaseCommandTally();
         CurrentTally.Value = tally;
 
         return tally;

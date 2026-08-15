@@ -27,7 +27,7 @@ namespace Sleeky.Todo.IntegrationTests.Persistence;
 /// matched to each other.
 /// </remarks>
 [TestClass]
-public sealed class MongoCommandTallyTests
+public sealed class DatabaseCommandTallyTests
 {
     private static readonly DateTimeOffset Timestamp = new DateTimeOffset(
         2026,
@@ -111,7 +111,7 @@ public sealed class MongoCommandTallyTests
     [TestMethod]
     public async Task CommandsIssuedInsideARequestAreCounted()
     {
-        using MongoCommandTally tally = MongoCommandTally.BeginRequest();
+        using DatabaseCommandTally tally = DatabaseCommandTally.BeginRequest();
 
         await repository.AddAsync(CreateTodo());
         await repository.GetByIdAsync(Guid.NewGuid());
@@ -128,7 +128,7 @@ public sealed class MongoCommandTallyTests
     [TestMethod]
     public async Task CommandsIssuedOutsideARequestAreNotCounted()
     {
-        MongoCommandTally tally = MongoCommandTally.BeginRequest();
+        DatabaseCommandTally tally = DatabaseCommandTally.BeginRequest();
         await repository.GetByIdAsync(Guid.NewGuid());
         int countedWhileOpen = tally.CommandCount;
         tally.Dispose();

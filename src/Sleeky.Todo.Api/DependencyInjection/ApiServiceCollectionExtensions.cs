@@ -160,15 +160,15 @@ public static class ApiServiceCollectionExtensions
                         userId);
                 }
 
-                MongoCommandTally? tally = httpContext.Features
-                    .Get<MongoCommandTally>();
+                DatabaseCommandTally? tally = httpContext.Features
+                    .Get<DatabaseCommandTally>();
                 if (tally is not null)
                 {
                     diagnosticContext.Set(
-                        MongoCommandTally.CommandCountPropertyName,
+                        DatabaseCommandTally.CommandCountPropertyName,
                         tally.CommandCount);
                     diagnosticContext.Set(
-                        MongoCommandTally.DurationPropertyName,
+                        DatabaseCommandTally.DurationPropertyName,
                         Math.Round(tally.TotalDuration.TotalMilliseconds, 1));
                 }
             };
