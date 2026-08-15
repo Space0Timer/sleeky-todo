@@ -88,30 +88,6 @@ internal sealed class SessionAwareCollection<TDocument>
     }
 
     /// <summary>
-    /// Returns null when the filter matches nothing and the update does not
-    /// upsert.
-    /// </summary>
-    public async Task<TDocument?> FindOneAndUpdateAsync(
-        FilterDefinition<TDocument> filter,
-        UpdateDefinition<TDocument> update,
-        FindOneAndUpdateOptions<TDocument> options,
-        CancellationToken cancellationToken)
-    {
-        return Session is null
-            ? await collection.FindOneAndUpdateAsync(
-                filter,
-                update,
-                options,
-                cancellationToken)
-            : await collection.FindOneAndUpdateAsync(
-                Session,
-                filter,
-                update,
-                options,
-                cancellationToken);
-    }
-
-    /// <summary>
     /// Returns null when the filter matches nothing.
     /// </summary>
     /// <remarks>
