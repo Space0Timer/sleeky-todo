@@ -29,10 +29,7 @@ public sealed class DependencyCommandHandlerTests
         IClock clock = Substitute.For<IClock>();
         DateTimeOffset updatedAt = TestTodoFactory.Timestamp.AddHours(1);
         clock.UtcNow.Returns(updatedAt);
-        repository.GetByIdAsync(source.Id, false, Arg.Any<CancellationToken>())
-            .Returns(source);
-        repository.GetByIdAsync(dependency.Id, false, Arg.Any<CancellationToken>())
-            .Returns(dependency);
+        StubEndpoints(repository, source, dependency);
         graph.WouldCreateCycleAsync(
                 source.Id,
                 dependency.Id,
@@ -66,15 +63,7 @@ public sealed class DependencyCommandHandlerTests
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         IDependencyGraphService graph = Substitute.For<IDependencyGraphService>();
         IClock clock = Substitute.For<IClock>();
-        repository.GetByIdAsync(source.Id, false, Arg.Any<CancellationToken>())
-            .Returns(source);
-        repository.GetByIdAsync(
-                TestTodoFactory.CreateId("missing"),
-                false,
-                Arg.Any<CancellationToken>())
-            .Returns((TodoItem?)null);
-        repository.GetByIdAsync(dependency.Id, false, Arg.Any<CancellationToken>())
-            .Returns(dependency);
+        StubEndpoints(repository, source, dependency);
         graph.WouldCreateCycleAsync(
                 source.Id,
                 dependency.Id,
@@ -106,8 +95,7 @@ public sealed class DependencyCommandHandlerTests
         ITodoRepository repository = Substitute.For<ITodoRepository>();
         IDependencyGraphService graph = Substitute.For<IDependencyGraphService>();
         IClock clock = Substitute.For<IClock>();
-        repository.GetByIdAsync(source.Id, false, Arg.Any<CancellationToken>())
-            .Returns(source);
+        StubEndpoints(repository, source);
         AddDependencyCommandHandler handler = new AddDependencyCommandHandler(
             repository,
             graph,
@@ -168,5 +156,27 @@ public sealed class DependencyCommandHandlerTests
         await missing.Should()
             .ThrowAsync<DomainException>()
             .WithMessage("The TODO dependency does not exist.");
+    }
+
+    /// <summary>
+    /// The add handler reads both ends in one batch, so the double is stubbed on
+    /// the batch read rather than on two single reads. Identifiers with no
+    /// matching TODO are simply absent from the result, exactly as Mongo
+    /// returns them.
+    /// </summary>
+    private static void StubEndpoints(
+        ITodoRepository repository,
+        params TodoItem[] todos)
+    {
+        Dictionary<Guid, TodoItem> stored = todos.ToDictionary(todo => todo.Id);
+        repository.GetByIdsAsync(
+                Arg.Any<IEnumerable<Guid>>(),
+                false,
+                Arg.Any<CancellationToken>())
+            .Returns(call => call.Arg<IEnumerable<Guid>>()
+                .Distinct()
+                .Where(stored.ContainsKey)
+                .Select(id => stored[id])
+                .ToArray());
     }
 }
