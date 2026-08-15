@@ -56,7 +56,7 @@ public sealed class RateLimitingApiTests
         using HttpResponseMessage first = await client.PostAsync(LogoutPath, null);
         using HttpResponseMessage second = await client.PostAsync(LogoutPath, null);
 
-        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        first.StatusCode.Should().Be(HttpStatusCode.Found);
         second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
 
@@ -77,7 +77,7 @@ public sealed class RateLimitingApiTests
         using HttpResponseMessage refused = await client.PostAsync(LogoutPath, null);
         using HttpResponseMessage read = await client.GetAsync("/api/auth/me");
 
-        spent.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        spent.StatusCode.Should().Be(HttpStatusCode.Found);
         refused.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         read.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -130,9 +130,9 @@ public sealed class RateLimitingApiTests
         using HttpResponseMessage refused = await client.PostAsync(LogoutPath, null);
         using HttpResponseMessage unaffected = await other.PostAsync(LogoutPath, null);
 
-        spent.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        spent.StatusCode.Should().Be(HttpStatusCode.Found);
         refused.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        unaffected.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        unaffected.StatusCode.Should().Be(HttpStatusCode.Found);
     }
 
     /// <summary>
@@ -187,8 +187,8 @@ public sealed class RateLimitingApiTests
         using HttpResponseMessage first = await client.PostAsync(LogoutPath, null);
         using HttpResponseMessage second = await client.PostAsync(LogoutPath, null);
 
-        first.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        second.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        first.StatusCode.Should().Be(HttpStatusCode.Found);
+        second.StatusCode.Should().Be(HttpStatusCode.Found);
     }
 
     private static HttpRequestMessage BuildTurnRequest()
@@ -230,6 +230,11 @@ public sealed class RateLimitingApiTests
         HttpClient client = factory.CreateClient(
             new WebApplicationFactoryClientOptions
             {
+                // Sign-out answers with a redirect, and the status is what these
+                // tests are reading. Following it would land on a login route
+                // this host has no client bundle to serve, turning every
+                // allowed request into a 404.
+                AllowAutoRedirect = false,
                 BaseAddress = new Uri("https://localhost"),
             });
         client.DefaultRequestHeaders.Add(
