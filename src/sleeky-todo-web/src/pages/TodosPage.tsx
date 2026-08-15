@@ -402,9 +402,6 @@ export function TodosPage() {
             <strong>The selection is out of date.</strong>
             <p>{bulk.repair.message}</p>
           </div>
-          <Button variant="secondary" onClick={reloadLatestVersion}>
-            Reload latest version
-          </Button>
         </section>
       )}
 
