@@ -1,13 +1,65 @@
 # Architecture
 
-The application uses a layered monolith:
+The application is a layered monolith. Solid arrows are calls; dashed arrows
+are "implements" or an out-of-process redirect. Every arrow between the boxes
+points inward, towards Domain.
 
-```text
-React
-  -> ASP.NET Core API
-  -> Application commands and queries        <- Assistant tools also enter here
-  -> Domain and infrastructure
-  -> MongoDB
+```mermaid
+flowchart TB
+    subgraph browser["Browser"]
+        spa["React client (Vite, TypeScript)<br/>persisted workflow · assistant panel · SSE parser"]
+    end
+
+    subgraph api["Sleeky.Todo.Api — ASP.NET Core"]
+        auth["Cookie session · OIDC login endpoint<br/>global antiforgery filter"]
+        controllers["Controllers<br/>Todos · Assistant · AssistantSettings · Auth"]
+        problems["Global exception handler → RFC Problem Details"]
+        static["Static SPA hosting<br/>(container image only)"]
+    end
+
+    subgraph assistant["Sleeky.Todo.Assistant"]
+        turn["Turn loop over IChatClient<br/>tools · version ledger · confirmation gate"]
+    end
+
+    subgraph application["Sleeky.Todo.Application"]
+        pipeline["MediatR pipeline behaviours<br/>validation · domain-exception translation · request logging"]
+        handlers["Command and query handlers<br/>dependency evaluator · recurrence factory · event dispatcher"]
+        abstractions["Abstractions<br/>ITodoRepository · ITodoListReader · ITransactionExecutor<br/>ICurrentUser · IClock · IAssistantSettingsRepository"]
+    end
+
+    subgraph domain["Sleeky.Todo.Domain"]
+        entity["TodoItem aggregate<br/>status and archive rules · dependency edges<br/>RecurrenceSchedule · TodoCompletedDomainEvent"]
+    end
+
+    subgraph infrastructure["Sleeky.Todo.Infrastructure"]
+        repo["MongoTodoRepository<br/>owner-scoped filters · version-matched replace"]
+        reader["MongoTodoListReader<br/>aggregation · blocked state · keyset cursor · search hint"]
+        tx["MongoTransactionExecutor<br/>scoped session context"]
+        startup["Index initializer · search-token backfill · enum migration"]
+    end
+
+    mongo[("MongoDB 7 replica set<br/>todoItems · users · assistantSettings")]
+    idp[("OIDC provider<br/>Keycloak locally")]
+    llm[("LLM provider<br/>Anthropic · any OpenAI-compatible endpoint")]
+
+    spa -->|"HTTPS · JSON · SSE"| controllers
+    spa -.->|"login redirect"| idp
+    auth --- controllers
+    controllers --> pipeline
+    controllers --> turn
+    turn -->|"commands and queries only"| pipeline
+    turn <-->|"bring-your-own-key"| llm
+    pipeline --> handlers
+    handlers --> entity
+    handlers --> abstractions
+    abstractions -.-> repo
+    abstractions -.-> reader
+    abstractions -.-> tx
+    repo --> mongo
+    reader --> mongo
+    tx --> mongo
+    startup --> mongo
+    auth <-->|"authorization code flow"| idp
 ```
 
 The Application layer owns persistence and time abstractions. Infrastructure supplies their runtime implementations, keeping command handlers testable and independent of MongoDB and the system clock.
@@ -345,15 +397,35 @@ Integration tests issue simultaneous mutations with the same version and verify 
 Only a real transition from a non-completed state into `Completed` raises a
 `TodoCompletedDomainEvent`. Completion runs through `ITransactionExecutor`:
 
-```text
-ChangeTodoStatus handler
-  -> ITransactionExecutor.ExecuteAsync
-     -> start MongoDB session transaction
-     -> versioned replacement of current occurrence
-     -> dispatch TodoCompletedDomainEvent in-process
-     -> calculate next date from scheduled due date
-     -> insert next occurrence through the same session
-     -> commit
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant H as ChangeTodoStatus handler
+    participant TX as ITransactionExecutor
+    participant R as MongoTodoRepository
+    participant M as MongoDB
+
+    C->>H: PUT /api/todos/{id}/status {status: Completed, version: N}
+    H->>R: GetByIdAsync(id)
+    R->>M: find {_id, ownerId, deletedAt: null}
+    H->>H: version guard · dependency evaluator (blocked?)
+    H->>H: todo.ChangeStatus(Completed) raises TodoCompletedDomainEvent
+    H->>TX: ExecuteAsync(work)
+    TX->>M: start session and transaction
+    H->>R: UpdateAsync(todo)
+    R->>M: findOneAndReplace {_id, version: N} → version N+1
+    alt no document matched
+        R-->>H: ConcurrencyConflictException
+        TX->>M: abort
+        H-->>C: 409 Problem Details
+    else replaced
+        H->>H: dispatch event in-process → next date from the scheduled due date
+        H->>R: AddAsync(next occurrence: same seriesId, occurrenceNumber + 1)
+        R->>M: insertOne (unique partial index on owner + seriesId + occurrenceNumber)
+        TX->>M: commit
+        H-->>C: 200 {version: N+1, nextOccurrenceId}
+    end
 ```
 
 `ITransactionExecutor` takes the work as a lambda and runs it as one atomic

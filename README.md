@@ -24,9 +24,15 @@ React client
 
 Domain contains business state and rules. Application owns use cases and public
 abstractions. Infrastructure implements MongoDB and clock services. API owns
-HTTP contracts and error mapping. See [docs/architecture.md](docs/architecture.md)
-and [docs/decision-log.md](docs/decision-log.md) for the detailed boundaries
-and trade-offs.
+HTTP contracts and error mapping.
+
+- [docs/architecture.md](docs/architecture.md) — the component diagram, the
+  recurring-completion sequence, and each boundary the code holds
+- [docs/decision-log.md](docs/decision-log.md) — two pages: how the ambiguous
+  requirements were read, the key trade-offs, what was deliberately not built,
+  and what more time would change
+- [docs/decision-log-detailed.md](docs/decision-log-detailed.md) — every
+  decision as it was made, with the alternatives that were rejected
 
 ## Repository layout
 
