@@ -228,13 +228,13 @@ public static class TodoCursorCodec
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out int priorityOrder)
-                && priorityOrder is >= 0 and <= 2,
+                && Enum.IsDefined((TodoPriority)priorityOrder),
             TodoSortField.Status => int.TryParse(
                 value,
                 NumberStyles.None,
                 CultureInfo.InvariantCulture,
                 out int statusOrder)
-                && statusOrder is >= 0 and <= 3,
+                && Enum.IsDefined((TodoStatus)statusOrder),
             TodoSortField.Name => !string.IsNullOrEmpty(value),
             _ => false,
         };

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using FluentAssertions;
 
 using NSubstitute;
@@ -239,6 +241,71 @@ public sealed class GetTodosQueryHandlerTests
             .Should().Be(TodoCursorCodec.CreateFilterSignature(
                 new GetTodosQuery(priority: TodoPriority.High, searchText: "   "),
                 Array.Empty<string>()));
+    }
+
+    /// <summary>
+    /// Every ordinal the enum defines is a usable cursor position, and nothing
+    /// outside it is.
+    /// </summary>
+    /// <remarks>
+    /// The first half is the half that matters: validating against a hardcoded
+    /// range rather than the enum means the day a status or priority is added,
+    /// cursors carrying the new member are rejected as malformed and paging
+    /// stops mid-list for anyone holding one. Enumerating the enum here keeps
+    /// that from being a silent break.
+    /// </remarks>
+    [TestMethod]
+    public async Task EveryDefinedStatusAndPriorityOrdinalIsAUsableCursorPosition()
+    {
+        listReader.GetTodosAsync(Arg.Any<TodoListCriteria>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<TodoListItemDto>());
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        foreach (TodoStatus status in Enum.GetValues<TodoStatus>())
+        {
+            Func<Task> accepted = async () => await handler.Handle(
+                BuildQuery(TodoSortField.Status, (int)status),
+                CancellationToken.None);
+            await accepted.Should().NotThrowAsync();
+        }
+
+        foreach (TodoPriority priority in Enum.GetValues<TodoPriority>())
+        {
+            Func<Task> accepted = async () => await handler.Handle(
+                BuildQuery(TodoSortField.Priority, (int)priority),
+                CancellationToken.None);
+            await accepted.Should().NotThrowAsync();
+        }
+
+        Func<Task> undefinedStatus = async () => await handler.Handle(
+            BuildQuery(TodoSortField.Status, Enum.GetValues<TodoStatus>().Length),
+            CancellationToken.None);
+        Func<Task> undefinedPriority = async () => await handler.Handle(
+            BuildQuery(TodoSortField.Priority, Enum.GetValues<TodoPriority>().Length),
+            CancellationToken.None);
+
+        await undefinedStatus.Should().ThrowAsync<InvalidCursorException>();
+        await undefinedPriority.Should().ThrowAsync<InvalidCursorException>();
+    }
+
+    private static GetTodosQuery BuildQuery(TodoSortField sortField, int sortValue)
+    {
+        GetTodosQuery query = new GetTodosQuery(sortField: sortField);
+        TodoCursorPayload minted = TodoCursorCodec.Create(
+            query,
+            CreateItem(1),
+            TodoCursorCodec.CreateFilterSignature(query, Array.Empty<string>()));
+        string cursor = TodoCursorCodec.Encode(new TodoCursorPayload
+        {
+            Version = minted.Version,
+            SortField = minted.SortField,
+            Direction = minted.Direction,
+            LastSortValue = sortValue.ToString(CultureInfo.InvariantCulture),
+            LastTodoId = minted.LastTodoId,
+            FilterSignature = minted.FilterSignature,
+        });
+
+        return new GetTodosQuery(sortField: sortField, cursor: cursor);
     }
 
     private static string CreateCursorFor(GetTodosQuery query)
