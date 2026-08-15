@@ -1,6 +1,13 @@
 import type { ApiErrorKind, ProblemDetails } from '../types/todo.ts'
 
 export type AntiforgeryToken = {
+  /**
+   * The field name a form post must use. Validation reads the form field
+   * before the header when a request has a form content type, which is what
+   * lets the sign-out navigation stay protected — a browser-owned form post
+   * cannot set a request header.
+   */
+  formFieldName: string
   headerName: string
   token: string
 }

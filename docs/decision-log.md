@@ -68,6 +68,14 @@ records each decision as it was made; the mechanisms are described in
   header is a global filter; the cookie handler must be the default challenge
   so a `fetch` gets `401`, not a redirect; the Data Protection key ring becomes
   state that must outlive the container.
+- **Logout ends the provider session too.** Reverses an earlier
+  application-only logout, which returned to the login page while leaving the
+  single sign-on session open — on a shared device, that hands the next person
+  the account. Costs recorded: the ID token is persisted in the encrypted
+  ticket for its `id_token_hint` (only that token, so `SaveTokens` stays off),
+  and logout is a form post rather than a `fetch`, because the browser has to
+  follow the redirect to the provider. Kept a `POST`, not the simpler `GET`, so
+  the antiforgery filter still covers it.
 - **Read-time dependency state.** `isBlocked` is computed per list read.
   Persisting it goes stale on every completion, deletion, or archive of a
   prerequisite. Cost: an aggregation stage per page.
@@ -95,9 +103,11 @@ records each decision as it was made; the mechanisms are described in
   second transport and connection management. §4 says how it would be built.
 - **Physical purge job.** Retention is enforced by `purgeAt` and the restore
   rule; removal belongs outside request handling and is the remaining slice.
-- **Provider single logout.** Needs the ID token persisted purely to sign out,
-  and a `fetch` cannot follow a redirect into a provider page anyway. Accepted:
-  the provider session can outlive the application session.
+- **Provider-initiated logout.** Back-channel and front-channel logout end the
+  application session when the sign-out starts elsewhere in the realm. That
+  needs server-side sessions keyed by the provider's session ID, because an
+  encrypted cookie cannot be revoked from outside the browser holding it. With
+  one application in the realm there is nowhere else for a sign-out to start.
 - **Server-side assistant history.** The client echoes a windowed transcript;
   storing it is a history *feature* and would not fix the token cost.
 - Also rejected, for reasons in §2: persisted blocked state, an `IUnitOfWork`,

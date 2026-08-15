@@ -1,5 +1,6 @@
 using System.Security.Claims;
 
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
@@ -9,12 +10,16 @@ namespace Sleeky.Todo.Api.Authentication;
 
 /// <summary>
 /// Translates a validated OpenID Connect login into the application's own
-/// principal. The resulting ticket carries only the internal user identifier
-/// and display name, so no provider token or raw subject reaches the cookie.
+/// principal. The resulting ticket carries the internal user identifier, a
+/// display name, and the ID token that provider sign-out needs as its
+/// <c>id_token_hint</c>. No access or refresh token is persisted, and the
+/// ticket is encrypted inside an HttpOnly cookie, so nothing here is reachable
+/// from script.
 /// </summary>
 internal static class OidcAuthenticationEvents
 {
     private const string DisplayNameClaim = "name";
+    private const string IdTokenName = "id_token";
     private const string IssuerClaim = "iss";
     private const string PreferredUsernameClaim = "preferred_username";
     private const string SubjectClaim = "sub";
@@ -47,6 +52,8 @@ internal static class OidcAuthenticationEvents
             context.HttpContext.RequestAborted);
 
         context.Principal = BuildApplicationPrincipal(identity, context.Scheme.Name);
+
+        StoreIdTokenForSignOut(context);
 
         CreateLogger(context.HttpContext).LogInformation(
             1200,
@@ -90,5 +97,34 @@ internal static class OidcAuthenticationEvents
         return httpContext.RequestServices
             .GetRequiredService<ILoggerFactory>()
             .CreateLogger(typeof(OidcAuthenticationEvents).FullName!);
+    }
+
+    /// <summary>
+    /// Keeps the ID token in the application ticket so provider sign-out can
+    /// present it as <c>id_token_hint</c>. The sign-out handler reads it back
+    /// through <c>GetTokenAsync</c> against its sign-in scheme, which is this
+    /// application's cookie. Storing the one token here rather than enabling
+    /// <c>SaveTokens</c> keeps the access and refresh tokens out of the ticket:
+    /// the application calls no provider API, so persisting them would grow the
+    /// cookie and widen what a stolen session yields for no gain.
+    /// </summary>
+    private static void StoreIdTokenForSignOut(TokenValidatedContext context)
+    {
+        // Under the authorization code flow the ID token arrives in the token
+        // endpoint response. The authorization response carries one only in the
+        // hybrid flow, which this client does not use, so it is a fallback
+        // rather than the expected source.
+        string? idToken = context.TokenEndpointResponse?.IdToken
+            ?? context.ProtocolMessage?.IdToken;
+
+        if (string.IsNullOrEmpty(idToken) || context.Properties is null)
+        {
+            // Sign-out still works without the hint; the provider asks the user
+            // to confirm rather than ending the session straight away.
+            return;
+        }
+
+        context.Properties.StoreTokens(
+            [new AuthenticationToken { Name = IdTokenName, Value = idToken }]);
     }
 }

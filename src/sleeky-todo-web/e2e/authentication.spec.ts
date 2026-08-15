@@ -51,6 +51,19 @@ test('signing out returns to the login page and protects the list', async ({
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 })
 
+test('signing out ends the provider session too', async ({ page }) => {
+  await signIn(page, 'alice')
+  await signOut(page)
+
+  // The whole point of redirecting through the provider's end-session
+  // endpoint. Without it the single sign-on session outlives the application
+  // session and this second sign-in is carried through with no prompt at all,
+  // which on a shared device hands the next person the account.
+  const askedForCredentials = await signIn(page, 'alice')
+
+  expect(askedForCredentials).toBe(true)
+})
+
 test('a mutation carries an antiforgery header', async ({ page }) => {
   await signIn(page, 'alice')
   await resetOwnedData(page)

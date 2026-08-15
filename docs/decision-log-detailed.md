@@ -452,17 +452,58 @@ existing deployment keeps unused indexes that still cost write time. Existing
 TODO documents predate `OwnerId` and cannot be attributed to a user, so
 disposable local data is recreated rather than backfilled.
 
-## Application-only logout
+## Provider single logout
 
-Logout deletes the application cookie and returns `204`. The provider's
-end-session endpoint is deliberately not called.
+Logout ends the provider session as well as the application session. This
+reverses an earlier decision to keep logout application-only, and the reversal
+is recorded rather than swapped in silently, because the reasons the first
+decision gave were real and had to be answered rather than dismissed.
 
-Provider logout requires an `id_token_hint`, which would mean persisting the ID
-token in the authentication ticket purely to support sign-out, and a `fetch`
-cannot follow a redirect into a provider logout page regardless. The accepted
-trade-off is that the provider session can outlive the application session, so a
-login immediately after logout may complete without a new credential prompt.
-True single logout is a later decision if shared-device use is ever required.
+The first decision cited two costs. Provider logout needs an `id_token_hint`,
+which means persisting the ID token in the authentication ticket purely to
+support sign-out; and a `fetch` cannot follow a redirect into a provider page.
+Both are still true. What changed is the weighting: the accepted trade-off was
+that a sign-in immediately after sign-out completes with no credential prompt,
+which on any shared device hands the next person the account. A sign-out
+control that visibly returns to the login page while leaving the session
+open at the provider is worse than no control, because it reports something it
+did not do.
+
+The two costs are paid as narrowly as the framework allows. Only the ID token
+is stored, written into the ticket directly rather than by enabling
+`SaveTokens`, which would have added the access and refresh tokens — credentials
+the application never uses, since it calls no provider API. The ticket is
+encrypted and its cookie is HttpOnly, so the "no tokens in the browser"
+boundary is unchanged: nothing here is reachable from script, and the cookie
+grows by about a kilobyte.
+
+The redirect is handled by making logout a form post rather than a `fetch`, so
+the browser owns the navigation. Keeping the `POST` keeps the global antiforgery
+filter over it: validation reads the form field before the header when a request
+has a form content type, so a browser-owned post can still carry the token. The
+simpler option — a `GET` mirroring the login endpoint — was rejected because the
+antiforgery filter does not cover `GET`, which would leave forced sign-out open
+to any cross-site navigation. The cost of the form post is that failures surface
+as pages rather than as errors, so the client checks `/api/auth/me` and takes a
+fresh token immediately beforehand and falls back to a local clear when there is
+no server session left to end.
+
+Making logout a form post also pulled in the content security policy, which is
+recorded because the interaction is not obvious and its failure mode is quiet.
+`form-action` is checked against the redirects a submission follows, not only
+against the address on the form, so a policy of `'self'` blocks the hop to the
+provider. The application session would still end and the browser would still
+land on the login page, so the user is told they signed out while the provider
+session stands — the failure looks exactly like success. The policy is therefore
+built from the configured authority rather than being a constant, and names that
+origin in `form-action`.
+
+What remains unbuilt is provider-initiated logout: Keycloak's back-channel and
+front-channel logout, which end the application session when the sign-out starts
+somewhere else in the single sign-on estate. That needs a registered endpoint and
+server-side session storage keyed by the provider's session ID, because an
+encrypted cookie cannot be revoked from outside the browser holding it. With one
+application in the realm there is nowhere else for a sign-out to start.
 
 ## Antiforgery as a global requirement
 

@@ -53,11 +53,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     try {
-      await logout()
-    } finally {
-      setAntiforgeryToken(null)
-      setUser(anonymous)
+      if (await logout()) {
+        // The browser is leaving for the provider's end-session endpoint.
+        // Clearing state here would re-render the application against an
+        // anonymous session for the moment before the document is replaced.
+        return true
+      }
+    } catch {
+      // A failure to reach the API leaves the server session in place, but
+      // keeping the client signed in on top of it helps nobody: the local
+      // state is dropped and the caller routes to the login page.
     }
+
+    setAntiforgeryToken(null)
+    setUser(anonymous)
+
+    return false
   }, [])
 
   const value = useMemo<AuthState>(

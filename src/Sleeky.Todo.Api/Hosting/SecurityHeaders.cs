@@ -33,7 +33,7 @@ public static class SecurityHeaders
     /// inlined. <c>frame-ancestors</c> replaces X-Frame-Options, which is
     /// obsolete but still sent for anything that predates the directive.
     /// </remarks>
-    private const string ContentSecurityPolicy =
+    private const string PolicyWithoutFormAction =
         "default-src 'self'; "
         + "script-src 'self'; "
         + "style-src 'self'; "
@@ -42,18 +42,21 @@ public static class SecurityHeaders
         + "connect-src 'self'; "
         + "frame-ancestors 'none'; "
         + "base-uri 'self'; "
-        + "form-action 'self'; "
-        + "object-src 'none'";
+        + "object-src 'none'; ";
 
-    public static IApplicationBuilder UseSecurityHeaders(this IApplicationBuilder app)
+    public static IApplicationBuilder UseSecurityHeaders(
+        this IApplicationBuilder app,
+        string? providerAuthority)
     {
         ArgumentNullException.ThrowIfNull(app);
+
+        string contentSecurityPolicy = BuildContentSecurityPolicy(providerAuthority);
 
         return app.Use(async (context, next) =>
         {
             IHeaderDictionary headers = context.Response.Headers;
 
-            headers.ContentSecurityPolicy = ContentSecurityPolicy;
+            headers.ContentSecurityPolicy = contentSecurityPolicy;
 
             // The API answers JSON and the host serves hashed assets, so there
             // is no response here whose type a browser should be guessing at.
@@ -68,5 +71,26 @@ public static class SecurityHeaders
 
             await next();
         });
+    }
+
+    /// <summary>
+    /// Builds the policy for a deployment. <paramref name="providerAuthority"/>
+    /// is the configured OpenID Connect authority, whose origin has to appear in
+    /// <c>form-action</c>: sign-out is a form post that redirects to the
+    /// provider's end-session endpoint, and browsers re-check the directive
+    /// against each redirect the submission follows rather than only against
+    /// where the form was aimed. Under <c>'self'</c> alone, sign-out would be
+    /// blocked at the redirect and the session would survive at the provider.
+    /// </summary>
+    private static string BuildContentSecurityPolicy(string? providerAuthority)
+    {
+        string formAction = Uri.TryCreate(
+            providerAuthority,
+            UriKind.Absolute,
+            out Uri? authority)
+            ? $"'self' {authority.GetLeftPart(UriPartial.Authority)}"
+            : "'self'";
+
+        return $"{PolicyWithoutFormAction}form-action {formAction}";
     }
 }

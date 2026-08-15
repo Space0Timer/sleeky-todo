@@ -178,7 +178,13 @@ public static class ApiServiceCollectionExtensions
         // Ahead of everything that writes a response, so the static files, the
         // client shell, and the API all carry the same headers. Behind the
         // exception handler, so an error response carries them too.
-        app.UseSecurityHeaders();
+        //
+        // The provider's origin is handed over because sign-out is a form post
+        // that redirects to its end-session endpoint, and form-action is
+        // checked against that redirect too.
+        app.UseSecurityHeaders(
+            app.Configuration.GetSection(AuthenticationSettings.SectionName)[
+                nameof(AuthenticationSettings.Authority)]);
 
         if (!isDevelopment)
         {
