@@ -92,7 +92,8 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
         ArgumentNullException.ThrowIfNull(input);
 
         if (string.IsNullOrWhiteSpace(input.Model)
-            || !AssistantBaseUrl.TryParse(input.BaseUrl, out Uri? baseUrl))
+            || !AssistantBaseUrl.TryParse(input.BaseUrl, out Uri? baseUrl)
+            || this.IsRefusedEndpoint(baseUrl))
         {
             return null;
         }
@@ -158,6 +159,16 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
         return string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.Trim();
     }
 
+    /// <summary>
+    /// Whether a user's endpoint names an address the policy will not permit.
+    /// Applies to user settings only; the application's own endpoint is
+    /// operator configuration and is resolved without this.
+    /// </summary>
+    private bool IsRefusedEndpoint(Uri? baseUrl)
+    {
+        return !this.options.AllowPrivateEndpoints && AssistantBaseUrl.IsPrivate(baseUrl);
+    }
+
     private AssistantConnection? Resolve(AssistantSettingsRecord? stored)
     {
         AssistantConnection? user = this.ResolveUser(stored);
@@ -181,6 +192,13 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
         // own default, so running with a base URL the user cannot see was
         // ignored would send their key somewhere they never named.
         if (!AssistantBaseUrl.TryParse(stored.BaseUrl, out Uri? baseUrl))
+        {
+            return null;
+        }
+
+        // A record saved before the policy was in force, or while it was
+        // relaxed, is judged now rather than at the point it was written.
+        if (this.IsRefusedEndpoint(baseUrl))
         {
             return null;
         }

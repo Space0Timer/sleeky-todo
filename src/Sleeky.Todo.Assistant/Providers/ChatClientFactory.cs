@@ -1,4 +1,7 @@
 using System.ClientModel;
+using System.ClientModel.Primitives;
+using System.Net;
+using System.Net.Sockets;
 
 using Anthropic;
 using Anthropic.Core;
@@ -50,6 +53,26 @@ public sealed class ChatClientFactory : IChatClientFactory
         Timeout = TimeSpan.FromMinutes(10),
     };
 
+    /// <summary>
+    /// The transport every user-supplied endpoint is reached through.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="SharedTransport"/> rather than a flag on it,
+    /// because a connect callback belongs to a handler and the application's own
+    /// endpoint is deliberately not subject to one. Both are process-lifetime
+    /// for the reason described above.
+    /// </remarks>
+    private static readonly HttpClient GuardedTransport = new HttpClient(
+        new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            ConnectCallback = GuardedConnectAsync,
+        },
+        disposeHandler: true)
+    {
+        Timeout = TimeSpan.FromMinutes(10),
+    };
+
     private readonly AssistantOptions options;
 
     public ChatClientFactory(IOptions<AssistantOptions> options)
@@ -63,10 +86,12 @@ public sealed class ChatClientFactory : IChatClientFactory
     {
         ArgumentNullException.ThrowIfNull(connection);
 
+        HttpClient transport = this.TransportFor(connection);
+
         IChatClient client = connection.Provider switch
         {
-            AssistantProvider.Anthropic => this.CreateAnthropic(connection),
-            AssistantProvider.OpenAiCompatible => CreateOpenAiCompatible(connection),
+            AssistantProvider.Anthropic => this.CreateAnthropic(connection, transport),
+            AssistantProvider.OpenAiCompatible => CreateOpenAiCompatible(connection, transport),
             _ => throw new NotSupportedException(
                 $"'{connection.Provider}' is not a supported assistant provider."),
         };
@@ -74,11 +99,72 @@ public sealed class ChatClientFactory : IChatClientFactory
         return client;
     }
 
-    private static IChatClient CreateOpenAiCompatible(AssistantConnection connection)
+    /// <summary>
+    /// Opens a connection only once the address on the other end has been seen.
+    /// </summary>
+    /// <remarks>
+    /// This is the check that holds, rather than the one on the settings form.
+    /// A name that resolved to a public address when it was saved is free to
+    /// resolve to a private one by the time a request is made, and a provider
+    /// that answers with a redirect chooses its own next host — both arrive
+    /// here, because every connection the handler opens goes through this
+    /// callback.
+    ///
+    /// The socket is pointed at the addresses that were just judged rather than
+    /// at the host name again. Handing the name back to the stack would resolve
+    /// it a second time and connect to whatever that lookup returned, which is
+    /// the gap this is written to close.
+    /// </remarks>
+    private static async ValueTask<Stream> GuardedConnectAsync(
+        SocketsHttpConnectionContext context,
+        CancellationToken cancellationToken)
+    {
+        IPAddress[] resolved = await Dns
+            .GetHostAddressesAsync(context.DnsEndPoint.Host, cancellationToken)
+            .ConfigureAwait(false);
+        IPAddress[] permitted = Array.FindAll(
+            resolved,
+            address => !PrivateNetworkPolicy.IsBlocked(address));
+
+        if (permitted.Length == 0)
+        {
+            throw new EndpointBlockedException(context.DnsEndPoint.Host);
+        }
+
+        Socket socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
+        {
+            NoDelay = true,
+        };
+
+        try
+        {
+            await socket
+                .ConnectAsync(permitted, context.DnsEndPoint.Port, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
+        }
+    }
+
+    private static IChatClient CreateOpenAiCompatible(
+        AssistantConnection connection,
+        HttpClient transport)
     {
         // The base URL is what makes one provider type reach OpenRouter,
         // Ollama, vLLM, and LM Studio; unset, it is OpenAI itself.
-        OpenAIClientOptions clientOptions = new OpenAIClientOptions();
+        OpenAIClientOptions clientOptions = new OpenAIClientOptions
+        {
+            // Supplied for the same reason the Anthropic client is given one: a
+            // client built per turn against the default transport strands a
+            // connection pool each time. It is also what puts this provider
+            // behind the same connection guard as the other.
+            Transport = new HttpClientPipelineTransport(transport),
+        };
 
         if (connection.BaseUrl is not null)
         {
@@ -92,12 +178,33 @@ public sealed class ChatClientFactory : IChatClientFactory
         return client.GetChatClient(connection.Model).AsIChatClient();
     }
 
-    private IChatClient CreateAnthropic(AssistantConnection connection)
+    /// <summary>
+    /// Picks the transport a connection is made through.
+    /// </summary>
+    /// <remarks>
+    /// The application's own endpoint comes from configuration an operator
+    /// wrote, so it is left unguarded — a deployment pointing the assistant at a
+    /// model on its own network is a supported arrangement, not an attack. Only
+    /// an endpoint that arrived from a user is held to the policy, and the
+    /// configuration flag exists for the deployment where those are trusted too,
+    /// such as a developer running Ollama on the loopback interface.
+    /// </remarks>
+    private HttpClient TransportFor(AssistantConnection connection)
+    {
+        bool guard = connection.Source == AssistantConnectionSource.User
+            && !this.options.AllowPrivateEndpoints;
+
+        return guard ? GuardedTransport : SharedTransport;
+    }
+
+    private IChatClient CreateAnthropic(
+        AssistantConnection connection,
+        HttpClient transport)
     {
         ClientOptions clientOptions = new ClientOptions
         {
             ApiKey = connection.ApiKey,
-            HttpClient = SharedTransport,
+            HttpClient = transport,
         };
 
         if (connection.BaseUrl is not null)

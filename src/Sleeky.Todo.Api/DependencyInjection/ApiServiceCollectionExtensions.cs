@@ -154,10 +154,20 @@ public static class ApiServiceCollectionExtensions
         });
         app.UseExceptionHandler();
 
+        // Ahead of everything that writes a response, so the static files, the
+        // client shell, and the API all carry the same headers. Behind the
+        // exception handler, so an error response carries them too.
+        app.UseSecurityHeaders();
+
         if (!isDevelopment)
         {
             // Skipped in development because the proxied request arrives as
             // plain HTTP and would be redirected out of the client origin.
+            //
+            // HSTS accompanies the redirect rather than standing in for it: the
+            // redirect moves the first request, and this is what stops there
+            // being a first plain-HTTP request at all on every visit after it.
+            app.UseHsts();
             app.UseHttpsRedirection();
         }
 
