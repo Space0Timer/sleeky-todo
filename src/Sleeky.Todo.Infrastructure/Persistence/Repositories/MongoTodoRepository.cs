@@ -111,17 +111,10 @@ internal sealed class MongoTodoRepository : ITodoRepository
     {
         ArgumentNullException.ThrowIfNull(ids);
 
-        Guid[] distinctIds = ids.Distinct().ToArray();
-        if (distinctIds.Length == 0)
+        FilterDefinition<TodoDocument>? filter = BuildIdsFilter(ids, includeDeleted);
+        if (filter is null)
         {
             return Array.Empty<TodoItem>();
-        }
-
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
-            & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
-        if (!includeDeleted)
-        {
-            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
         }
 
         List<TodoDocument> documents = await todoItems
@@ -139,17 +132,10 @@ internal sealed class MongoTodoRepository : ITodoRepository
     {
         ArgumentNullException.ThrowIfNull(ids);
 
-        Guid[] distinctIds = ids.Distinct().ToArray();
-        if (distinctIds.Length == 0)
+        FilterDefinition<TodoDocument>? filter = BuildIdsFilter(ids, includeDeleted);
+        if (filter is null)
         {
             return Array.Empty<TodoDependencyNode>();
-        }
-
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
-            & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
-        if (!includeDeleted)
-        {
-            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
         }
 
         List<TodoDocument> documents = await todoItems
@@ -378,6 +364,37 @@ internal sealed class MongoTodoRepository : ITodoRepository
         FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
             & Builders<TodoDocument>.Filter.Eq(document => document.Id, id);
 
+        if (!includeDeleted)
+        {
+            filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);
+        }
+
+        return filter;
+    }
+
+    /// <summary>
+    /// The many-id counterpart to <see cref="BuildIdFilter"/>, returning null
+    /// when the caller asked for nothing.
+    /// </summary>
+    /// <remarks>
+    /// Null rather than an empty filter, because an empty filter would match the
+    /// owner's whole collection — the caller has to short-circuit, and making
+    /// that the only way to read the result is what stops the mistake. Owner
+    /// scoping and soft-delete handling live here so a change to either reaches
+    /// every batch read at once.
+    /// </remarks>
+    private FilterDefinition<TodoDocument>? BuildIdsFilter(
+        IEnumerable<Guid> ids,
+        bool includeDeleted)
+    {
+        Guid[] distinctIds = ids.Distinct().ToArray();
+        if (distinctIds.Length == 0)
+        {
+            return null;
+        }
+
+        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+            & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
         if (!includeDeleted)
         {
             filter &= Builders<TodoDocument>.Filter.Eq(document => document.DeletedAt, null);

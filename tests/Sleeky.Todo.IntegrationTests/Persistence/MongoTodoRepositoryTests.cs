@@ -334,6 +334,64 @@ public sealed class MongoTodoRepositoryTests
             .Should().BeEquivalentTo(new[] { active.Id, deleted.Id });
     }
 
+    /// <summary>
+    /// Every field the projection carries, asserted against a stored document.
+    /// </summary>
+    /// <remarks>
+    /// The projection is the whole point of this read, so a field silently
+    /// dropped from it would not fail anywhere else — it would change an answer.
+    /// Losing DeletedAt in particular makes every prerequisite report as not
+    /// deleted, which unblocks TODOs whose prerequisites were soft-deleted.
+    /// </remarks>
+    [TestMethod]
+    public async Task GetDependencyNodesProjectsEveryJudgedFieldAndHonorsDeletedFilter()
+    {
+        TodoItem prerequisite = CreateTodo("node-prerequisite");
+        TodoItem dependent = CreateTodo("node-dependent");
+        dependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+        _ = dependent.ChangeStatus(TodoStatus.InProgress, Timestamp.AddHours(2));
+        TodoItem deleted = CreateTodo("node-deleted");
+        deleted.SoftDelete(Timestamp.AddDays(1));
+        await repository.AddAsync(prerequisite);
+        await repository.AddAsync(dependent);
+        await repository.AddAsync(deleted);
+
+        IReadOnlyCollection<TodoDependencyNode> activeOnly =
+            await repository.GetDependencyNodesAsync(
+                new[] { dependent.Id, deleted.Id, Id("node-missing") });
+        IReadOnlyCollection<TodoDependencyNode> includingDeleted =
+            await repository.GetDependencyNodesAsync(
+                new[] { dependent.Id, deleted.Id },
+                includeDeleted: true);
+
+        TodoDependencyNode node = activeOnly.Single();
+        node.Id.Should().Be(dependent.Id);
+        node.Status.Should().Be(TodoStatus.InProgress);
+        node.IsDeleted.Should().BeFalse();
+        node.DependencyIds.Should().Equal(prerequisite.Id);
+
+        includingDeleted.Select(candidate => candidate.Id)
+            .Should().BeEquivalentTo(new[] { dependent.Id, deleted.Id });
+        includingDeleted.Single(candidate => candidate.Id == deleted.Id)
+            .IsDeleted.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A TODO belonging to someone else is absent, exactly as it is from every
+    /// other read on this repository.
+    /// </summary>
+    [TestMethod]
+    public async Task GetDependencyNodesDoesNotCrossOwners()
+    {
+        TodoItem mine = CreateTodo("node-mine");
+        await repository.AddAsync(mine);
+
+        IReadOnlyCollection<TodoDependencyNode> theirs =
+            await otherOwnerRepository.GetDependencyNodesAsync(new[] { mine.Id });
+
+        theirs.Should().BeEmpty();
+    }
+
     [TestMethod]
     public async Task ActiveDependentPreventsDeletionButArchivedDependentDoesNot()
     {
