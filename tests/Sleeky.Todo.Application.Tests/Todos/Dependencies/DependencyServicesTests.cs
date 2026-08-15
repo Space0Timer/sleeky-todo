@@ -82,6 +82,39 @@ public sealed class DependencyServicesTests
             .WithMessage("The dependency graph is too deep to validate.");
     }
 
+    /// <summary>
+    /// A graph too wide to walk is refused on the level that breaches the node
+    /// budget, not the one after it.
+    /// </summary>
+    /// <remarks>
+    /// The single fan-out here is larger than the whole budget, so a cap applied
+    /// only on the following pass would let the entire level be accumulated
+    /// first — spending the memory the cap exists to refuse. Asserting that only
+    /// one read happened is what pins the check ahead of that.
+    /// </remarks>
+    [TestMethod]
+    public async Task GraphServiceRejectsAFanOutWiderThanTheNodeBudget()
+    {
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        string[] children = Enumerable.Range(0, 20_000)
+            .Select(index => $"child-{index}")
+            .ToArray();
+        StubGraph(repository, CreateNode("hub", dependencies: children));
+        DependencyGraphService service = new DependencyGraphService(repository);
+
+        Func<Task> wide = async () => await service.WouldCreateCycleAsync(
+            Id("unrelated"),
+            Id("hub"));
+
+        await wide.Should()
+            .ThrowAsync<DomainException>()
+            .WithMessage("The dependency graph is too large to validate.");
+        await repository.Received(1).GetDependencyNodesAsync(
+            Arg.Any<IEnumerable<Guid>>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [TestMethod]
     public async Task EvaluatorTreatsMissingDeletedArchivedAndIncompleteTodosAsBlocking()
     {
