@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace Sleeky.Todo.Assistant.Providers;
 
 /// <summary>
@@ -44,5 +46,29 @@ public static class AssistantBaseUrl
 
         parsed = candidate;
         return true;
+    }
+
+    /// <summary>
+    /// Whether an endpoint names an address inside the network the application
+    /// runs in, judged without a name lookup.
+    /// </summary>
+    /// <remarks>
+    /// This answers for a literal address only, so it catches the endpoint
+    /// somebody typed and reports it on the field they typed it into. A host
+    /// name is left alone here on purpose: what it resolves to now is not what
+    /// it has to resolve to when the request is finally made, so a name lookup
+    /// at this point would report an answer it cannot stand behind. The
+    /// connection guard in <see cref="ChatClientFactory"/> is what actually
+    /// holds, because it judges the address the socket is about to be opened to.
+    /// </remarks>
+    public static bool IsPrivate(Uri? baseUrl)
+    {
+        if (baseUrl is null)
+        {
+            return false;
+        }
+
+        return IPAddress.TryParse(baseUrl.IdnHost, out IPAddress? address)
+            && PrivateNetworkPolicy.IsBlocked(address);
     }
 }

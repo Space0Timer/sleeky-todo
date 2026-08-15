@@ -18,6 +18,22 @@ public sealed class AssistantOptions
     public string? BaseUrl { get; init; }
 
     /// <summary>
+    /// Whether a user may point the assistant at an address inside the network
+    /// the application runs in.
+    /// </summary>
+    /// <remarks>
+    /// Off by default, because the request is made by the server: left on, an
+    /// ordinary account can use the settings form to reach anything the
+    /// container can reach and read the outcome back off the test button.
+    ///
+    /// Development turns it on, where the endpoint worth naming is a model on
+    /// the loopback interface — <c>http://localhost:11434/v1</c> for Ollama —
+    /// and the network on the other side of the guard is the developer's own.
+    /// This never applies to <see cref="BaseUrl"/>, which an operator sets.
+    /// </remarks>
+    public bool AllowPrivateEndpoints { get; init; }
+
+    /// <summary>
     /// Sized for thinking plus the answer, because thinking is on by default on
     /// current Anthropic models and shares this cap: an answer-sized budget
     /// truncates mid-response. Other providers keep their own defaults and

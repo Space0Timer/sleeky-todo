@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 using Sleeky.Todo.Api.Contracts.Assistant;
 using Sleeky.Todo.Assistant.Providers;
@@ -23,19 +24,29 @@ public sealed class AssistantSettingsController : ControllerBase
         "The base URL must be an absolute http or https address, such as "
         + "http://localhost:11434/v1.";
 
+    private const string PrivateBaseUrl =
+        "The base URL must not name a private or loopback address. Requests to "
+        + "the provider are made by the server, so an address on its own network "
+        + "is not reachable from here.";
+
     private readonly IAssistantSettingsService settings;
 
     private readonly IAssistantConnectionProbe probe;
 
+    private readonly AssistantOptions options;
+
     public AssistantSettingsController(
         IAssistantSettingsService settings,
-        IAssistantConnectionProbe probe)
+        IAssistantConnectionProbe probe,
+        IOptions<AssistantOptions> options)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(probe);
+        ArgumentNullException.ThrowIfNull(options);
 
         this.settings = settings;
         this.probe = probe;
+        this.options = options.Value;
     }
 
     [HttpGet]
@@ -71,9 +82,16 @@ public sealed class AssistantSettingsController : ControllerBase
         // Caught here rather than left to resolution, so a mistyped endpoint is
         // a field error on the form instead of a key quietly sent to whichever
         // host the provider defaults to.
-        if (!AssistantBaseUrl.TryParse(request.BaseUrl, out Uri? _))
+        if (!AssistantBaseUrl.TryParse(request.BaseUrl, out Uri? candidate))
         {
             ModelState.AddModelError(nameof(request.BaseUrl), MalformedBaseUrl);
+        }
+        else if (!options.AllowPrivateEndpoints && AssistantBaseUrl.IsPrivate(candidate))
+        {
+            // A literal address is answered on the field. A host name that
+            // resolves to one is not refused here, because what it resolves to
+            // now is not binding; the connection guard settles that case.
+            ModelState.AddModelError(nameof(request.BaseUrl), PrivateBaseUrl);
         }
 
         if (!ModelState.IsValid)
