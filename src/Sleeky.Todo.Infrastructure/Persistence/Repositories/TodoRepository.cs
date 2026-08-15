@@ -10,7 +10,7 @@ using Sleeky.Todo.Infrastructure.Persistence.Transactions;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-internal sealed class MongoTodoRepository : ITodoRepository
+internal sealed class TodoRepository : ITodoRepository
 {
     private const int WriteConflictErrorCode = 112;
 
@@ -49,7 +49,7 @@ internal sealed class MongoTodoRepository : ITodoRepository
     private readonly ICurrentUser currentUser;
     private readonly SessionAwareCollection<TodoDocument> todoItems;
 
-    public MongoTodoRepository(
+    public TodoRepository(
         IMongoCollection<TodoDocument> todoItems,
         ICurrentUser currentUser,
         MongoTransactionContext? transactionContext = null)

@@ -20,7 +20,7 @@ using Testcontainers.MongoDb;
 namespace Sleeky.Todo.IntegrationTests.Persistence;
 
 [TestClass]
-public sealed class MongoTodoRepositoryTests
+public sealed class TodoRepositoryTests
 {
     private static readonly DateTimeOffset Timestamp = new DateTimeOffset(
         2026,

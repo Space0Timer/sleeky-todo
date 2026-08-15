@@ -54,9 +54,9 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
 
         // The implementations are internal to the infrastructure assembly, so
         // the registration is asserted by name rather than by exposing them.
-        repository.GetType().Name.Should().Be("MongoTodoRepository");
+        repository.GetType().Name.Should().Be("TodoRepository");
         transactionExecutor.Should().NotBeNull();
-        userDirectoryRepository.GetType().Name.Should().Be("MongoUserDirectoryRepository");
+        userDirectoryRepository.GetType().Name.Should().Be("UserDirectoryRepository");
     }
 
     [TestMethod]

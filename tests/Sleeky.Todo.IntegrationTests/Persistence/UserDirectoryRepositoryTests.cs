@@ -17,7 +17,7 @@ using Testcontainers.MongoDb;
 namespace Sleeky.Todo.IntegrationTests.Persistence;
 
 [TestClass]
-public sealed class MongoUserDirectoryRepositoryTests
+public sealed class UserDirectoryRepositoryTests
 {
     private const string Issuer = "https://issuer.test/realms/sleeky";
     private const string Subject = "subject-1";

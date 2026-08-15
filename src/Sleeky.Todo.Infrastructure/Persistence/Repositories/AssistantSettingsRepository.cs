@@ -6,12 +6,12 @@ using Sleeky.Todo.Infrastructure.Persistence.Documents;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
-internal sealed class MongoAssistantSettingsRepository : IAssistantSettingsRepository
+internal sealed class AssistantSettingsRepository : IAssistantSettingsRepository
 {
     private readonly IMongoCollection<AssistantSettingsDocument> settings;
     private readonly IClock clock;
 
-    public MongoAssistantSettingsRepository(
+    public AssistantSettingsRepository(
         IMongoCollection<AssistantSettingsDocument> settings,
         IClock clock)
     {
