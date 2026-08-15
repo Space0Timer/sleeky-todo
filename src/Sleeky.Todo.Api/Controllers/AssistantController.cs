@@ -4,8 +4,10 @@ using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 using Sleeky.Todo.Api.Contracts.Assistant;
+using Sleeky.Todo.Api.Hosting;
 using Sleeky.Todo.Assistant.Turns;
 
 namespace Sleeky.Todo.Api.Controllers;
@@ -53,10 +55,16 @@ public sealed class AssistantController : ControllerBase
     [HttpPost("turns")]
     [RequestSizeLimit(MaxTurnRequestBytes)]
 
+    // A turn holds this request open for as long as the model takes, so the
+    // bound that matters here is how many a user may have running at once
+    // rather than how often they may start one.
+    [EnableRateLimiting(RateLimitingServiceCollectionExtensions.AssistantTurnsPolicy)]
+
     // The content type is left to the result rather than declared with
     // [Produces], which installs a filter that would set it to something else.
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public IResult Run(AssistantTurnRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);

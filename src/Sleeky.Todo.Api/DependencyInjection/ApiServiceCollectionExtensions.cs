@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net;
 
 using Microsoft.AspNetCore.DataProtection;
@@ -10,8 +9,10 @@ using Serilog;
 using Serilog.Events;
 
 using Sleeky.Todo.Api.Authentication;
+using Sleeky.Todo.Api.Diagnostics;
 using Sleeky.Todo.Api.ErrorHandling;
 using Sleeky.Todo.Api.Hosting;
+using Sleeky.Todo.Infrastructure.Persistence.Diagnostics;
 
 namespace Sleeky.Todo.Api.DependencyInjection;
 
@@ -27,6 +28,7 @@ public static class ApiServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(environment);
 
         services.AddApiAuthentication(configuration, environment);
+        services.AddApiRateLimiting(configuration);
         services.AddExceptionHandler<ApiExceptionHandler>();
         services.AddProblemDetails();
 
@@ -52,8 +54,8 @@ public static class ApiServiceCollectionExtensions
                         Detail = "One or more validation errors occurred.",
                         Instance = context.HttpContext.Request.Path,
                     };
-                    problem.Extensions["traceId"] = Activity.Current?.Id
-                        ?? context.HttpContext.TraceIdentifier;
+                    problem.Extensions["traceId"] = RequestTrace.Resolve(
+                        context.HttpContext);
 
                     return new BadRequestObjectResult(problem);
                 };
@@ -138,17 +140,36 @@ public static class ApiServiceCollectionExtensions
                     ? LogEventLevel.Debug
                     : LogEventLevel.Information;
             };
+
+            // This middleware wraps the pipeline, so the completion event is
+            // written after the scope opened inside it has already unwound. The
+            // same properties are set here rather than inherited, which is also
+            // what lets the totals below be read once the request is over.
             options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
             {
                 diagnosticContext.Set(
-                    "TraceId",
-                    Activity.Current?.Id ?? httpContext.TraceIdentifier);
+                    RequestTrace.PropertyName,
+                    RequestTrace.Resolve(httpContext));
 
                 string? userId = httpContext.User
                     .FindFirst(TodoClaimTypes.UserId)?.Value;
                 if (userId is not null)
                 {
-                    diagnosticContext.Set("UserId", userId);
+                    diagnosticContext.Set(
+                        RequestDiagnosticsMiddleware.UserIdPropertyName,
+                        userId);
+                }
+
+                MongoCommandTally? tally = httpContext.Features
+                    .Get<MongoCommandTally>();
+                if (tally is not null)
+                {
+                    diagnosticContext.Set(
+                        MongoCommandTally.CommandCountPropertyName,
+                        tally.CommandCount);
+                    diagnosticContext.Set(
+                        MongoCommandTally.DurationPropertyName,
+                        Math.Round(tally.TotalDuration.TotalMilliseconds, 1));
                 }
             };
         });
@@ -210,7 +231,19 @@ public static class ApiServiceCollectionExtensions
         app.UseRouting();
 
         app.UseAuthentication();
+
+        // After authentication, because the user is one of the two identifiers
+        // it attaches, and before authorization, so a rejected request is still
+        // logged as one request rather than as an anonymous fragment.
+        app.UseMiddleware<RequestDiagnosticsMiddleware>();
+
         app.UseAuthorization();
+
+        // After authorization, because every limit is partitioned by user and
+        // an anonymous caller has already been refused by the time this runs —
+        // so the limiter never has to invent a bucket for one.
+        app.UseRateLimiter();
+
         app.MapControllers();
         app.MapHealthChecks("/health").AllowAnonymous();
 

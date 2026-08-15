@@ -27,13 +27,25 @@ internal sealed class ApiStartupFactory : WebApplicationFactory<Program>
 
     private readonly string environmentName;
     private readonly string? webRootPath;
+    private readonly IReadOnlyDictionary<string, string?>? settings;
+    private readonly Action<IServiceCollection>? configureServices;
 
+    /// <summary>
+    /// <paramref name="settings"/> and <paramref name="configureServices"/> let
+    /// a suite reach the parts of the host that answer before persistence does —
+    /// the rate limiter refuses a request without ever calling a handler, so
+    /// there is nothing for a database to be behind.
+    /// </summary>
     public ApiStartupFactory(
         string environmentName = TodoApiFactory.TestingEnvironment,
-        string? webRootPath = null)
+        string? webRootPath = null,
+        IReadOnlyDictionary<string, string?>? settings = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         this.environmentName = environmentName;
         this.webRootPath = webRootPath;
+        this.settings = settings;
+        this.configureServices = configureServices;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -53,6 +65,14 @@ internal sealed class ApiStartupFactory : WebApplicationFactory<Program>
         builder.UseSetting("MongoDb:TodoItemsCollectionName", "todoItems");
         builder.UseSetting("MongoDb:UsersCollectionName", "users");
 
+        if (settings is not null)
+        {
+            foreach (KeyValuePair<string, string?> setting in settings)
+            {
+                builder.UseSetting(setting.Key, setting.Value);
+            }
+        }
+
         builder.ConfigureTestServices(services =>
         {
             // Matched by assembly rather than by name so that a hosted service
@@ -69,6 +89,8 @@ internal sealed class ApiStartupFactory : WebApplicationFactory<Program>
             {
                 services.Remove(descriptor);
             }
+
+            configureServices?.Invoke(services);
         });
     }
 }
