@@ -387,6 +387,7 @@ public sealed class AssistantTurnRunnerTests
                 new TestCurrentUser(),
                 clock,
                 NullLogger<TodoTools>.Instance,
+                NullLogger<AssistantTurnRunner>.Instance,
                 Options.Create(options));
         }
 

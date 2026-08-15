@@ -25,6 +25,12 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         "No AI provider is set up yet. Add a provider, model, and API key in "
         + "assistant settings, and I can start helping with your TODOs.";
 
+    private const int TurnCompletedEventId = 4001;
+
+    private const string TurnCompletedMessage =
+        "Assistant turn completed with {ToolCalls} tool calls, "
+        + "{InputTokens} input and {OutputTokens} output tokens";
+
     private readonly IAssistantSettingsService settings;
 
     private readonly IChatClientFactory clients;
@@ -39,6 +45,8 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
 
     private readonly ILogger<TodoTools> toolLogger;
 
+    private readonly ILogger<AssistantTurnRunner> logger;
+
     private readonly AssistantOptions options;
 
     public AssistantTurnRunner(
@@ -49,6 +57,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         ICurrentUser currentUser,
         IClock clock,
         ILogger<TodoTools> toolLogger,
+        ILogger<AssistantTurnRunner> logger,
         IOptions<AssistantOptions> options)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -58,6 +67,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         ArgumentNullException.ThrowIfNull(currentUser);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(toolLogger);
+        ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(options);
 
         this.settings = settings;
@@ -67,6 +77,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         this.currentUser = currentUser;
         this.clock = clock;
         this.toolLogger = toolLogger;
+        this.logger = logger;
         this.options = options.Value;
     }
 
@@ -155,6 +166,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
             cancellationToken);
 
         messages.AddRange(response.Messages);
+        this.LogTurnCost(response);
 
         if (!string.IsNullOrWhiteSpace(response.Text))
         {
@@ -166,6 +178,31 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         await events.PublishAsync(
             TurnEvent.TurnCompleted(new TurnTranscript(TranscriptCodec.Write(messages))),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// What the turn cost, on one line.
+    /// </summary>
+    /// <remarks>
+    /// Not a spending record — the key is the user's own, so the provider bills
+    /// them directly. This is the number that separates a slow turn spent
+    /// waiting on the model from one spent in the tools, which the transcript
+    /// alone cannot tell you. Counts are whatever the provider reported, so a
+    /// provider that reports nothing logs nothing rather than a fabricated zero.
+    /// </remarks>
+    private void LogTurnCost(ChatResponse response)
+    {
+        int toolCalls = response.Messages
+            .SelectMany(message => message.Contents)
+            .OfType<FunctionCallContent>()
+            .Count();
+
+        this.logger.LogInformation(
+            TurnCompletedEventId,
+            TurnCompletedMessage,
+            toolCalls,
+            response.Usage?.InputTokenCount,
+            response.Usage?.OutputTokenCount);
     }
 
     /// <summary>

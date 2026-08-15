@@ -25,6 +25,7 @@ function classifyError(status: number, problem: ProblemDetails): ApiErrorKind {
   if (status === 404) return 'not-found'
   if (status === 409 && problem.title === 'Concurrency conflict.') return 'concurrency'
   if (status === 409) return 'domain'
+  if (status === 429) return 'rate-limited'
   return 'unexpected'
 }
 

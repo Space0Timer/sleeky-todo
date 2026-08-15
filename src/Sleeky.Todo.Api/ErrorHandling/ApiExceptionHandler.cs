@@ -1,10 +1,9 @@
-using System.Diagnostics;
-
 using FluentValidation;
 
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
+using Sleeky.Todo.Api.Diagnostics;
 using Sleeky.Todo.Application.Exceptions;
 
 namespace Sleeky.Todo.Api.ErrorHandling;
@@ -25,7 +24,7 @@ public sealed class ApiExceptionHandler : IExceptionHandler
         Exception exception,
         CancellationToken cancellationToken)
     {
-        string traceId = Activity.Current?.Id ?? httpContext.TraceIdentifier;
+        string traceId = RequestTrace.Resolve(httpContext);
         ProblemDetails problem = CreateProblemDetails(httpContext, exception, traceId);
 
         if (problem.Status == StatusCodes.Status500InternalServerError)
