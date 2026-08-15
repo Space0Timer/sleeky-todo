@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 
+using Sleeky.Todo.Api;
 using Sleeky.Todo.Api.Contracts.Auth;
 
 namespace Sleeky.Todo.IntegrationTests.Api;
@@ -123,6 +124,44 @@ public sealed class AuthLogoutApiTests
 
         token.FormFieldName.Should().NotBeNullOrWhiteSpace();
         token.HeaderName.Should().Be("X-CSRF-TOKEN");
+    }
+
+    /// <summary>
+    /// What a user gets when the provider is unreachable. Recorded because the
+    /// answer is not obvious: the cookie scheme runs first and deletes the
+    /// session, then the redirect to the end-session endpoint fails, and the
+    /// exception handler clears the response — taking the deletion with it.
+    /// Sign-out fails whole rather than half, which is the safer of the two,
+    /// but it means an outage at the provider leaves users unable to sign out.
+    /// </summary>
+    [TestMethod]
+    public async Task LogoutFailsWholeWhenTheProviderIsUnreachable()
+    {
+        using WebApplicationFactory<Program> configured = factory
+            .WithWebHostBuilder(builder =>
+            {
+                // Port 1 is reserved and refuses connections immediately, so
+                // this fails fast rather than waiting out a network timeout.
+                builder.UseSetting(
+                    "Authentication:Authority",
+                    "http://127.0.0.1:1/realms/sleeky-todo");
+                builder.UseSetting("Authentication:ClientId", "sleeky-todo-web");
+                builder.UseSetting("Authentication:RequireHttpsMetadata", "false");
+            });
+        using HttpClient client = configured.CreateClient(ClientOptions());
+        client.DefaultRequestHeaders.Add(
+            TestAuthenticationHandler.UserIdHeaderName,
+            UserId.ToString());
+
+        AntiforgeryTokenResponse token = await RequestTokenAsync(client);
+        using FormUrlEncodedContent form = new FormUrlEncodedContent(
+            [KeyValuePair.Create(token.FormFieldName, token.Token)]);
+        HttpResponseMessage response = await client.PostAsync(
+            "/api/auth/logout",
+            form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Headers.Should().NotContainKey("Set-Cookie");
     }
 
     private static WebApplicationFactoryClientOptions ClientOptions()

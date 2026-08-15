@@ -118,7 +118,11 @@ public sealed class AuthController : ControllerBase
     {
         Guid userId = currentUser.UserId;
 
-        this.logger.LogInformation(1203, "Signed out user {UserId}", userId);
+        // Recorded as the attempt rather than the outcome. The sign-out result
+        // runs after this action returns, and when it goes by way of the
+        // provider it can still fail there, so claiming completion here would
+        // put a sign-out in the audit log that did not happen.
+        this.logger.LogInformation(1203, "Signing out user {UserId}", userId);
 
         // A deployment without a configured Authority never registers the
         // OpenID Connect scheme, and signing out of a scheme that has no

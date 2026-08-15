@@ -44,27 +44,6 @@ public static class SecurityHeaders
         + "base-uri 'self'; "
         + "object-src 'none'; ";
 
-    /// <summary>
-    /// Builds the policy for a deployment. <paramref name="providerAuthority"/>
-    /// is the configured OpenID Connect authority, whose origin has to appear in
-    /// <c>form-action</c>: sign-out is a form post that redirects to the
-    /// provider's end-session endpoint, and browsers re-check the directive
-    /// against each redirect the submission follows rather than only against
-    /// where the form was aimed. Under <c>'self'</c> alone, sign-out would be
-    /// blocked at the redirect and the session would survive at the provider.
-    /// </summary>
-    public static string BuildContentSecurityPolicy(string? providerAuthority)
-    {
-        string formAction = Uri.TryCreate(
-            providerAuthority,
-            UriKind.Absolute,
-            out Uri? authority)
-            ? $"'self' {authority.GetLeftPart(UriPartial.Authority)}"
-            : "'self'";
-
-        return $"{PolicyWithoutFormAction}form-action {formAction}";
-    }
-
     public static IApplicationBuilder UseSecurityHeaders(
         this IApplicationBuilder app,
         string? providerAuthority)
@@ -92,5 +71,26 @@ public static class SecurityHeaders
 
             await next();
         });
+    }
+
+    /// <summary>
+    /// Builds the policy for a deployment. <paramref name="providerAuthority"/>
+    /// is the configured OpenID Connect authority, whose origin has to appear in
+    /// <c>form-action</c>: sign-out is a form post that redirects to the
+    /// provider's end-session endpoint, and browsers re-check the directive
+    /// against each redirect the submission follows rather than only against
+    /// where the form was aimed. Under <c>'self'</c> alone, sign-out would be
+    /// blocked at the redirect and the session would survive at the provider.
+    /// </summary>
+    private static string BuildContentSecurityPolicy(string? providerAuthority)
+    {
+        string formAction = Uri.TryCreate(
+            providerAuthority,
+            UriKind.Absolute,
+            out Uri? authority)
+            ? $"'self' {authority.GetLeftPart(UriPartial.Authority)}"
+            : "'self'";
+
+        return $"{PolicyWithoutFormAction}form-action {formAction}";
     }
 }
