@@ -2,7 +2,10 @@ using System.Net;
 
 using FluentAssertions;
 
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+
+using Sleeky.Todo.Api;
 
 namespace Sleeky.Todo.IntegrationTests.Api;
 
@@ -221,6 +224,63 @@ public sealed class SpaHostingTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.GetValues("X-Content-Type-Options")
             .Should().ContainSingle().Which.Should().Be("nosniff");
+    }
+
+    /// <summary>
+    /// Sign-out is a form post that redirects to the provider's end-session
+    /// endpoint, and browsers re-check <c>form-action</c> against the redirects
+    /// a submission follows rather than only against where the form was aimed.
+    /// Under <c>'self'</c> alone the redirect is blocked and the session
+    /// survives at the provider, so the origin has to be named — the origin
+    /// only, because a path in the directive would be matched as a prefix and
+    /// widen nothing usefully.
+    /// </summary>
+    [TestMethod]
+    public async Task ContentSecurityPolicyLetsSignOutReachTheProvider()
+    {
+        using WebApplicationFactory<Program> configured = factory
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting(
+                    "Authentication:Authority",
+                    "https://identity.example:8443/realms/sleeky-todo");
+                builder.UseSetting("Authentication:ClientId", "sleeky-todo-web");
+            });
+        using HttpClient client = configured.CreateClient(
+            new WebApplicationFactoryClientOptions
+            {
+                BaseAddress = new Uri("https://localhost"),
+            });
+
+        HttpResponseMessage response = await client.GetAsync("/");
+
+        FormActionOf(response).Should()
+            .Be("form-action 'self' https://identity.example:8443");
+    }
+
+    /// <summary>
+    /// A host with no provider configured signs out by clearing its own cookie,
+    /// so nothing is redirected anywhere and the directive stays closed.
+    /// </summary>
+    [TestMethod]
+    public async Task ContentSecurityPolicyNamesNoProviderWithoutOne()
+    {
+        using HttpClient client = CreateClient();
+
+        HttpResponseMessage response = await client.GetAsync("/");
+
+        FormActionOf(response).Should().Be("form-action 'self'");
+    }
+
+    private static string FormActionOf(HttpResponseMessage response)
+    {
+        return response.Headers
+            .GetValues("Content-Security-Policy")
+            .Single()
+            .Split(';')
+            .Select(directive => directive.Trim())
+            .Single(directive =>
+                directive.StartsWith("form-action ", StringComparison.Ordinal));
     }
 
     private HttpClient CreateClient()

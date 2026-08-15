@@ -9,7 +9,12 @@ export type AuthState = {
   endSession: () => void
   isAuthenticated: boolean
   isLoading: boolean
-  signOut: () => Promise<void>
+  /**
+   * Ends the session. Resolves `true` when the browser is navigating to the
+   * provider's end-session endpoint, in which case the caller must not route
+   * anywhere itself — the document is already being replaced.
+   */
+  signOut: () => Promise<boolean>
   userId: string | null
 }
 

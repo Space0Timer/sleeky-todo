@@ -13,12 +13,18 @@ export function UserMenu() {
   const handleSignOut = async () => {
     setIsSigningOut(true)
 
-    try {
-      await signOut()
-      await navigate('/login', { replace: true })
-    } finally {
-      setIsSigningOut(false)
+    const isRedirecting = await signOut().catch(() => false)
+
+    if (isRedirecting) {
+      // Sign-out is going through the provider, so the browser is already
+      // navigating. Routing here would race a navigation it owns, and the
+      // pending label stays up until the document is replaced rather than
+      // flicking back for the moment before it goes.
+      return
     }
+
+    await navigate('/login', { replace: true })
+    setIsSigningOut(false)
   }
 
   return (

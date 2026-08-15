@@ -239,9 +239,16 @@ dotnet user-secrets set "Authentication:ClientSecret" "secret-value" --project s
 Unauthenticated API requests return `401` rather than a redirect, so the client
 can react to them. Mutations additionally require an antiforgery token supplied
 in the `X-CSRF-TOKEN` header; `GET /api/auth/antiforgery` issues one, and the
-client refreshes it whenever the authentication state changes. Sign-out clears
-the application cookie only, so the identity provider session can outlive it and
-a following sign-in may not prompt for credentials again.
+client refreshes it whenever the authentication state changes.
+
+Sign-out ends the identity provider's session as well as the application's, so
+a following sign-in prompts for credentials again. It is the one route the
+client submits as a form post rather than a `fetch`, because the browser has to
+follow the redirect to the provider's end-session endpoint and back through
+`/signout-callback-oidc`; the antiforgery token travels in the form field,
+which validation reads ahead of the header for form content types. The same
+endpoint answers a deployment with no configured provider by clearing the
+cookie and redirecting to `/login`.
 
 Every TODO carries an owner. The repository and list reader apply the owner
 filter themselves, so a request for another user's TODO returns `404` rather
@@ -512,7 +519,10 @@ locally.
 **The origin must be registered with the identity provider.** The realm in
 `docker/keycloak` lists only the development origins. A deployment's own
 `https://host/signin-oidc` has to be added to the client's redirect URIs, and
-the origin to its web origins, or sign-in fails at the callback.
+the origin to its web origins, or sign-in fails at the callback. Sign-out is a
+second registration: `https://host/signout-callback-oidc` has to be added to
+the client's post-logout redirect URIs, or the provider rejects the end-session
+request and the user is left signed in at the provider.
 
 **Forwarded headers decide the redirect URI.** The container listens on plain
 HTTP and expects TLS to be terminated ahead of it, so the scheme and host it

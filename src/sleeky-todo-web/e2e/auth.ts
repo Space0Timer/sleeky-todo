@@ -18,14 +18,16 @@ export type TestUserName = keyof typeof testUsers
 const appHeading = 'Keep today clear.'
 
 /**
- * Drives the real provider login form. Logout is application-only, so the
- * provider session can outlive the application session and the credential form
- * is skipped on a second sign-in within the same browser context.
+ * Drives the real provider login form and reports whether credentials were
+ * asked for. Sign-out goes through the provider's end-session endpoint, so a
+ * signed-out browser context is prompted again; the branch remains because a
+ * context that is still signed in at the provider is carried straight through
+ * on its single sign-on session.
  */
 export async function signIn(
   page: Page,
   user: TestUserName = 'alice',
-): Promise<void> {
+): Promise<boolean> {
   const { password, username } = testUsers[user]
 
   await page.goto('/login')
@@ -44,6 +46,8 @@ export async function signIn(
   }
 
   await expectSignedIn(page)
+
+  return hasCredentialForm
 }
 
 export async function expectSignedIn(page: Page): Promise<void> {

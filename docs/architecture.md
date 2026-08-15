@@ -144,8 +144,12 @@ directly, and the client treats `401` as "start the login flow" rather than
 following a cross-origin redirect it cannot complete.
 
 The session cookie carries a minimal encrypted ticket: the internal user ID, a
-display name, and authentication metadata. Provider tokens are not saved into
-the ticket, the browser, or any client-readable storage.
+display name, authentication metadata, and the ID token. The ID token is kept
+for exactly one purpose — provider sign-out has to present it as an
+`id_token_hint` — and it is stored on its own rather than by turning on
+`SaveTokens`, which would add the access and refresh tokens the application
+never calls a provider API with. No token reaches the browser or any
+client-readable storage: the ticket is encrypted and its cookie is HttpOnly.
 
 ### Development callback routing
 
@@ -173,12 +177,56 @@ cookie remains HttpOnly and is the only authentication credential.
 
 ### Logout
 
-Logout validates the antiforgery token, deletes the application cookie, and
-returns `204`. It deliberately does not call the provider's end-session
-endpoint, so the provider session can outlive the application session and a
-subsequent login may complete without a new credential prompt. A `fetch` cannot
-follow a redirect into a provider logout page in any case, so the client clears
-its own state and navigates to `/login` itself.
+Logout ends the provider session along with the application session, so a
+signed-out browser is asked for credentials again instead of being carried
+straight back in on a single sign-on session that outlived the application.
+
+```text
+POST /api/auth/logout   (form post, antiforgery token in the form field)
+  -> delete the application session cookie
+  -> redirect to the provider's end-session endpoint
+       id_token_hint from the ticket
+       post_logout_redirect_uri = /signout-callback-oidc
+       state carrying the final destination
+  -> provider ends its own session
+  -> /signout-callback-oidc
+  -> redirect to /login
+```
+
+Reaching the end-session endpoint means handing the browser a redirect, and a
+`fetch` cannot follow one — it resolves on an opaque response with the browser
+still sitting on the application. Logout is therefore submitted as a real form
+so the browser owns the navigation.
+
+It stays a `POST` so the global antiforgery filter still covers it. Validation
+reads the form field before the header whenever a request has a form content
+type, which is the one way a browser-owned post can carry the token; a `GET`
+would have been simpler and would have left forced sign-out open to any
+cross-site navigation.
+
+Two things have to permit the round trip. `SignedOutCallbackPath` is proxied
+alongside the login callback in development, which it already was. And the
+content security policy names the provider's origin in `form-action` beside
+`'self'`, because browsers check that directive against the redirects a
+submission follows rather than only against where the form was aimed. Under
+`'self'` alone the post is blocked at the redirect — the worst failure
+available here, because the application session ends, the browser lands on the
+login page, and only the provider session is left standing.
+
+A navigation cannot surface a failure the way a `fetch` can — a rejected token
+answers with a bare `400` page rather than an error the client can act on — so
+the client checks `/api/auth/me` and takes a fresh antiforgery token
+immediately before submitting, and clears its own state instead when there is
+no server session left to end.
+
+Two degradations are deliberate. A deployment with no configured `Authority`
+registers no OpenID Connect scheme; logout there deletes the cookie and
+redirects to `/login` directly, which is also the path the integration test
+host takes because it replaces authentication wholesale. And an application
+session outliving the provider's — eight sliding hours against the provider's
+own idle limit — still lands on `/login`, because an expired `id_token_hint` or
+an already-dead single sign-on session makes the end-session endpoint a
+redirect back rather than an error.
 
 ## Ownership boundary
 
