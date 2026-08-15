@@ -87,19 +87,54 @@ internal sealed class SessionAwareCollection<TDocument>
             : collection.BulkWriteAsync(Session, writes, options, cancellationToken);
     }
 
-    public Task<TDocument> FindOneAndReplaceAsync(
+    /// <summary>
+    /// Returns null when the filter matches nothing and the update does not
+    /// upsert.
+    /// </summary>
+    public async Task<TDocument?> FindOneAndUpdateAsync(
+        FilterDefinition<TDocument> filter,
+        UpdateDefinition<TDocument> update,
+        FindOneAndUpdateOptions<TDocument> options,
+        CancellationToken cancellationToken)
+    {
+        return Session is null
+            ? await collection.FindOneAndUpdateAsync(
+                filter,
+                update,
+                options,
+                cancellationToken)
+            : await collection.FindOneAndUpdateAsync(
+                Session,
+                filter,
+                update,
+                options,
+                cancellationToken);
+    }
+
+    /// <summary>
+    /// Returns null when the filter matches nothing.
+    /// </summary>
+    /// <remarks>
+    /// Annotated rather than left as the driver has it, because a versioned
+    /// replace expects to match nothing whenever it loses the race — the null is
+    /// the ordinary result the caller turns into a conflict, not an edge case.
+    /// </remarks>
+    public async Task<TDocument?> FindOneAndReplaceAsync(
         FilterDefinition<TDocument> filter,
         TDocument replacement,
         FindOneAndReplaceOptions<TDocument> options,
         CancellationToken cancellationToken)
     {
+        // Awaited rather than returned directly: the driver annotates its result
+        // non-null, and Task<T> is invariant, so the correction has to happen on
+        // the value.
         return Session is null
-            ? collection.FindOneAndReplaceAsync(
+            ? await collection.FindOneAndReplaceAsync(
                 filter,
                 replacement,
                 options,
                 cancellationToken)
-            : collection.FindOneAndReplaceAsync(
+            : await collection.FindOneAndReplaceAsync(
                 Session,
                 filter,
                 replacement,

@@ -4,6 +4,7 @@ using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
+using Sleeky.Todo.Infrastructure.Persistence.Transactions;
 
 namespace Sleeky.Todo.Infrastructure.Persistence.Repositories;
 
@@ -12,16 +13,19 @@ internal sealed class MongoUserDirectoryRepository : IUserDirectoryRepository
     private const int DuplicateKeyErrorCode = 11000;
 
     private readonly IClock clock;
-    private readonly IMongoCollection<UserDocument> users;
+    private readonly SessionAwareCollection<UserDocument> users;
 
     public MongoUserDirectoryRepository(
         IMongoCollection<UserDocument> users,
-        IClock clock)
+        IClock clock,
+        MongoTransactionContext? transactionContext = null)
     {
         ArgumentNullException.ThrowIfNull(users);
         ArgumentNullException.ThrowIfNull(clock);
 
-        this.users = users;
+        this.users = new SessionAwareCollection<UserDocument>(
+            users,
+            transactionContext ?? new MongoTransactionContext());
         this.clock = clock;
     }
 
@@ -49,13 +53,15 @@ internal sealed class MongoUserDirectoryRepository : IUserDirectoryRepository
 
         try
         {
-            UserDocument document = await users.FindOneAndUpdateAsync(
+            UserDocument? document = await users.FindOneAndUpdateAsync(
                 filter,
                 update,
                 options,
                 cancellationToken);
 
-            return ToIdentity(document);
+            return ToIdentity(document
+                ?? throw new InvalidOperationException(
+                    "An upserting resolve must return a user document."));
         }
         catch (MongoCommandException exception)
             when (exception.Code == DuplicateKeyErrorCode)
