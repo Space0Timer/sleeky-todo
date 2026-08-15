@@ -46,7 +46,7 @@ public sealed class MongoTodoListReaderTests
             return;
         }
 
-        mongoDbContainer = new MongoDbBuilder("mongo:7.0").Build();
+        mongoDbContainer = new MongoDbBuilder("mongo:8.0").Build();
         await mongoDbContainer.StartAsync(testContext.CancellationToken);
     }
 
@@ -583,12 +583,11 @@ public sealed class MongoTodoListReaderTests
         ReadBound(bounds, "ownerId").Should().ContainSingle()
             .Which.Should().MatchRegex(@"^\[.+, .+\]$");
 
-        // Two point intervals rather than one, because a null match in MongoDB
-        // also covers a document where the field is absent. Both are exact
-        // values; neither opens the key range.
-        ReadBound(bounds, "deletedAt").Should().Equal(
-            "[undefined, undefined]",
-            "[null, null]");
+        // One exact point interval. A null match also covers a document where
+        // the field is absent, and the planner folds that case into the null
+        // bound rather than opening a second interval for it. What matters is
+        // that the bound stays an exact value and does not open the key range.
+        ReadBound(bounds, "deletedAt").Should().Equal("[null, null]");
 
         // The longest term leads, and its bound is the half-open interval a
         // prefix search produces rather than the whole key range. The upper

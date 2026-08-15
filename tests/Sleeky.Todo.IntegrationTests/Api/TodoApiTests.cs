@@ -41,7 +41,7 @@ public sealed class TodoApiTests
             return;
         }
 
-        mongoDbContainer = new MongoDbBuilder("mongo:7.0")
+        mongoDbContainer = new MongoDbBuilder("mongo:8.0")
             .WithReplicaSet("rs0")
             .Build();
         await mongoDbContainer.StartAsync(testContext.CancellationToken);

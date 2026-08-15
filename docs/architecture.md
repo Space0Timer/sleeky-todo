@@ -38,7 +38,7 @@ flowchart TB
         startup["Index initializer · search-token backfill · enum migration"]
     end
 
-    mongo[("MongoDB 7 replica set<br/>todoItems · users · assistantSettings")]
+    mongo[("MongoDB 8 replica set<br/>todoItems · users · assistantSettings")]
     idp[("OIDC provider<br/>Keycloak locally")]
     llm[("LLM provider<br/>Anthropic · any OpenAI-compatible endpoint")]
 
