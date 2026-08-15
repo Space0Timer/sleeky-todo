@@ -51,6 +51,33 @@ public sealed class PrivateNetworkPolicyTests
         PrivateNetworkPolicy.IsBlocked(IPAddress.Parse(address)).Should().BeTrue();
     }
 
+    /// <summary>
+    /// The two embedded-IPv4 encodings that are not the mapped one.
+    /// </summary>
+    /// <remarks>
+    /// "::a.b.c.d" is the IPv4-compatible form and "64:ff9b::a.b.c.d" the NAT64
+    /// well-known prefix. Neither is IPv4-mapped, neither is link-local, site
+    /// local or multicast, and both begin 0x00, so every branch of the IPv6
+    /// rules answers no and the address is permitted unless it is unwrapped
+    /// first. On a network with a NAT64 gateway the second one arrives at the
+    /// metadata service.
+    /// </remarks>
+    [TestMethod]
+    [DataRow("::169.254.169.254")]
+    [DataRow("::10.0.0.1")]
+    [DataRow("::192.168.1.1")]
+    [DataRow("64:ff9b::169.254.169.254")]
+    [DataRow("64:ff9b::10.0.0.1")]
+    [DataRow("64:ff9b::127.0.0.1")]
+    public void AddressesEmbeddedInIPv6ByAnotherEncodingAreBlocked(string address)
+    {
+        PrivateNetworkPolicy.IsBlocked(IPAddress.Parse(address)).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Unwrapping must not swallow the two addresses that live at the bottom of
+    /// ::/96 and are already answered as themselves.
+    /// </summary>
     [TestMethod]
     [DataRow("::1")]
     [DataRow("::")]

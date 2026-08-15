@@ -31,9 +31,7 @@ public static class PrivateNetworkPolicy
         // loopback written as IPv6, and every range test below reads the wrong
         // bytes while it stays in that form — which is the usual way a check
         // like this one is walked past.
-        IPAddress candidate = address.IsIPv4MappedToIPv6
-            ? address.MapToIPv4()
-            : address;
+        IPAddress candidate = UnwrapEmbeddedIPv4(address);
 
         if (IPAddress.IsLoopback(candidate))
         {
@@ -43,6 +41,69 @@ public static class PrivateNetworkPolicy
         return candidate.AddressFamily == AddressFamily.InterNetwork
             ? IsBlockedIPv4(candidate)
             : IsBlockedIPv6(candidate);
+    }
+
+    /// <summary>
+    /// Rewrites an IPv6 address that carries an IPv4 one inside it to the
+    /// address it actually reaches, so the IPv4 ranges below judge it.
+    /// </summary>
+    /// <remarks>
+    /// There are three of these encodings and only the first is well known.
+    /// "::ffff:169.254.169.254" is the IPv4-mapped form. "::169.254.169.254" is
+    /// the IPv4-compatible form, deprecated by RFC 4291 and not put onto IPv4 by
+    /// a current stack, but free to be written. "64:ff9b::169.254.169.254" is
+    /// the NAT64 well-known prefix of RFC 6052, and on a network with a NAT64
+    /// gateway — the ordinary shape of an IPv6-only cloud subnet — it is
+    /// translated onto the embedded address and arrives at the metadata service.
+    ///
+    /// Judging all three by what they embed costs nothing and removes the need
+    /// to know which of them the host network happens to translate.
+    /// </remarks>
+    private static IPAddress UnwrapEmbeddedIPv4(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return address;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            return address.MapToIPv4();
+        }
+
+        byte[] octets = address.GetAddressBytes();
+
+        // The unspecified and loopback addresses live at the bottom of ::/96
+        // and are already answered as themselves, so the embedded form is only
+        // read when it names something outside 0.0.0.0/8.
+        if (octets[12] != 0 && IsZeroThrough(octets, 0, 12))
+        {
+            return new IPAddress(octets[12..]);
+        }
+
+        if (octets[0] == 0x00
+            && octets[1] == 0x64
+            && octets[2] == 0xFF
+            && octets[3] == 0x9B
+            && IsZeroThrough(octets, 4, 12))
+        {
+            return new IPAddress(octets[12..]);
+        }
+
+        return address;
+    }
+
+    private static bool IsZeroThrough(byte[] octets, int start, int end)
+    {
+        for (int index = start; index < end; index++)
+        {
+            if (octets[index] != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsBlockedIPv4(IPAddress address)
