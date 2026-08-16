@@ -16,23 +16,23 @@ public sealed class AddDependencyCommandHandler
     : IRequestHandler<AddDependencyCommand, TodoDto>
 {
     private readonly IClock clock;
-    private readonly IDependencyGraphService dependencyGraphService;
+    private readonly IDependencyCycleDetector cycleDetector;
     private readonly ILogger<AddDependencyCommandHandler> logger;
     private readonly ITodoRepository todoRepository;
 
     public AddDependencyCommandHandler(
         ITodoRepository todoRepository,
-        IDependencyGraphService dependencyGraphService,
+        IDependencyCycleDetector cycleDetector,
         IClock clock,
         ILogger<AddDependencyCommandHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
-        ArgumentNullException.ThrowIfNull(dependencyGraphService);
+        ArgumentNullException.ThrowIfNull(cycleDetector);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.todoRepository = todoRepository;
-        this.dependencyGraphService = dependencyGraphService;
+        this.cycleDetector = cycleDetector;
         this.clock = clock;
         this.logger = logger;
     }
@@ -67,7 +67,7 @@ public sealed class AddDependencyCommandHandler
             throw new NotFoundException("Dependency TODO", request.DependencyId);
         }
 
-        bool createsCycle = await dependencyGraphService.WouldCreateCycleAsync(
+        bool createsCycle = await cycleDetector.WouldCreateCycleAsync(
             todoItem.Id,
             request.DependencyId,
             cancellationToken);

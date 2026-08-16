@@ -1,6 +1,6 @@
 namespace Sleeky.Todo.Application.Todos.Dependencies;
 
-public interface IDependencyGraphService
+public interface IDependencyCycleDetector
 {
     Task<bool> WouldCreateCycleAsync(
         Guid sourceTodoId,

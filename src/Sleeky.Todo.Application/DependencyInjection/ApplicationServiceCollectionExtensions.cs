@@ -29,7 +29,7 @@ public static class ApplicationServiceCollectionExtensions
             configuration.AddOpenBehavior(typeof(ValidationBehavior<,>));
             configuration.AddOpenBehavior(typeof(DomainRuleExceptionBehavior<,>));
         });
-        services.AddScoped<IDependencyGraphService, DependencyGraphService>();
+        services.AddScoped<IDependencyCycleDetector, DependencyCycleDetector>();
         services.AddScoped<ITodoDependencyEvaluator, TodoDependencyEvaluator>();
         services.AddSingleton<IRecurrenceCalculator, RecurrenceCalculator>();
         services.AddSingleton<IRecurringOccurrenceFactory, RecurringOccurrenceFactory>();

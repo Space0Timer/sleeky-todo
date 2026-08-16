@@ -32,7 +32,7 @@ public sealed class ConstructorNullGuardTests
         typeof(RemoveDependencyCommandHandler),
         typeof(RestoreTodoCommandHandler),
         typeof(UpdateTodoCommandHandler),
-        typeof(DependencyGraphService),
+        typeof(DependencyCycleDetector),
         typeof(TodoDependencyEvaluator),
         typeof(GetTodoQueryHandler),
         typeof(GetTodosQueryHandler),

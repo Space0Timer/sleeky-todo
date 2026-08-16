@@ -3,7 +3,7 @@ using Sleeky.Todo.Domain.Exceptions;
 
 namespace Sleeky.Todo.Application.Todos.Dependencies;
 
-public sealed class DependencyGraphService : IDependencyGraphService
+public sealed class DependencyCycleDetector : IDependencyCycleDetector
 {
     /// <summary>
     /// Bounds on how far a single cycle check will walk.
@@ -21,7 +21,7 @@ public sealed class DependencyGraphService : IDependencyGraphService
 
     private readonly ITodoRepository todoRepository;
 
-    public DependencyGraphService(ITodoRepository todoRepository)
+    public DependencyCycleDetector(ITodoRepository todoRepository)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
 
