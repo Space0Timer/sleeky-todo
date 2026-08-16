@@ -128,5 +128,7 @@ records each decision as it was made; the mechanisms are described in
   suite gives on UI state.
 - **A full-stack Compose profile** that also runs the application image, so
   one command starts everything instead of three terminals.
-- **Rolling-deploy-safe migrations**; the enum migration is stop-the-world by
-  design, which a second deployment target would no longer permit.
+- **Startup data migrations.** Nothing has been deployed anywhere its data
+  outlives a schema change, so local databases are recreated instead. A real
+  deployment target makes that a migration step rather than a `docker compose
+  down --volumes`.

@@ -14,7 +14,6 @@ using Sleeky.Todo.Infrastructure.Persistence.Diagnostics;
 using Sleeky.Todo.Infrastructure.Persistence.Documents;
 using Sleeky.Todo.Infrastructure.Persistence.Health;
 using Sleeky.Todo.Infrastructure.Persistence.Indexes;
-using Sleeky.Todo.Infrastructure.Persistence.Migrations;
 using Sleeky.Todo.Infrastructure.Persistence.Queries;
 using Sleeky.Todo.Infrastructure.Persistence.Repositories;
 using Sleeky.Todo.Infrastructure.Persistence.Transactions;
@@ -94,11 +93,6 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
         services.AddScoped<IUserDirectoryRepository, UserDirectoryRepository>();
         services.AddScoped<IAssistantSettingsRepository, AssistantSettingsRepository>();
-        services.AddHostedService<MongoDbEnumStorageMigrator>();
-
-        // Hosted services start in registration order, so the tokens exist
-        // before the index that covers them is built.
-        services.AddHostedService<MongoDbSearchTokensMigrator>();
         services.AddHostedService<MongoDbIndexInitializer>();
         services
             .AddHealthChecks()
