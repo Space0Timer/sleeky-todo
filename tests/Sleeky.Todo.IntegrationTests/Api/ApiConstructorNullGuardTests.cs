@@ -19,6 +19,16 @@ public sealed class ApiConstructorNullGuardTests
     }
 
     [TestMethod]
+    public void SpacesControllerRejectsNullSender()
+    {
+        Action action = () => _ = new SpacesController(null!);
+
+        action.Should()
+            .Throw<ArgumentNullException>()
+            .Which.ParamName.Should().Be("sender");
+    }
+
+    [TestMethod]
     public void ApiExceptionHandlerRejectsNullLogger()
     {
         Action action = () => _ = new ApiExceptionHandler(null!);

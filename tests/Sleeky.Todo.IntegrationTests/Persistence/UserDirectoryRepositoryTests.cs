@@ -170,6 +170,40 @@ public sealed class UserDirectoryRepositoryTests
         (await CountStoredUsersAsync()).Should().Be(1);
     }
 
+    /// <summary>
+    /// A lookup answers only for identifiers the directory knows: an unknown
+    /// one is left out rather than reported, so a caller cannot learn anything
+    /// about a user who has never signed in.
+    /// </summary>
+    [TestMethod]
+    public async Task FindByIdsAsyncReturnsOnlyTheIdentitiesTheDirectoryKnows()
+    {
+        UserIdentity ada = await repository.ResolveAsync(Issuer, "subject-ada", "Ada Lovelace");
+        UserIdentity grace = await repository.ResolveAsync(Issuer, "subject-grace", "Grace Hopper");
+        UserIdentity nameless = await repository.ResolveAsync(Issuer, "subject-nameless", null);
+        _ = await repository.ResolveAsync(Issuer, "subject-other", "Someone Else");
+
+        IReadOnlyCollection<UserIdentity> found = await repository.FindByIdsAsync(
+            [ada.UserId, grace.UserId, nameless.UserId, Guid.NewGuid()]);
+
+        found.Should().BeEquivalentTo(
+        [
+            new UserIdentity(ada.UserId, "Ada Lovelace"),
+            new UserIdentity(grace.UserId, "Grace Hopper"),
+            new UserIdentity(nameless.UserId, null),
+        ]);
+    }
+
+    [TestMethod]
+    public async Task FindByIdsAsyncWithNoIdentifiersReturnsNothing()
+    {
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace");
+
+        IReadOnlyCollection<UserIdentity> found = await repository.FindByIdsAsync(Array.Empty<Guid>());
+
+        found.Should().BeEmpty();
+    }
+
     private static bool ShouldRunMongoDbTests()
     {
         return string.Equals(

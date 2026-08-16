@@ -6,6 +6,13 @@ using NSubstitute;
 
 using Sleeky.Todo.Application.Behaviors;
 using Sleeky.Todo.Application.Spaces.Access;
+using Sleeky.Todo.Application.Spaces.Commands.AddSpaceAccess;
+using Sleeky.Todo.Application.Spaces.Commands.ChangeSpacePermission;
+using Sleeky.Todo.Application.Spaces.Commands.CreateSpace;
+using Sleeky.Todo.Application.Spaces.Commands.RemoveSpaceAccess;
+using Sleeky.Todo.Application.Spaces.Commands.RenameSpace;
+using Sleeky.Todo.Application.Spaces.Queries.GetSpace;
+using Sleeky.Todo.Application.Spaces.Queries.GetSpaces;
 using Sleeky.Todo.Application.Todos.Commands.AddDependency;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
@@ -27,6 +34,13 @@ public sealed class ConstructorNullGuardTests
         typeof(RequestLoggingBehavior<ConstructorGuardTestRequest, string>),
         typeof(ValidationBehavior<ConstructorGuardTestRequest, string>),
         typeof(SpaceAccessBehavior<ConstructorGuardTestRequest, string>),
+        typeof(AddSpaceAccessCommandHandler),
+        typeof(ChangeSpacePermissionCommandHandler),
+        typeof(CreateSpaceCommandHandler),
+        typeof(RemoveSpaceAccessCommandHandler),
+        typeof(RenameSpaceCommandHandler),
+        typeof(GetSpaceQueryHandler),
+        typeof(GetSpacesQueryHandler),
         typeof(AddDependencyCommandHandler),
         typeof(ChangeTodoStatusCommandHandler),
         typeof(CreateTodoCommandHandler),
