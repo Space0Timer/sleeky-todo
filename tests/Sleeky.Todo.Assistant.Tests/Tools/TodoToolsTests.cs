@@ -65,7 +65,7 @@ public sealed class TodoToolsTests
         Harness harness = new Harness();
         harness.Policy
             .DeleteAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
-            .Returns(Applied(First, 6, TodoStatus.NotStarted, deleted: true));
+            .Returns(Applied(First, 6, TodoStatus.Open, deleted: true));
 
         await harness.Tools.ExecuteConfirmedDeletionAsync(
             new ConfirmedAction(
@@ -90,7 +90,7 @@ public sealed class TodoToolsTests
         harness.Policy
             .DeleteAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(
-                _ => Task.FromResult(Applied(First, 6, TodoStatus.NotStarted, deleted: true)),
+                _ => Task.FromResult(Applied(First, 6, TodoStatus.Open, deleted: true)),
                 _ => throw new BulkConcurrencyConflictException("TODO", new[] { First }));
         ConfirmedAction confirmation = new ConfirmedAction(
             TodoToolNames.DeleteTodos,
@@ -337,11 +337,11 @@ public sealed class TodoToolsTests
         Harness harness = new Harness();
         harness.StageList();
 
-        _ = await harness.Tools.GetTodosAsync(status: "NotStarted");
+        _ = await harness.Tools.GetTodosAsync(status: "Open");
 
         harness.Listed.Should().NotBeNull();
         harness.Listed!.SearchText.Should().BeNull();
-        harness.Listed.Status.Should().Be(TodoStatus.NotStarted);
+        harness.Listed.Status.Should().Be(TodoStatus.Open);
     }
 
     [TestMethod]
@@ -431,7 +431,7 @@ public sealed class TodoToolsTests
         harness.Ledger.Record(First, 4);
         harness.Policy
             .RestoreAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
-            .Returns(Applied(First, 5, TodoStatus.NotStarted, deleted: false));
+            .Returns(Applied(First, 5, TodoStatus.Open, deleted: false));
 
         object outcome = await harness.Tools.RestoreTodosAsync(
             new[] { First.ToString() },

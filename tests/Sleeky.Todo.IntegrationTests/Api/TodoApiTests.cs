@@ -356,7 +356,7 @@ public sealed class TodoApiTests
             version: 1);
         HttpResponseMessage staleStatus = await ChangeStatusAsync(
             prerequisiteId,
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             version: 1);
 
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -413,7 +413,7 @@ public sealed class TodoApiTests
         completed.GetProperty("version").GetInt64().Should().Be(3);
         nextResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         next.GetProperty("dueDate").GetString().Should().Be("2026-09-30");
-        next.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.NotStarted);
+        next.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.Open);
         next.GetProperty("seriesId").GetString().Should().Be(seriesId);
         next.GetProperty("occurrenceNumber").GetInt32().Should().Be(2);
         next.GetProperty("dependencyIds").GetArrayLength().Should().Be(0);
@@ -454,7 +454,7 @@ public sealed class TodoApiTests
         completion.StatusCode.Should().Be(HttpStatusCode.Conflict);
         currentResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         current.GetProperty("status").GetInt32()
-            .Should().Be((int)TodoStatus.NotStarted);
+            .Should().Be((int)TodoStatus.Open);
         current.GetProperty("version").GetInt64().Should().Be(1);
         seriesCount.Should().Be(2);
     }

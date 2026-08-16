@@ -276,11 +276,11 @@ public sealed class BulkChangeTodoStatusCommandHandlerTests
         StageLoad(archived);
 
         BulkTodoResult result = await HandleAsync(
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             Select(archived));
 
         result.Items.Should().ContainSingle()
-            .Which.Status.Should().Be(TodoStatus.NotStarted);
+            .Which.Status.Should().Be(TodoStatus.Open);
         await repository.DidNotReceive().GetByIdsAsync(
             Arg.Any<IEnumerable<Guid>>(),
             true,

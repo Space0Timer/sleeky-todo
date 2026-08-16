@@ -109,10 +109,10 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         TodoDto unchanged = await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, TodoStatus.NotStarted, 1),
+            new ChangeTodoStatusCommand(todo.Id, TodoStatus.Open, 1),
             CancellationToken.None);
         Func<Task> stale = async () => await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, TodoStatus.NotStarted, 2),
+            new ChangeTodoStatusCommand(todo.Id, TodoStatus.Open, 2),
             CancellationToken.None);
 
         unchanged.Version.Should().Be(1);

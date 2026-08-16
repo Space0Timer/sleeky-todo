@@ -13,10 +13,17 @@ internal sealed class MongoDbEnumStorageMigrator : IHostedService
 {
     private const int EnumStorageMigratedEventId = 2011;
 
+    /// <summary>
+    /// Includes the name <see cref="TodoStatus.Open"/> was stored under before it
+    /// was renamed, spelled literally rather than through <c>nameof</c> so the
+    /// rename cannot quietly drop it. A document still holding the old string is
+    /// otherwise an unsupported value, which fails startup instead of migrating.
+    /// </summary>
     private static readonly IReadOnlyDictionary<string, int> StatusValues =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
-            [nameof(TodoStatus.NotStarted)] = (int)TodoStatus.NotStarted,
+            [nameof(TodoStatus.Open)] = (int)TodoStatus.Open,
+            ["NotStarted"] = (int)TodoStatus.Open,
             [nameof(TodoStatus.InProgress)] = (int)TodoStatus.InProgress,
             [nameof(TodoStatus.Completed)] = (int)TodoStatus.Completed,
             [nameof(TodoStatus.Archived)] = (int)TodoStatus.Archived,

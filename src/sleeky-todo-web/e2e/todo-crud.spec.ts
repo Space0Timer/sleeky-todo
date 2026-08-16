@@ -109,7 +109,7 @@ test('creates, edits, archives, soft-deletes, and restores a TODO', async ({ pag
   card = todoCard(page, 'UI lifecycle updated')
   await expect(card.getByText('v3')).toBeVisible()
   await card.getByRole('button', { name: 'Manage' }).click()
-  await card.getByLabel('Status for UI lifecycle updated').selectOption({ label: 'Not started' })
+  await card.getByLabel('Status for UI lifecycle updated').selectOption({ label: 'Open' })
   await expect(card).toHaveCount(0)
 
   await page.getByRole('tab', { name: 'Active' }).click()
@@ -235,7 +235,7 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
   await seedTodos(ownerId, names)
 
   await page.reload()
-  await page.getByLabel('Status filter').selectOption({ label: 'Not started' })
+  await page.getByLabel('Status filter').selectOption({ label: 'Open' })
   await page.getByLabel('Priority filter').selectOption({ label: 'Low' })
   await page.getByLabel('Due from filter').fill('2027-04-19')
   await page.getByLabel('Due to filter').fill('2027-04-19')

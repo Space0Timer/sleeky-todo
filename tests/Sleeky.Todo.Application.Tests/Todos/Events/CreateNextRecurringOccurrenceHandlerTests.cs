@@ -57,7 +57,7 @@ public sealed class CreateNextRecurringOccurrenceHandlerTests
         captured.OccurrenceNumber.Should().Be(2);
         captured.Recurrence.Should().Be(recurrence);
         captured.DependencyIds.Should().BeEmpty();
-        captured.Status.Should().Be(TodoStatus.NotStarted);
+        captured.Status.Should().Be(TodoStatus.Open);
     }
 
     [TestMethod]

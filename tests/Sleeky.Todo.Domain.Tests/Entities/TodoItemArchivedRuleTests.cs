@@ -76,7 +76,7 @@ public sealed class TodoItemArchivedRuleTests
     }
 
     [TestMethod]
-    [DataRow(TodoStatus.NotStarted)]
+    [DataRow(TodoStatus.Open)]
     [DataRow(TodoStatus.InProgress)]
     public void ArchivedTodoCanBeUnarchived(TodoStatus status)
     {
@@ -102,7 +102,7 @@ public sealed class TodoItemArchivedRuleTests
     }
 
     [TestMethod]
-    [DataRow(TodoStatus.NotStarted)]
+    [DataRow(TodoStatus.Open)]
     [DataRow(TodoStatus.InProgress)]
     [DataRow(TodoStatus.Completed)]
     public void ArchivingIsAllowedFromEveryOtherStatus(TodoStatus status)

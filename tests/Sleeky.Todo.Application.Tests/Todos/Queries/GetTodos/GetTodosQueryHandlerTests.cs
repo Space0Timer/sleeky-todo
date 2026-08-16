@@ -325,7 +325,7 @@ public sealed class GetTodosQueryHandlerTests
             $"TODO {index:D3}",
             null,
             new DateOnly(2026, 8, 1).AddDays(index / 3),
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             TodoPriority.Medium,
             isRecurring: false,
             isBlocked: false,

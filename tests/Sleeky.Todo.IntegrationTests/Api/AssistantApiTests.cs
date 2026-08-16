@@ -230,7 +230,7 @@ public sealed class AssistantApiTests
 
         JsonElement unchanged = await ReadTodoAsync(other, foreignId);
         unchanged.GetProperty("status").GetInt32()
-            .Should().Be((int)TodoStatus.NotStarted);
+            .Should().Be((int)TodoStatus.Open);
         unchanged.GetProperty("version").GetInt64()
             .Should().Be(foreignTodo.GetProperty("version").GetInt64());
     }

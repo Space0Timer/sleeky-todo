@@ -39,7 +39,7 @@ internal static class TestTodo
             name,
             description: null,
             DueDate,
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             TodoPriority.High,
             Array.Empty<Guid>(),
             recurrence: null,
