@@ -83,6 +83,14 @@ records each decision as it was made; the mechanisms are described in
   (whole words only; relevance order fights the keyset cursor); embeddings and
   an external engine as disproportionate. Costs recorded: prefix not
   substring, paging under search is O(match set), the index is the largest.
+- **Indexes created at startup by a hosted service, not a migration step.**
+  Registration lives in the infrastructure module, so every host that composes
+  it — the API and the integration tests alike — gets the same indexes without
+  remembering to ask, and a failure aborts startup rather than serving traffic
+  without them. Instances starting together are tolerated by design. Accepted:
+  an index build blocks writes to its collection, and the searching query hints
+  its index by name, so a host that skipped creation fails those queries
+  instead of running them slowly. §4's migration step is where this moves.
 - **All-or-nothing bulk operations.** With dependency chains and recurrence,
   partial success leaves a caller unable to tell what happened.
 - **The assistant acts *as* the user, inside the user's own request.** Tools

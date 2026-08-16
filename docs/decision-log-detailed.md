@@ -748,6 +748,37 @@ The accepted costs:
   the price of an index-backed match, and it buys the picker the whole
   collection instead of the first hundred candidates.
 
+## Index creation at startup
+
+A hosted service in the infrastructure module creates the MongoDB indexes when
+the host starts. Registration sits inside `AddInfrastructure`, so every host
+that composes the module gets them — the API and the integration tests alike —
+without any caller remembering to ask. An exception out of `StartAsync` aborts
+host startup, so the application never serves traffic having silently failed to
+create an index. `IHostedService` was chosen over `BackgroundService` for that
+reason: `ExecuteAsync` failures are governed by
+`BackgroundServiceExceptionBehavior` and are far easier to swallow.
+
+Several instances starting together is the case the implementation is written
+around. Creating an index that already exists under the same name and key
+specification is a no-op, so repeated starts are free. Superseded index names
+are read once and dropped only if present, rather than issuing a drop per name
+and paying a failed command for every index an earlier run already removed. A
+collection that does not exist yet and an index another instance dropped first
+are both tolerated by error code.
+
+The accepted costs:
+
+- **An index build blocks writes to its collection.** Harmless on the empty or
+  small collections this runs against, and the reason a real deployment moves
+  creation to the migration step §4 of the short log describes rather than
+  paying it on every start.
+- **The searching query depends on the initializer having run.** A `hint`
+  naming an index that does not exist is rejected by the server, not downgraded
+  to another plan, so a host that skipped creation fails every search instead
+  of running it slowly. Safe while creation runs in the same process as the
+  query; it is the coupling to carry forward if creation ever moves out.
+
 ## Deferred decisions
 
 Retention cleanup scheduling remains deferred until its vertical slice.
