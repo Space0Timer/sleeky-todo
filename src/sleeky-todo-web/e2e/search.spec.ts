@@ -153,7 +153,7 @@ test('loads a second page under a search without duplicates', async ({ page }) =
  * on screen behind a live Load more button.
  *
  * The fix removes the button for that window, so what is asserted is its
- * absence: the bad request can no longer be made, and no error banner follows.
+ * absence: the bad request can no longer be made, and no error toast follows.
  */
 test('offers no stale cursor while a searched page is still loading', async ({ page }) => {
   const ownerId = await currentUserId(page)

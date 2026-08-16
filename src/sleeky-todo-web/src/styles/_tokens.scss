@@ -96,6 +96,11 @@ $color-blocked-text: #8d3038;
 
 $shadow-surface: 0 0.6rem 2rem rgb(49 37 77 / 6%);
 
+// Deeper than the surface shadow because a toast is the one element that floats
+// clear of the page rather than resting on it, and reads as stuck to it without
+// the extra lift.
+$shadow-toast: 0 0.9rem 2.4rem rgb(49 37 77 / 16%);
+
 // Radii -----------------------------------------------------------------------
 
 $radius-xs: 0.45rem;

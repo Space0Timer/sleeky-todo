@@ -141,6 +141,40 @@ test('shows API validation errors next to their fields', async ({ page }) => {
   await expect(form).toContainText('A TODO name is required.')
 })
 
+/**
+ * The two toasts leave on different terms. A success message has been read by
+ * the time it is on screen, so it clears itself; an error can carry a trace ID
+ * or the reload action, so it waits to be dismissed.
+ *
+ * Dismissing it keeps the per-field messages, because the toast only summarises
+ * the problem that produced them and the form is where it gets fixed.
+ */
+test('expires a success toast and holds an error until it is dismissed', async ({ page }) => {
+  await createTodo(page, 'UI toast lifecycle')
+
+  const notice = page.getByRole('status')
+  await expect(notice).toContainText('TODO created.')
+  // Outlives the assertion default, because the toast is on its own timer.
+  await expect(notice).toHaveCount(0, { timeout: 15_000 })
+
+  const form = page.getByRole('group', { name: 'Create a TODO' })
+  await form.getByLabel('Name').fill('   ')
+  await form.getByLabel('Due date').fill('2026-08-31')
+  await form.getByRole('button', { name: 'Add TODO' }).click()
+
+  const error = page.getByRole('alert')
+  await expect(error).toContainText('Validation failed.')
+
+  // Waited out rather than polled: what is asserted is that nothing happens
+  // well past the point the success toast would have cleared itself.
+  await page.waitForTimeout(8_000)
+  await expect(error).toContainText('Validation failed.')
+
+  await error.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(form).toContainText('A TODO name is required.')
+})
+
 test('shows a concurrency conflict and reloads the latest version', async ({ page }) => {
   let card = await createTodo(page, 'UI stale TODO')
   const id = (await card.locator('[data-testid="record-id"]').textContent())?.trim()

@@ -45,12 +45,13 @@
   }
 }
 
-.error-banner {
+// Named for the one message it now carries. Page-level errors moved to the
+// toast region; this stays in flow because it captions the ringed cards.
+.repair-banner {
   @include m.surface;
 
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 1rem 1.2rem;
   margin-bottom: 1rem;
   border-color: t.$color-error-border;
@@ -61,24 +62,6 @@
   p {
     margin: 0.25rem 0;
   }
-
-  small {
-    color: t.$color-error-meta;
-  }
-}
-
-.notice-banner {
-  @include m.surface;
-  @include m.typography(emphasis);
-
-  // An <output> element is inline by default, which would drop the padding and
-  // margin below from the layout.
-  display: block;
-  padding: 0.85rem 1.1rem;
-  margin-bottom: 1rem;
-  border-color: t.$color-notice-border;
-  background: t.$color-notice-surface;
-  color: t.$color-notice-text;
 }
 
 .create-panel {
@@ -194,7 +177,7 @@
   }
 
   .page-header,
-  .error-banner {
+  .repair-banner {
     flex-direction: column;
     align-items: stretch;
   }
