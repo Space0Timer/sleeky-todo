@@ -5,9 +5,27 @@ using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
+/// <summary>
+/// One page of the owner's TODO list under a filter, scope, sort, and optional
+/// search, resumed from a cursor when one is supplied.
+/// </summary>
+/// <remarks>
+/// The constructor canonicalises its inputs so the validator, the cursor
+/// signature, and the reader all see one form: an absent limit becomes the
+/// default, and blank cursor or search text becomes null.
+/// </remarks>
 public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
 {
+    /// <summary>
+    /// The page size when the caller names none.
+    /// </summary>
     public const int DefaultPageSize = 50;
+
+    /// <summary>
+    /// The largest page a caller may ask for. Public so the assistant's tools
+    /// can state the cap in their own checks rather than discover it from a
+    /// validation error.
+    /// </summary>
     public const int MaximumPageSize = 100;
 
     public GetTodosQuery(

@@ -41,14 +41,7 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
             ?? throw new NotFoundException("TODO", request.Id);
 
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
-        bool hasActiveDependents = await todoRepository.HasActiveDependentsAsync(
-            todoItem.Id,
-            cancellationToken);
-        if (hasActiveDependents)
-        {
-            throw new DomainException(
-                "A TODO with active dependents cannot be deleted.");
-        }
+        await EnsureNoActiveDependentsAsync(todoItem.Id, cancellationToken);
 
         todoItem.SoftDelete(clock.UtcNow);
 
@@ -64,5 +57,27 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
             deletedTodoItem.PurgeAt);
 
         return TodoDto.FromEntity(deletedTodoItem);
+    }
+
+    /// <summary>
+    /// A prerequisite of an active dependent cannot be deleted: the dependent
+    /// would be left waiting on something that no longer resolves. Dependents
+    /// that are themselves deleted or archived do not count. Whether other TODOs
+    /// depend on this one is not visible from the entity, so it is checked
+    /// here.
+    /// </summary>
+    private async Task EnsureNoActiveDependentsAsync(
+        Guid todoId,
+        CancellationToken cancellationToken)
+    {
+        bool hasActiveDependents = await todoRepository.HasActiveDependentsAsync(
+            todoId,
+            cancellationToken);
+
+        if (hasActiveDependents)
+        {
+            throw new DomainException(
+                "A TODO with active dependents cannot be deleted.");
+        }
     }
 }

@@ -25,7 +25,23 @@ internal static class BulkTodoLoader
             cancellationToken);
         Dictionary<Guid, TodoItem> todosById = loaded.ToDictionary(todo => todo.Id);
 
+        List<TodoItem> ordered = OrderAsRequested(items, todosById);
+        EnsureNoneStale(items, todosById);
+
+        return ordered;
+    }
+
+    /// <summary>
+    /// Returns the loaded TODOs in the order they were asked for, so a result
+    /// item lines up with the request item at the same position. The first
+    /// identifier that did not load fails the batch here.
+    /// </summary>
+    private static List<TodoItem> OrderAsRequested(
+        IReadOnlyCollection<BulkTodoItemRequest> items,
+        IReadOnlyDictionary<Guid, TodoItem> todosById)
+    {
         List<TodoItem> ordered = new List<TodoItem>(items.Count);
+
         foreach (BulkTodoItemRequest item in items)
         {
             if (!todosById.TryGetValue(item.Id, out TodoItem? todoItem))
@@ -36,15 +52,26 @@ internal static class BulkTodoLoader
             ordered.Add(todoItem);
         }
 
+        return ordered;
+    }
+
+    /// <summary>
+    /// Every stale identifier is reported together, so a client can refresh
+    /// exactly the items that moved rather than discovering them one retry at
+    /// a time.
+    /// </summary>
+    private static void EnsureNoneStale(
+        IReadOnlyCollection<BulkTodoItemRequest> items,
+        IReadOnlyDictionary<Guid, TodoItem> todosById)
+    {
         Guid[] staleIds = items
             .Where(item => todosById[item.Id].Version != item.Version)
             .Select(item => item.Id)
             .ToArray();
+
         if (staleIds.Length > 0)
         {
             throw new BulkConcurrencyConflictException("TODO", staleIds);
         }
-
-        return ordered;
     }
 }
