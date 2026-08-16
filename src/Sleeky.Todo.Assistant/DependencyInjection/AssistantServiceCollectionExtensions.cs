@@ -7,6 +7,13 @@ using Sleeky.Todo.Assistant.Turns;
 
 namespace Sleeky.Todo.Assistant.DependencyInjection;
 
+/// <summary>
+/// Registers the assistant. The lifetimes follow what each type holds: the
+/// key protector, client factory, and probe hold nothing per request, and the
+/// factory's transports are process-lifetime on purpose; everything that
+/// resolves the current user or dispatches through MediatR is scoped to the
+/// request it runs in.
+/// </summary>
 public static class AssistantServiceCollectionExtensions
 {
     public static IServiceCollection AddAssistant(

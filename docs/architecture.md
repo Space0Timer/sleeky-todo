@@ -589,6 +589,14 @@ POST /api/assistant/turns  (server-sent events)
   -> MediatR                    validation, domain rules, logging, ownership
 ```
 
+The project is laid out by role. `Providers` resolves whose provider, model,
+and key a turn runs on and builds the client for it, including the guard that
+keeps a user-supplied endpoint off the server's own network. `Tools` is what
+the model can call: the six operations, their parsing, the per-turn version
+ledger, and the shapes handed back. `Turns` runs one turn — replay, window,
+ask, hand back — and streams its events to the response. `Conflicts` is the one
+place a batch that lost a version race is retried.
+
 Tools send commands and queries only, never repositories, so every call inherits
 the guardrails the HTTP path has. Nothing in the tool layer reaches persistence
 directly, which is what makes "the assistant cannot do what a browser could not"

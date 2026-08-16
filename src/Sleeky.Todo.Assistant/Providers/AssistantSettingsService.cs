@@ -44,43 +44,18 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
     public async Task<AssistantSettingsView> DescribeAsync(
         CancellationToken cancellationToken = default)
     {
-        AssistantSettingsRecord? stored = await this.repository.GetAsync(
-            this.currentUser.UserId,
-            cancellationToken);
+        AssistantSettingsRecord? stored = await this.GetStoredAsync(cancellationToken);
         AssistantConnection? resolved = this.Resolve(stored);
 
-        if (stored is not null)
-        {
-            // The reported provider and model stay the user's own, because this
-            // is what their settings form edits. IsUsable therefore describes
-            // *that* configuration rather than whether any connection resolved:
-            // a stored record the resolver set aside is unusable even though
-            // the application fallback will carry the next turn, and Source
-            // says which of the two is actually running.
-            return new AssistantSettingsView(
-                stored.Provider,
-                stored.BaseUrl,
-                stored.Model,
-                HasKey: stored.ProtectedApiKey is not null,
-                IsUsable: resolved?.Source == AssistantConnectionSource.User,
-                Source: (resolved?.Source ?? AssistantConnectionSource.User).ToString());
-        }
-
-        return new AssistantSettingsView(
-            this.options.Provider.ToString(),
-            this.options.BaseUrl,
-            this.options.Model,
-            HasKey: false,
-            IsUsable: resolved is not null,
-            Source: AssistantConnectionSource.Application.ToString());
+        return stored is null
+            ? this.DescribeApplicationFallback(resolved)
+            : DescribeStored(stored, resolved);
     }
 
     public async Task<AssistantConnection?> ResolveAsync(
         CancellationToken cancellationToken = default)
     {
-        AssistantSettingsRecord? stored = await this.repository.GetAsync(
-            this.currentUser.UserId,
-            cancellationToken);
+        AssistantSettingsRecord? stored = await this.GetStoredAsync(cancellationToken);
 
         return this.Resolve(stored);
     }
@@ -98,17 +73,7 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
             return null;
         }
 
-        // The same rule the save follows: an absent key means the stored one,
-        // because the user cannot read it back to retype it.
-        string? apiKey = input.ApiKey;
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            AssistantSettingsRecord? stored = await this.repository.GetAsync(
-                this.currentUser.UserId,
-                cancellationToken);
-            apiKey = this.protector.Unprotect(stored?.ProtectedApiKey);
-        }
+        string? apiKey = await this.ResolveDraftKeyAsync(input.ApiKey, cancellationToken);
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -129,9 +94,7 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        AssistantSettingsRecord? stored = await this.repository.GetAsync(
-            this.currentUser.UserId,
-            cancellationToken);
+        AssistantSettingsRecord? stored = await this.GetStoredAsync(cancellationToken);
 
         // An absent key keeps whatever is stored, because the user cannot read
         // their key back to resubmit it alongside a model change.
@@ -160,6 +123,67 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
     }
 
     /// <summary>
+    /// The user's own configuration, which is what their settings form edits.
+    /// </summary>
+    /// <remarks>
+    /// <c>IsUsable</c> therefore describes <em>that</em> configuration rather
+    /// than whether any connection resolved: a stored record the resolver set
+    /// aside is unusable even though the application fallback will carry the
+    /// next turn, and <c>Source</c> says which of the two is actually running.
+    /// </remarks>
+    private static AssistantSettingsView DescribeStored(
+        AssistantSettingsRecord stored,
+        AssistantConnection? resolved)
+    {
+        return new AssistantSettingsView(
+            stored.Provider,
+            stored.BaseUrl,
+            stored.Model,
+            HasKey: stored.ProtectedApiKey is not null,
+            IsUsable: resolved?.Source == AssistantConnectionSource.User,
+            Source: (resolved?.Source ?? AssistantConnectionSource.User).ToString());
+    }
+
+    /// <summary>
+    /// What a user with no settings of their own is running on: the
+    /// application's provider and model, usable only if the operator supplied
+    /// a key.
+    /// </summary>
+    private AssistantSettingsView DescribeApplicationFallback(AssistantConnection? resolved)
+    {
+        return new AssistantSettingsView(
+            this.options.Provider.ToString(),
+            this.options.BaseUrl,
+            this.options.Model,
+            HasKey: false,
+            IsUsable: resolved is not null,
+            Source: AssistantConnectionSource.Application.ToString());
+    }
+
+    /// <summary>
+    /// The same rule the save follows: an absent key means the stored one,
+    /// because the user cannot read it back to retype it.
+    /// </summary>
+    private async Task<string?> ResolveDraftKeyAsync(
+        string? draftKey,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(draftKey))
+        {
+            return draftKey;
+        }
+
+        AssistantSettingsRecord? stored = await this.GetStoredAsync(cancellationToken);
+
+        return this.protector.Unprotect(stored?.ProtectedApiKey);
+    }
+
+    private Task<AssistantSettingsRecord?> GetStoredAsync(CancellationToken cancellationToken)
+    {
+        return this.repository.GetAsync(this.currentUser.UserId, cancellationToken);
+    }
+
+    /// <summary>
     /// Whether a user's endpoint names an address the policy will not permit.
     /// Applies to user settings only; the application's own endpoint is
     /// operator configuration and is resolved without this.
@@ -169,6 +193,10 @@ public sealed class AssistantSettingsService : IAssistantSettingsService
         return !this.options.AllowPrivateEndpoints && AssistantBaseUrl.IsPrivate(baseUrl);
     }
 
+    /// <summary>
+    /// The user's connection when they have a usable one, else the
+    /// application's; never a blend of the two.
+    /// </summary>
     private AssistantConnection? Resolve(AssistantSettingsRecord? stored)
     {
         AssistantConnection? user = this.ResolveUser(stored);

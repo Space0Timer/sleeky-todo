@@ -95,43 +95,112 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
 
         if (connection is null)
         {
-            await events.PublishAsync(
-                TurnEvent.Message(new AssistantMessage(NotConfigured)),
-                cancellationToken);
-
-            // The conversation is handed back untouched rather than cleared.
-            // Losing a provider mid-session is recoverable, and emptying the
-            // transcript would silently discard the exchange the user is still
-            // looking at.
-            await events.PublishAsync(
-                TurnEvent.TurnCompleted(new TurnTranscript(
-                    turn.Transcript ?? TranscriptCodec.Empty())),
-                cancellationToken);
+            await HandBackUnansweredAsync(turn, events, cancellationToken);
             return;
         }
 
         List<ChatMessage> messages = TranscriptCodec.Read(turn.Transcript);
         bool trimmed = TranscriptWindow.Apply(messages, this.options.TranscriptMaxMessages);
+        TodoVersionLedger ledger = SeedLedgerFromWindow(turn.Transcript, messages, trimmed);
+        TodoTools tools = this.CreateTools(ledger, events);
 
+        await this.AppendTurnInputAsync(messages, turn, tools, cancellationToken);
+
+        ChatResponse response = await this.AskModelAsync(connection, messages, tools, cancellationToken);
+        messages.AddRange(response.Messages);
+        this.LogTurnCost(response);
+
+        await PublishOutcomeAsync(response, messages, events, cancellationToken);
+    }
+
+    /// <summary>
+    /// Says there is nothing to run on, and hands the conversation back
+    /// untouched rather than cleared. Losing a provider mid-session is
+    /// recoverable, and emptying the transcript would silently discard the
+    /// exchange the user is still looking at.
+    /// </summary>
+    private static async Task HandBackUnansweredAsync(
+        AssistantTurn turn,
+        ITurnEventWriter events,
+        CancellationToken cancellationToken)
+    {
+        await events.PublishAsync(
+            TurnEvent.Message(new AssistantMessage(NotConfigured)),
+            cancellationToken);
+        await events.PublishAsync(
+            TurnEvent.TurnCompleted(new TurnTranscript(
+                turn.Transcript ?? TranscriptCodec.Empty())),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Seeds the ledger from what is left once the window has been applied, so
+    /// a version can only be bound to a read the model can still see.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is re-serialized when nothing was dropped, which also keeps the
+    /// seed reading the transcript that arrived rather than one this version
+    /// was able to deserialize.
+    /// </remarks>
+    private static TodoVersionLedger SeedLedgerFromWindow(
+        JsonElement? transcript,
+        IReadOnlyList<ChatMessage> messages,
+        bool trimmed)
+    {
         TodoVersionLedger ledger = new TodoVersionLedger();
-
-        // Seeded from what is left once the window has been applied, so a
-        // version can only be bound to a read the model can still see. Nothing
-        // is re-serialized when nothing was dropped, which also keeps the seed
-        // reading the transcript that arrived rather than one this version was
-        // able to deserialize.
         TranscriptCodec.SeedLedger(
-            trimmed ? TranscriptCodec.Write(messages) : turn.Transcript,
+            trimmed ? TranscriptCodec.Write(messages) : transcript,
             ledger);
 
-        TodoTools tools = new TodoTools(
+        return ledger;
+    }
+
+    /// <summary>
+    /// The model's answer, when it gave one, and then the conversation as it
+    /// now stands. A turn a tool halted — a deletion proposal — may end
+    /// without an answer; the transcript still goes back so the next turn
+    /// continues from here.
+    /// </summary>
+    private static async Task PublishOutcomeAsync(
+        ChatResponse response,
+        IReadOnlyList<ChatMessage> messages,
+        ITurnEventWriter events,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(response.Text))
+        {
+            await events.PublishAsync(
+                TurnEvent.Message(new AssistantMessage(response.Text)),
+                cancellationToken);
+        }
+
+        await events.PublishAsync(
+            TurnEvent.TurnCompleted(new TurnTranscript(TranscriptCodec.Write(messages))),
+            cancellationToken);
+    }
+
+    private TodoTools CreateTools(TodoVersionLedger ledger, ITurnEventWriter events)
+    {
+        return new TodoTools(
             this.sender,
             this.policy,
             ledger,
             events,
             new FunctionInvocationTurnController(),
             this.toolLogger);
+    }
 
+    /// <summary>
+    /// Adds what this turn brings: the opening context when the conversation
+    /// is new, the outcome of a confirmation the user answered, and whatever
+    /// they typed.
+    /// </summary>
+    private async Task AppendTurnInputAsync(
+        List<ChatMessage> messages,
+        AssistantTurn turn,
+        TodoTools tools,
+        CancellationToken cancellationToken)
+    {
         if (messages.Count == 0)
         {
             messages.Add(new ChatMessage(ChatRole.User, this.DescribeContext()));
@@ -148,11 +217,23 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         {
             messages.Add(new ChatMessage(ChatRole.User, turn.Message));
         }
+    }
 
+    /// <summary>
+    /// One request to the model, with the loop running its tool calls until it
+    /// answers or a tool halts the turn.
+    /// </summary>
+    private async Task<ChatResponse> AskModelAsync(
+        AssistantConnection connection,
+        List<ChatMessage> messages,
+        TodoTools tools,
+        CancellationToken cancellationToken)
+    {
         using IChatClient client = new ChatClientBuilder(this.clients.Create(connection))
             .UseFunctionInvocation()
             .Build();
-        ChatResponse response = await client.GetResponseAsync(
+
+        return await client.GetResponseAsync(
             messages,
             new ChatOptions
             {
@@ -163,20 +244,6 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
                 // offers it.
                 Tools = TodoToolset.Create(tools).ToList(),
             },
-            cancellationToken);
-
-        messages.AddRange(response.Messages);
-        this.LogTurnCost(response);
-
-        if (!string.IsNullOrWhiteSpace(response.Text))
-        {
-            await events.PublishAsync(
-                TurnEvent.Message(new AssistantMessage(response.Text)),
-                cancellationToken);
-        }
-
-        await events.PublishAsync(
-            TurnEvent.TurnCompleted(new TurnTranscript(TranscriptCodec.Write(messages))),
             cancellationToken);
     }
 

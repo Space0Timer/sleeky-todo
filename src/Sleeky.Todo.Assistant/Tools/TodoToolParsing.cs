@@ -72,6 +72,35 @@ public static class TodoToolParsing
         return false;
     }
 
+    /// <summary>
+    /// Parses an enum the model may leave out. An absent value succeeds as
+    /// <see langword="null"/>; only a value that was supplied and cannot be
+    /// read fails.
+    /// </summary>
+    public static bool TryParseOptionalEnum<TEnum>(
+        string? value,
+        string parameterName,
+        out TEnum? parsed,
+        [NotNullWhen(false)] out string? error)
+        where TEnum : struct, Enum
+    {
+        parsed = null;
+
+        if (value is null)
+        {
+            error = null;
+            return true;
+        }
+
+        if (!TryParseEnum(value, parameterName, out TEnum supplied, out error))
+        {
+            return false;
+        }
+
+        parsed = supplied;
+        return true;
+    }
+
     public static bool TryParseDate(
         string? value,
         string parameterName,
@@ -87,5 +116,32 @@ public static class TodoToolParsing
         error = $"'{value}' is not a valid {parameterName}. Use an ISO date, "
             + "such as 2026-08-14.";
         return false;
+    }
+
+    /// <summary>
+    /// Parses a date the model may leave out, on the same terms as
+    /// <see cref="TryParseOptionalEnum{TEnum}"/>.
+    /// </summary>
+    public static bool TryParseOptionalDate(
+        string? value,
+        string parameterName,
+        out DateOnly? parsed,
+        [NotNullWhen(false)] out string? error)
+    {
+        parsed = null;
+
+        if (value is null)
+        {
+            error = null;
+            return true;
+        }
+
+        if (!TryParseDate(value, parameterName, out DateOnly supplied, out error))
+        {
+            return false;
+        }
+
+        parsed = supplied;
+        return true;
     }
 }

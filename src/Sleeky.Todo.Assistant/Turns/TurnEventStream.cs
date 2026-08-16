@@ -2,6 +2,12 @@ using System.Runtime.CompilerServices;
 
 namespace Sleeky.Todo.Assistant.Turns;
 
+/// <summary>
+/// Turns a running turn into the sequence of events an endpoint streams out.
+/// The turn runs as a task and writes to a channel; this reads the channel,
+/// keeps the stream alive while the model thinks, and makes sure the turn has
+/// finished before the response does.
+/// </summary>
 public static class TurnEventStream
 {
     /// <summary>
