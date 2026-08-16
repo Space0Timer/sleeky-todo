@@ -14,6 +14,7 @@ using Sleeky.Todo.Application.Behaviors;
 using Sleeky.Todo.Application.DependencyInjection;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
+using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Tests.DependencyInjection;
@@ -65,5 +66,23 @@ public sealed class ApplicationServiceCollectionExtensionsTests
         validators.Should().ContainSingle(validator => validator is CreateTodoCommandValidator);
         behaviors.Should().ContainSingle(behavior =>
             behavior is ValidationBehavior<CreateTodoCommand, TodoDto>);
+    }
+
+    /// <summary>
+    /// The status handler builds a recurring successor itself, so the factory it
+    /// depends on has to be registered; an unregistered one fails at resolution
+    /// rather than silently skipping the next occurrence.
+    /// </summary>
+    [TestMethod]
+    public void AddApplicationRegistersTheRecurringOccurrenceFactory()
+    {
+        ServiceCollection services = new ServiceCollection();
+        services.AddApplication();
+        using ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+        IRecurringOccurrenceFactory factory = serviceProvider
+            .GetRequiredService<IRecurringOccurrenceFactory>();
+
+        factory.Should().BeOfType<RecurringOccurrenceFactory>();
     }
 }

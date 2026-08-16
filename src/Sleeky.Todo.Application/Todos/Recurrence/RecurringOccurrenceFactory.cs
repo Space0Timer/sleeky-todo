@@ -1,7 +1,7 @@
 using Sleeky.Todo.Domain.Entities;
-using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
 using Sleeky.Todo.Domain.Services;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Todos.Recurrence;
 
@@ -16,38 +16,38 @@ public sealed class RecurringOccurrenceFactory : IRecurringOccurrenceFactory
         this.recurrenceCalculator = recurrenceCalculator;
     }
 
-    public TodoItem CreateNext(TodoCompletedDomainEvent domainEvent)
+    public TodoItem CreateNext(TodoCompletion completion)
     {
-        ArgumentNullException.ThrowIfNull(domainEvent);
+        ArgumentNullException.ThrowIfNull(completion);
 
-        if (domainEvent.CompletionContext.Recurrence is null)
+        if (completion.Recurrence is null)
         {
             throw new DomainException(
                 "A next occurrence requires a recurring completion.");
         }
 
-        if (domainEvent.SeriesId is null
-            || domainEvent.OccurrenceNumber is null
-            || domainEvent.NextOccurrenceId is null)
+        if (completion.SeriesId is null
+            || completion.OccurrenceNumber is null
+            || completion.NextOccurrenceId is null)
         {
             throw new DomainException(
                 "A recurring completion requires complete series context.");
         }
 
         DateOnly nextDueDate = recurrenceCalculator.CalculateNext(
-            domainEvent.CompletionContext.ScheduledDueDate,
-            domainEvent.CompletionContext.Recurrence);
+            completion.ScheduledDueDate,
+            completion.Recurrence);
 
         return TodoItem.Create(
-            domainEvent.NextOccurrenceId.Value,
-            domainEvent.CompletionContext.OwnerId,
-            domainEvent.CompletionContext.Name,
-            domainEvent.CompletionContext.Description,
+            completion.NextOccurrenceId.Value,
+            completion.OwnerId,
+            completion.Name,
+            completion.Description,
             nextDueDate,
-            domainEvent.CompletionContext.Priority,
-            domainEvent.CompletionContext.CompletedAt,
-            domainEvent.CompletionContext.Recurrence,
-            domainEvent.SeriesId,
-            checked(domainEvent.OccurrenceNumber.Value + 1));
+            completion.Priority,
+            completion.CompletedAt,
+            completion.Recurrence,
+            completion.SeriesId,
+            checked(completion.OccurrenceNumber.Value + 1));
     }
 }

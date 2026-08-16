@@ -4,17 +4,17 @@ using Microsoft.Extensions.Logging;
 
 using NSubstitute;
 
-using Sleeky.Todo.Application.Abstractions.Events;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Dependencies;
+using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
+using Sleeky.Todo.Domain.Services;
 using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Commands.ChangeTodoStatus;
@@ -42,7 +42,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             evaluator,
             clock,
             new ImmediateTransactionExecutor(),
-            new IgnoringDomainEventDispatcher(),
+            new RecurringOccurrenceFactory(new RecurrenceCalculator()),
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         Func<Task> act = async () => await handler.Handle(
@@ -79,7 +79,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             evaluator,
             clock,
             new ImmediateTransactionExecutor(),
-            new IgnoringDomainEventDispatcher(),
+            new RecurringOccurrenceFactory(new RecurrenceCalculator()),
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         TodoDto result = await handler.Handle(
@@ -105,7 +105,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             evaluator,
             clock,
             new ImmediateTransactionExecutor(),
-            new IgnoringDomainEventDispatcher(),
+            new RecurringOccurrenceFactory(new RecurrenceCalculator()),
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         TodoDto unchanged = await handler.Handle(
@@ -160,7 +160,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             evaluator,
             clock,
             transactionExecutor,
-            new IgnoringDomainEventDispatcher(),
+            new RecurringOccurrenceFactory(new RecurrenceCalculator()),
             logger);
 
         TodoDto result = await handler.Handle(

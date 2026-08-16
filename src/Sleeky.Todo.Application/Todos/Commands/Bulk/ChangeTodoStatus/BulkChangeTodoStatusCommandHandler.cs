@@ -7,8 +7,8 @@ using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 
@@ -71,16 +71,12 @@ public sealed class BulkChangeTodoStatusCommandHandler
             }
 
             updates.Add(todoItem);
-            TodoCompletedDomainEvent? completion = todoItem.DomainEvents
-                .OfType<TodoCompletedDomainEvent>()
-                .SingleOrDefault();
-            if (completion?.CompletionContext.Recurrence is not null)
+            TodoCompletion? completion = todoItem.Completion;
+            if (completion?.Recurrence is not null)
             {
                 inserts.Add(recurringOccurrenceFactory.CreateNext(completion));
                 nextOccurrenceIds[todoItem.Id] = completion.NextOccurrenceId!.Value;
             }
-
-            todoItem.ClearDomainEvents();
         }
 
         await PersistAsync(updates, inserts, cancellationToken);

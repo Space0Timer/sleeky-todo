@@ -2,16 +2,16 @@ using MediatR;
 
 using Microsoft.Extensions.Logging;
 
-using Sleeky.Todo.Application.Abstractions.Events;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
 using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Dependencies;
+using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 
@@ -19,9 +19,9 @@ public sealed class ChangeTodoStatusCommandHandler
     : IRequestHandler<ChangeTodoStatusCommand, TodoDto>
 {
     private readonly IClock clock;
-    private readonly IDomainEventDispatcher domainEventDispatcher;
     private readonly ITodoDependencyEvaluator dependencyEvaluator;
     private readonly ILogger<ChangeTodoStatusCommandHandler> logger;
+    private readonly IRecurringOccurrenceFactory recurringOccurrenceFactory;
     private readonly ITodoRepository todoRepository;
     private readonly ITransactionExecutor transactionExecutor;
 
@@ -30,21 +30,21 @@ public sealed class ChangeTodoStatusCommandHandler
         ITodoDependencyEvaluator dependencyEvaluator,
         IClock clock,
         ITransactionExecutor transactionExecutor,
-        IDomainEventDispatcher domainEventDispatcher,
+        IRecurringOccurrenceFactory recurringOccurrenceFactory,
         ILogger<ChangeTodoStatusCommandHandler> logger)
     {
         ArgumentNullException.ThrowIfNull(todoRepository);
         ArgumentNullException.ThrowIfNull(dependencyEvaluator);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(transactionExecutor);
-        ArgumentNullException.ThrowIfNull(domainEventDispatcher);
+        ArgumentNullException.ThrowIfNull(recurringOccurrenceFactory);
         ArgumentNullException.ThrowIfNull(logger);
 
         this.todoRepository = todoRepository;
         this.dependencyEvaluator = dependencyEvaluator;
         this.clock = clock;
         this.transactionExecutor = transactionExecutor;
-        this.domainEventDispatcher = domainEventDispatcher;
+        this.recurringOccurrenceFactory = recurringOccurrenceFactory;
         this.logger = logger;
     }
 
@@ -70,12 +70,10 @@ public sealed class ChangeTodoStatusCommandHandler
 
         TodoStatus previousStatus = todoItem.Status;
         _ = todoItem.ChangeStatus(request.Status, clock.UtcNow);
-        TodoCompletedDomainEvent? completionEvent = todoItem.DomainEvents
-            .OfType<TodoCompletedDomainEvent>()
-            .SingleOrDefault();
+        TodoCompletion? completion = todoItem.Completion;
         TodoItem updatedTodo = await PersistStatusChangeAsync(
             todoItem,
-            completionEvent,
+            completion,
             cancellationToken);
 
         this.logger.LogInformation(
@@ -86,20 +84,18 @@ public sealed class ChangeTodoStatusCommandHandler
             updatedTodo.Status,
             updatedTodo.Version);
 
-        if (completionEvent?.NextOccurrenceId is not null
-            && completionEvent.SeriesId is not null)
+        if (completion?.NextOccurrenceId is not null
+            && completion.SeriesId is not null)
         {
             this.logger.LogInformation(
                 1101,
                 "Created recurring TODO {TodoId} for series {SeriesId} after completing TODO {CompletedTodoId}",
-                completionEvent.NextOccurrenceId,
-                completionEvent.SeriesId,
-                completionEvent.TodoId);
+                completion.NextOccurrenceId,
+                completion.SeriesId,
+                completion.TodoId);
         }
 
-        todoItem.ClearDomainEvents();
-
-        return TodoDto.FromEntity(updatedTodo, completionEvent?.NextOccurrenceId);
+        return TodoDto.FromEntity(updatedTodo, completion?.NextOccurrenceId);
     }
 
     private async Task EnsureDependenciesAllowTransitionAsync(
@@ -124,15 +120,22 @@ public sealed class ChangeTodoStatusCommandHandler
     }
 
     /// <summary>
-    /// A completion may also insert the next recurring occurrence, so those two
-    /// writes share a transaction. Every other status change is a single write.
+    /// A recurring completion also inserts the next occurrence, so those two
+    /// writes share a transaction. Every other status change, including
+    /// completing a non-recurring TODO, is a single write.
     /// </summary>
+    /// <remarks>
+    /// The successor is built and inserted here rather than dispatched to a
+    /// separate handler, matching what the bulk path does with the same factory.
+    /// Both writes are then plainly inside the transaction, and an insert
+    /// failure aborts the completion.
+    /// </remarks>
     private Task<TodoItem> PersistStatusChangeAsync(
         TodoItem todoItem,
-        TodoCompletedDomainEvent? completionEvent,
+        TodoCompletion? completion,
         CancellationToken cancellationToken)
     {
-        if (completionEvent is null)
+        if (completion?.Recurrence is null)
         {
             return todoRepository.UpdateAsync(todoItem, cancellationToken);
         }
@@ -143,9 +146,10 @@ public sealed class ChangeTodoStatusCommandHandler
                 TodoItem persistedTodo = await todoRepository.UpdateAsync(
                     todoItem,
                     transactionCancellationToken);
-                await domainEventDispatcher.DispatchAsync(
-                    todoItem.DomainEvents,
+                await todoRepository.AddAsync(
+                    recurringOccurrenceFactory.CreateNext(completion),
                     transactionCancellationToken);
+
                 return persistedTodo;
             },
             cancellationToken);

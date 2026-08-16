@@ -25,7 +25,7 @@ public sealed class DependencyCommandHandlerTests
         TodoItem source = TestTodoFactory.Create("source");
         TodoItem dependency = TestTodoFactory.Create("dependency");
         ITodoRepository repository = Substitute.For<ITodoRepository>();
-        IDependencyGraphService graph = Substitute.For<IDependencyGraphService>();
+        IDependencyCycleDetector graph = Substitute.For<IDependencyCycleDetector>();
         IClock clock = Substitute.For<IClock>();
         DateTimeOffset updatedAt = TestTodoFactory.Timestamp.AddHours(1);
         clock.UtcNow.Returns(updatedAt);
@@ -61,7 +61,7 @@ public sealed class DependencyCommandHandlerTests
         TodoItem source = TestTodoFactory.Create("source");
         TodoItem dependency = TestTodoFactory.Create("dependency");
         ITodoRepository repository = Substitute.For<ITodoRepository>();
-        IDependencyGraphService graph = Substitute.For<IDependencyGraphService>();
+        IDependencyCycleDetector graph = Substitute.For<IDependencyCycleDetector>();
         IClock clock = Substitute.For<IClock>();
         StubEndpoints(repository, source, dependency);
         graph.WouldCreateCycleAsync(
@@ -93,7 +93,7 @@ public sealed class DependencyCommandHandlerTests
     {
         TodoItem source = TestTodoFactory.Create("source");
         ITodoRepository repository = Substitute.For<ITodoRepository>();
-        IDependencyGraphService graph = Substitute.For<IDependencyGraphService>();
+        IDependencyCycleDetector graph = Substitute.For<IDependencyCycleDetector>();
         IClock clock = Substitute.For<IClock>();
         StubEndpoints(repository, source);
         AddDependencyCommandHandler handler = new AddDependencyCommandHandler(

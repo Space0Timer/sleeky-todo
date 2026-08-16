@@ -1,6 +1,6 @@
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
-public sealed class TodoCursorPayload
+public sealed record TodoCursorPayload
 {
     public int Version { get; init; }
 

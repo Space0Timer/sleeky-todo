@@ -22,9 +22,9 @@ public sealed class DependencyServicesTests
             CreateNode("todo-c", dependencies: new[] { "todo-a" }),
             CreateNode("todo-d"),
             CreateNode("todo-a"));
-        DependencyGraphService service = new DependencyGraphService(repository);
+        DependencyCycleDetector detector = new DependencyCycleDetector(repository);
 
-        bool createsCycle = await service.WouldCreateCycleAsync(
+        bool createsCycle = await detector.WouldCreateCycleAsync(
             Id("todo-a"),
             Id("todo-b"));
 
@@ -44,9 +44,9 @@ public sealed class DependencyServicesTests
             repository,
             CreateNode("todo-b", dependencies: new[] { "todo-c" }),
             CreateNode("todo-c", dependencies: new[] { "todo-b" }));
-        DependencyGraphService service = new DependencyGraphService(repository);
+        DependencyCycleDetector detector = new DependencyCycleDetector(repository);
 
-        bool createsCycle = await service.WouldCreateCycleAsync(
+        bool createsCycle = await detector.WouldCreateCycleAsync(
             Id("todo-a"),
             Id("todo-b"));
 
@@ -71,9 +71,9 @@ public sealed class DependencyServicesTests
                 dependencies: new[] { $"link-{index + 1}" }))
             .ToArray();
         StubGraph(repository, chain);
-        DependencyGraphService service = new DependencyGraphService(repository);
+        DependencyCycleDetector detector = new DependencyCycleDetector(repository);
 
-        Func<Task> deep = async () => await service.WouldCreateCycleAsync(
+        Func<Task> deep = async () => await detector.WouldCreateCycleAsync(
             Id("unrelated"),
             Id("link-0"));
 
@@ -100,9 +100,9 @@ public sealed class DependencyServicesTests
             .Select(index => $"child-{index}")
             .ToArray();
         StubGraph(repository, CreateNode("hub", dependencies: children));
-        DependencyGraphService service = new DependencyGraphService(repository);
+        DependencyCycleDetector detector = new DependencyCycleDetector(repository);
 
-        Func<Task> wide = async () => await service.WouldCreateCycleAsync(
+        Func<Task> wide = async () => await detector.WouldCreateCycleAsync(
             Id("unrelated"),
             Id("hub"));
 

@@ -5,7 +5,7 @@ using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 
-public sealed class CreateTodoCommand : IRequest<TodoDto>
+public sealed record CreateTodoCommand : IRequest<TodoDto>
 {
     /// <summary>
     /// <paramref name="id"/> lets a caller that may repeat a request choose the

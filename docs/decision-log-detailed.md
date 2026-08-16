@@ -24,7 +24,18 @@ CQRS here separates use-case code rather than introducing separate read and
 write databases.
 
 This keeps controllers thin and handlers independently testable while avoiding
-an event bus or messaging infrastructure for an in-process application.
+an event bus or messaging infrastructure for an in-process application. MediatR
+carries requests only. Nothing here is event-driven: there is no bus, no
+pub/sub, and no eventual consistency, and the one thing that started out as a
+domain event no longer is — see "Recurrence and atomic completion".
+
+Commands, queries, and the DTOs they return are records. They are immutable
+data with no identity of their own, so value equality and a readable
+`ToString` are what a test and a log want from them. Types that carry identity
+or behaviour stay classes — the `TodoItem` aggregate above all, whose equality
+is its `Id` and whose whole purpose is to change state under rules. API request
+contracts also stay classes, because model binding and their validation
+attributes are the reason they exist.
 
 ## Persisted React workflow
 
@@ -366,11 +377,39 @@ calculation reconstructs the target day from the stored anchor, preserving
 end-of-month and leap-year behavior.
 
 The first recurring TODO receives a series ID and occurrence number 1. A real
-transition into `Completed` raises `TodoCompletedDomainEvent`; a no-op
-Completed-to-Completed request raises nothing. Application dispatches the event
-in-process while the MongoDB session transaction is active. Its handler inserts
-the next occurrence with copied name, description, priority, recurrence, and
-series data, but no dependencies. A handler failure aborts the completed update.
+transition into `Completed` records a `TodoCompletion` on the aggregate; a
+no-op Completed-to-Completed request records nothing. The status handler reads
+that property and, when it carries a recurrence, inserts the next occurrence
+with copied name, description, priority, recurrence, and series data, but no
+dependencies, inside the MongoDB session transaction. A failed insert aborts
+the completed update.
+
+This began as a domain event behind a hand-written dispatcher, and a MediatR
+notification was tried in its place; both were removed, and then so was the
+event vocabulary. With one type, one place raising it, and one consumer, the
+indirection only obscured that the successor is written in the same
+transaction, and it left two ways of creating a next occurrence, because the
+bulk path never dispatched at all — it read the event as data and called
+`IRecurringOccurrenceFactory` directly. The single-item path now does the same,
+so the two agree by construction rather than by review.
+
+What survives is the job the event was always doing underneath: reporting out
+of the aggregate. `ChangeStatus` returns `bool`, but a completion decides more
+than "something changed" — it mints the successor's identifier so the insert
+and the response agree on it before the write. A single nullable property
+carries that, in place of a collection, a type filter, and a `ClearDomainEvents`
+call that existed to stop a second dispatch. The name follows the mechanism:
+nothing subscribes, so calling it an event promised a subscriber that was never
+going to arrive.
+
+The property is assigned on every transition rather than only on a completion,
+because it is now state rather than a queue something drains. Reopening a
+completed TODO clears it; otherwise a stale completion would survive and
+produce a second successor.
+
+Removing dispatch also settled the question of a mediator in Domain. There is
+no marker interface left, and Domain has no package references — this time
+because nothing needs one, rather than as a rule held for its own sake.
 
 The transaction reuses the existing expected-version filter. A unique partial
 index on `seriesId + occurrenceNumber` is the second idempotency boundary.

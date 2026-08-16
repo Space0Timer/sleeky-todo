@@ -154,7 +154,6 @@ public sealed class BulkChangeTodoStatusCommandHandlerTests
     {
         TodoItem completed = TestTodoFactory.Create("todo-1");
         _ = completed.ChangeStatus(TodoStatus.Completed, TestTodoFactory.Timestamp);
-        completed.ClearDomainEvents();
         TodoItem pending = TestTodoFactory.Create("todo-2");
         StageLoad(completed, pending);
 
