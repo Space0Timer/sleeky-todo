@@ -2,6 +2,10 @@ using FluentValidation;
 
 namespace Sleeky.Todo.Application.Todos.Validation;
 
+/// <summary>
+/// The rules more than one request shares, so a limit or a message is stated
+/// once and every request that carries the field agrees with the others.
+/// </summary>
 internal static class TodoValidationRules
 {
     public static IRuleBuilderOptions<T, string?> MaximumTrimmedDescriptionLength<T>(
@@ -24,6 +28,19 @@ internal static class TodoValidationRules
                 || searchText.Length <= TodoValidationLimits.SearchTextMaximumLength)
             .WithMessage(
                 $"Search text must not exceed {TodoValidationLimits.SearchTextMaximumLength} characters.");
+    }
+
+    /// <summary>
+    /// The version the client last saw, which every mutating command carries
+    /// for optimistic concurrency. Versions start at one, so zero or less can
+    /// only be an omission.
+    /// </summary>
+    public static IRuleBuilderOptions<T, long> ValidExpectedVersion<T>(
+        this IRuleBuilder<T, long> ruleBuilder)
+    {
+        return ruleBuilder
+            .GreaterThan(0)
+            .WithMessage("Expected version must be greater than zero.");
     }
 
     public static IRuleBuilderOptions<T, Guid> ValidTodoIdentifier<T>(

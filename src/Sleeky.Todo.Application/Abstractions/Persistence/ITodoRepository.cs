@@ -73,11 +73,10 @@ public interface ITodoRepository
     /// longer matches or any insert collides, leaving the batch unapplied when
     /// it runs inside a transaction.
     /// </summary>
-    /// <summary>
-    /// Applies every write as one batch. <paramref name="expectDeleted"/> is set
-    /// by a restoring batch, whose stored documents are soft-deleted and would
-    /// otherwise match no filter and be reported as a conflict.
-    /// </summary>
+    /// <param name="expectDeleted">
+    /// Set by a restoring batch, whose stored documents are soft-deleted and
+    /// would otherwise match no filter and be reported as a conflict.
+    /// </param>
     Task SaveBatchAsync(
         IReadOnlyCollection<TodoItem> updates,
         IReadOnlyCollection<TodoItem> inserts,

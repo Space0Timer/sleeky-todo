@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
-using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Exceptions;
 
@@ -35,16 +34,15 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
         DeleteTodoCommand request,
         CancellationToken cancellationToken)
     {
-        TodoItem todoItem = await todoRepository.GetByIdAsync(
+        TodoItem todoItem = await todoRepository.GetRequiredAsync(
             request.Id,
-            cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("TODO", request.Id);
-
-        TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
+            request.Version,
+            cancellationToken);
         await EnsureNoActiveDependentsAsync(todoItem.Id, cancellationToken);
 
+        // The retention window is the entity's rule: it stamps its own purge
+        // date from the deletion instant.
         todoItem.SoftDelete(clock.UtcNow);
-
         TodoItem deletedTodoItem = await todoRepository.SoftDeleteAsync(
             todoItem,
             cancellationToken);

@@ -15,7 +15,6 @@ public sealed class AddDependencyCommandValidator : AbstractValidator<AddDepende
             .ValidTodoIdentifier();
 
         RuleFor(command => command.Version)
-            .GreaterThan(0)
-            .WithMessage("Expected version must be greater than zero.");
+            .ValidExpectedVersion();
     }
 }

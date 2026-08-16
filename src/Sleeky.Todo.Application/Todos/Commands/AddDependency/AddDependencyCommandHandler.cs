@@ -43,11 +43,10 @@ public sealed class AddDependencyCommandHandler
     {
         // Only this end is mutated and persisted, so only this end is loaded
         // whole.
-        TodoItem todoItem = await todoRepository.GetByIdAsync(
+        TodoItem todoItem = await todoRepository.GetRequiredAsync(
             request.Id,
-            cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("TODO", request.Id);
-        TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
+            request.Version,
+            cancellationToken);
 
         // Ahead of the existence check, which a self dependency would pass, and
         // ahead of the cycle check, which would report it as a cycle instead: a
