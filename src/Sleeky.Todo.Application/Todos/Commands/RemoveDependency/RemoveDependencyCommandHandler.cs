@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
-using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 
 namespace Sleeky.Todo.Application.Todos.Commands.RemoveDependency;
@@ -35,11 +34,13 @@ public sealed class RemoveDependencyCommandHandler
         RemoveDependencyCommand request,
         CancellationToken cancellationToken)
     {
-        TodoItem todoItem = await todoRepository.GetByIdAsync(
+        TodoItem todoItem = await todoRepository.GetRequiredAsync(
             request.Id,
-            cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("TODO", request.Id);
-        TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
+            request.Version,
+            cancellationToken);
+
+        // Whether the edge exists, and whether this TODO may still be edited,
+        // are the entity's rules; there is no other TODO to consult here.
         todoItem.RemoveDependency(request.DependencyId, clock.UtcNow);
 
         TodoItem updatedTodo = await todoRepository.UpdateAsync(

@@ -26,7 +26,6 @@ public sealed class UpdateTodoCommandValidator : AbstractValidator<UpdateTodoCom
             .WithMessage("A valid TODO priority is required.");
 
         RuleFor(command => command.Version)
-            .GreaterThan(0)
-            .WithMessage("Expected version must be greater than zero.");
+            .ValidExpectedVersion();
     }
 }

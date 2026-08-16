@@ -12,6 +12,11 @@ using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Todos.Commands.Bulk.ChangeTodoStatus;
 
+/// <summary>
+/// Moves a selection of TODOs to one status as a unit: either every member
+/// moves or none does. A member already at the target is left alone — no
+/// write, no version bump — and does not gate the rest.
+/// </summary>
 public sealed class BulkChangeTodoStatusCommandHandler
     : IRequestHandler<BulkChangeTodoStatusCommand, BulkTodoResult>
 {
@@ -45,7 +50,7 @@ public sealed class BulkChangeTodoStatusCommandHandler
         BulkChangeTodoStatusCommand request,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<TodoItem> todos = await BulkTodoLoader.LoadAsync(
+        IReadOnlyList<TodoItem> todos = await BulkTodoBatch.LoadAsync(
             todoRepository,
             request.Items,
             cancellationToken);
@@ -56,7 +61,12 @@ public sealed class BulkChangeTodoStatusCommandHandler
 
         List<TodoItem> updates = ApplyStatusChange(todos, request.Status);
         List<TodoItem> inserts = CreateRecurringSuccessors(updates);
-        await PersistAsync(updates, inserts, cancellationToken);
+        await BulkTodoBatch.SaveAsync(
+            todoRepository,
+            transactionExecutor,
+            updates,
+            inserts,
+            cancellationToken);
 
         this.logger.LogInformation(
             1110,
@@ -65,7 +75,7 @@ public sealed class BulkChangeTodoStatusCommandHandler
             updates.Count,
             inserts.Count);
 
-        return BuildResult(todos, updates);
+        return BulkTodoResult.FromEntities(todos, written: updates);
     }
 
     /// <summary>
@@ -88,43 +98,20 @@ public sealed class BulkChangeTodoStatusCommandHandler
         return new DomainException($"A blocked TODO cannot move to {status}.");
     }
 
-    private static BulkTodoResult BuildResult(
-        IReadOnlyList<TodoItem> todos,
-        IReadOnlyCollection<TodoItem> updates)
-    {
-        HashSet<Guid> writtenIds = updates.Select(todoItem => todoItem.Id).ToHashSet();
-
-        BulkTodoResultItem[] items = todos
-            .Select(todoItem => ToResultItem(todoItem, writtenIds.Contains(todoItem.Id)))
-            .ToArray();
-
-        return new BulkTodoResult(items);
-    }
-
     /// <summary>
-    /// The version reported is the one the write produced, which the entity
-    /// itself never advances; an item that needed no write echoes its own. The
-    /// successor's identifier is read from the completion, where the entity
-    /// fixed it, rather than tracked separately.
+    /// Only moves toward doing the work are gated by prerequisites. Archiving,
+    /// unarchiving, and reopening are bookkeeping and ignore them, as the
+    /// single-item command does.
     /// </summary>
-    private static BulkTodoResultItem ToResultItem(TodoItem todoItem, bool written)
-    {
-        return new BulkTodoResultItem(
-            todoItem.Id,
-            written ? todoItem.Version + 1 : todoItem.Version,
-            todoItem.Status,
-            todoItem.DeletedAt,
-            todoItem.Completion?.NextOccurrenceId);
-    }
-
-    /// <summary>
+    /// <remarks>
     /// A dependency is satisfied only when it is completed. Completing the batch
     /// completes every dependency inside it, so membership is itself a guarantee
     /// and a prerequisite may be completed alongside its dependent. Any other
     /// target leaves the selection short of <see cref="TodoStatus.Completed"/>,
     /// so a dependency inside the batch blocks the transition instead of
-    /// satisfying it.
-    /// </summary>
+    /// satisfying it — and it blocks without a read, because the batch's own
+    /// move is what leaves it incomplete, whatever the store currently says.
+    /// </remarks>
     private async Task EnsureDependenciesAllowTransitionAsync(
         IReadOnlyList<TodoItem> todos,
         TodoStatus status,
@@ -220,36 +207,5 @@ public sealed class BulkChangeTodoStatusCommandHandler
         }
 
         return inserts;
-    }
-
-    /// <summary>
-    /// A batch that writes a single document does not need a transaction, which
-    /// keeps bulk requests working against a standalone MongoDB deployment.
-    /// </summary>
-    private Task PersistAsync(
-        IReadOnlyCollection<TodoItem> updates,
-        IReadOnlyCollection<TodoItem> inserts,
-        CancellationToken cancellationToken)
-    {
-        if (updates.Count == 0 && inserts.Count == 0)
-        {
-            return Task.CompletedTask;
-        }
-
-        if (updates.Count + inserts.Count == 1)
-        {
-            return todoRepository.SaveBatchAsync(updates, inserts, cancellationToken);
-        }
-
-        return transactionExecutor.ExecuteAsync(
-            async transactionCancellationToken =>
-            {
-                await todoRepository.SaveBatchAsync(
-                    updates,
-                    inserts,
-                    transactionCancellationToken);
-                return true;
-            },
-            cancellationToken);
     }
 }

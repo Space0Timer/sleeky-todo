@@ -38,8 +38,9 @@ public sealed class BulkRestoreTodosCommandHandler
         CancellationToken cancellationToken)
     {
         // Every selected TODO is deleted by definition, so this is the one batch
-        // that has to look past the soft-delete filter to find its selection.
-        IReadOnlyList<TodoItem> todos = await BulkTodoLoader.LoadAsync(
+        // that has to look past the soft-delete filter to find its selection,
+        // and the one whose writes must expect deleted documents.
+        IReadOnlyList<TodoItem> todos = await BulkTodoBatch.LoadAsync(
             todoRepository,
             request.Items,
             cancellationToken,
@@ -48,30 +49,20 @@ public sealed class BulkRestoreTodosCommandHandler
         // Restoration has no dependency gate: a restored TODO blocks nothing,
         // and its own prerequisites are evaluated when it next changes status.
         RestoreAll(todos);
-        await PersistAsync(todos, cancellationToken);
+        await BulkTodoBatch.SaveAsync(
+            todoRepository,
+            transactionExecutor,
+            updates: todos,
+            inserts: Array.Empty<TodoItem>(),
+            cancellationToken,
+            expectDeleted: true);
 
         this.logger.LogInformation(
             1112,
             "Bulk TODO restoration returned {TodoCount} TODOs to the active list",
             todos.Count);
 
-        return BuildResult(todos);
-    }
-
-    /// <summary>
-    /// Every item was written, so each reports the version the write produced,
-    /// which the entity itself never advances.
-    /// </summary>
-    private static BulkTodoResult BuildResult(IReadOnlyList<TodoItem> todos)
-    {
-        return new BulkTodoResult(todos
-            .Select(todoItem => new BulkTodoResultItem(
-                todoItem.Id,
-                todoItem.Version + 1,
-                todoItem.Status,
-                todoItem.DeletedAt,
-                null))
-            .ToArray());
+        return BulkTodoResult.FromEntities(todos, written: todos);
     }
 
     /// <summary>
@@ -85,35 +76,5 @@ public sealed class BulkRestoreTodosCommandHandler
         {
             todoItem.Restore(restoredAt);
         }
-    }
-
-    /// <summary>
-    /// A batch that writes a single document does not need a transaction, which
-    /// keeps bulk requests working against a standalone MongoDB deployment.
-    /// </summary>
-    private Task PersistAsync(
-        IReadOnlyCollection<TodoItem> updates,
-        CancellationToken cancellationToken)
-    {
-        if (updates.Count == 1)
-        {
-            return todoRepository.SaveBatchAsync(
-                updates,
-                Array.Empty<TodoItem>(),
-                cancellationToken,
-                expectDeleted: true);
-        }
-
-        return transactionExecutor.ExecuteAsync(
-            async transactionCancellationToken =>
-            {
-                await todoRepository.SaveBatchAsync(
-                    updates,
-                    Array.Empty<TodoItem>(),
-                    transactionCancellationToken,
-                    expectDeleted: true);
-                return true;
-            },
-            cancellationToken);
     }
 }

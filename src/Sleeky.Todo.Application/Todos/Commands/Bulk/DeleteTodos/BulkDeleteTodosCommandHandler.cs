@@ -38,14 +38,19 @@ public sealed class BulkDeleteTodosCommandHandler
         BulkDeleteTodosCommand request,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<TodoItem> todos = await BulkTodoLoader.LoadAsync(
+        IReadOnlyList<TodoItem> todos = await BulkTodoBatch.LoadAsync(
             todoRepository,
             request.Items,
             cancellationToken);
         await EnsureNoDependentsLeftBehindAsync(todos, cancellationToken);
 
         SoftDeleteAll(todos);
-        await PersistAsync(todos, cancellationToken);
+        await BulkTodoBatch.SaveAsync(
+            todoRepository,
+            transactionExecutor,
+            updates: todos,
+            inserts: Array.Empty<TodoItem>(),
+            cancellationToken);
 
         this.logger.LogInformation(
             1111,
@@ -53,23 +58,7 @@ public sealed class BulkDeleteTodosCommandHandler
             todos.Count,
             todos[0].PurgeAt);
 
-        return BuildResult(todos);
-    }
-
-    /// <summary>
-    /// Every item was written, so each reports the version the write produced,
-    /// which the entity itself never advances.
-    /// </summary>
-    private static BulkTodoResult BuildResult(IReadOnlyList<TodoItem> todos)
-    {
-        return new BulkTodoResult(todos
-            .Select(todoItem => new BulkTodoResultItem(
-                todoItem.Id,
-                todoItem.Version + 1,
-                todoItem.Status,
-                todoItem.DeletedAt,
-                null))
-            .ToArray());
+        return BulkTodoResult.FromEntities(todos, written: todos);
     }
 
     /// <summary>
@@ -102,33 +91,5 @@ public sealed class BulkDeleteTodosCommandHandler
         {
             todoItem.SoftDelete(deletedAt);
         }
-    }
-
-    /// <summary>
-    /// A batch that writes a single document does not need a transaction, which
-    /// keeps bulk requests working against a standalone MongoDB deployment.
-    /// </summary>
-    private Task PersistAsync(
-        IReadOnlyCollection<TodoItem> updates,
-        CancellationToken cancellationToken)
-    {
-        if (updates.Count == 1)
-        {
-            return todoRepository.SaveBatchAsync(
-                updates,
-                Array.Empty<TodoItem>(),
-                cancellationToken);
-        }
-
-        return transactionExecutor.ExecuteAsync(
-            async transactionCancellationToken =>
-            {
-                await todoRepository.SaveBatchAsync(
-                    updates,
-                    Array.Empty<TodoItem>(),
-                    transactionCancellationToken);
-                return true;
-            },
-            cancellationToken);
     }
 }

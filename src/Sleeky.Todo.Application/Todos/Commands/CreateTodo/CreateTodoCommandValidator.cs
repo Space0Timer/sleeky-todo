@@ -31,6 +31,11 @@ public sealed class CreateTodoCommandValidator : AbstractValidator<CreateTodoCom
         When(command => !command.RecurrenceType.HasValue, ConfigureNoRecurrenceRules);
     }
 
+    /// <summary>
+    /// A daily, weekly, or monthly schedule implies its unit, so a unit is
+    /// optional and only ever restates that implication. Naming a different one
+    /// is a contradiction, refused rather than resolved in either's favour.
+    /// </summary>
     private static bool HasMatchingStandardUnit(CreateTodoCommand command)
     {
         if (!command.RecurrenceUnit.HasValue)

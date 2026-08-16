@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
-using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 
 namespace Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
@@ -36,13 +35,11 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
     {
         // The target is deleted by definition, so this is the one single-item
         // command that has to look past the soft-delete filter to find it.
-        TodoItem todoItem = await todoRepository.GetByIdAsync(
+        TodoItem todoItem = await todoRepository.GetRequiredAsync(
             request.Id,
-            includeDeleted: true,
-            cancellationToken)
-            ?? throw new NotFoundException("TODO", request.Id);
-
-        TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
+            request.Version,
+            cancellationToken,
+            includeDeleted: true);
 
         // Restoration has no dependency gate: a restored TODO blocks nothing,
         // and its own prerequisites are evaluated when it next changes status.

@@ -4,7 +4,11 @@ using Sleeky.Todo.Domain.Entities;
 
 namespace Sleeky.Todo.Application.Todos.Commands.Bulk;
 
-internal static class BulkTodoLoader
+/// <summary>
+/// The mechanics every bulk command shares: how a selection is loaded and how
+/// its writes reach the store. Each handler decides what changes in between.
+/// </summary>
+internal static class BulkTodoBatch
 {
     /// <summary>
     /// Loads every selected TODO in one query, in request order, rejecting the
@@ -29,6 +33,53 @@ internal static class BulkTodoLoader
         EnsureNoneStale(items, todosById);
 
         return ordered;
+    }
+
+    /// <summary>
+    /// Persists a batch's updates and inserts as one unit. A batch that writes
+    /// nothing makes no round trip, and one that writes a single document skips
+    /// the transaction, which keeps a one-item bulk request working against a
+    /// standalone MongoDB deployment. Anything larger commits or rolls back
+    /// together, so a conflict on any member leaves every member untouched.
+    /// </summary>
+    /// <param name="expectDeleted">
+    /// Set by a restoring batch, whose stored documents are soft-deleted and
+    /// would otherwise match no filter and be reported as a conflict.
+    /// </param>
+    public static Task SaveAsync(
+        ITodoRepository todoRepository,
+        ITransactionExecutor transactionExecutor,
+        IReadOnlyCollection<TodoItem> updates,
+        IReadOnlyCollection<TodoItem> inserts,
+        CancellationToken cancellationToken,
+        bool expectDeleted = false)
+    {
+        int writeCount = updates.Count + inserts.Count;
+        if (writeCount == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (writeCount == 1)
+        {
+            return todoRepository.SaveBatchAsync(
+                updates,
+                inserts,
+                cancellationToken,
+                expectDeleted);
+        }
+
+        return transactionExecutor.ExecuteAsync(
+            async transactionCancellationToken =>
+            {
+                await todoRepository.SaveBatchAsync(
+                    updates,
+                    inserts,
+                    transactionCancellationToken,
+                    expectDeleted);
+                return true;
+            },
+            cancellationToken);
     }
 
     /// <summary>

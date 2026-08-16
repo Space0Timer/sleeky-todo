@@ -17,7 +17,6 @@ public sealed class ChangeTodoStatusCommandValidator
             .WithMessage("A valid TODO status is required.");
 
         RuleFor(command => command.Version)
-            .GreaterThan(0)
-            .WithMessage("Expected version must be greater than zero.");
+            .ValidExpectedVersion();
     }
 }

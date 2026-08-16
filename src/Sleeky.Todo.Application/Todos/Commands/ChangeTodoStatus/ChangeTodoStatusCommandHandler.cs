@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Abstractions.Time;
 using Sleeky.Todo.Application.DTOs;
-using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Dependencies;
 using Sleeky.Todo.Application.Todos.Recurrence;
 using Sleeky.Todo.Domain.Entities;
@@ -52,12 +51,13 @@ public sealed class ChangeTodoStatusCommandHandler
         ChangeTodoStatusCommand request,
         CancellationToken cancellationToken)
     {
-        TodoItem todoItem = await todoRepository.GetByIdAsync(
+        TodoItem todoItem = await todoRepository.GetRequiredAsync(
             request.Id,
-            cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("TODO", request.Id);
-        TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
+            request.Version,
+            cancellationToken);
 
+        // Already there: nothing to gate, nothing to write, and the version the
+        // client holds stays current.
         if (todoItem.Status == request.Status)
         {
             return TodoDto.FromEntity(todoItem);
@@ -68,6 +68,9 @@ public sealed class ChangeTodoStatusCommandHandler
             request.Status,
             cancellationToken);
 
+        // The changed flag is discarded: the early return above already ruled a
+        // no-op out. What matters is the completion the entity records, which
+        // carries the successor a recurring TODO needs inserted.
         TodoStatus previousStatus = todoItem.Status;
         _ = todoItem.ChangeStatus(request.Status, clock.UtcNow);
         TodoCompletion? completion = todoItem.Completion;
@@ -107,12 +110,18 @@ public sealed class ChangeTodoStatusCommandHandler
             completion.TodoId);
     }
 
+    /// <summary>
+    /// Only moves toward doing the work are gated by prerequisites. Archiving,
+    /// unarchiving, and reopening are bookkeeping and ignore them. Whether a
+    /// prerequisite is satisfied depends on TODOs this one cannot see, so the
+    /// evaluator answers it here rather than the entity.
+    /// </summary>
     private async Task EnsureDependenciesAllowTransitionAsync(
         TodoItem todoItem,
         TodoStatus status,
         CancellationToken cancellationToken)
     {
-        if (status != TodoStatus.InProgress && status != TodoStatus.Completed)
+        if (status is not (TodoStatus.Completed or TodoStatus.InProgress))
         {
             return;
         }

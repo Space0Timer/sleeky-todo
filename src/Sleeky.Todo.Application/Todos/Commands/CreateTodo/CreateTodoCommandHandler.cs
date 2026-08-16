@@ -40,6 +40,11 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
         CancellationToken cancellationToken)
     {
         RecurrenceSchedule? recurrence = BuildRecurrence(request);
+
+        // A recurring TODO is the first occurrence of a new series, so it mints
+        // the series identifier its successors will share and takes occurrence
+        // number one. A one-off carries neither; the entity refuses a half-set
+        // combination.
         TodoItem todoItem = TodoItem.Create(
             request.Id ?? Guid.NewGuid(),
             currentUser.UserId,
@@ -49,8 +54,8 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
             request.Priority,
             clock.UtcNow,
             recurrence,
-            recurrence is null ? null : Guid.NewGuid(),
-            recurrence is null ? null : 1);
+            seriesId: recurrence is null ? null : Guid.NewGuid(),
+            occurrenceNumber: recurrence is null ? null : 1);
 
         await todoRepository.AddAsync(todoItem, cancellationToken);
 

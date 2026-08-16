@@ -12,7 +12,6 @@ public sealed class RestoreTodoCommandValidator : AbstractValidator<RestoreTodoC
             .ValidTodoIdentifier();
 
         RuleFor(command => command.Version)
-            .GreaterThan(0)
-            .WithMessage("Expected version must be greater than zero.");
+            .ValidExpectedVersion();
     }
 }
