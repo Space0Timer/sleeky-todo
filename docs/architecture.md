@@ -23,12 +23,12 @@ flowchart TB
 
     subgraph application["Sleeky.Todo.Application"]
         pipeline["MediatR pipeline behaviours<br/>validation · domain-exception translation · request logging"]
-        handlers["Command and query handlers<br/>dependency evaluator · recurrence factory · event dispatcher"]
+        handlers["Command and query handlers<br/>dependency evaluator · recurrence factory"]
         abstractions["Abstractions<br/>ITodoRepository · ITodoListReader · ITransactionExecutor<br/>ICurrentUser · IClock · IAssistantSettingsRepository"]
     end
 
     subgraph domain["Sleeky.Todo.Domain"]
-        entity["TodoItem aggregate<br/>status and archive rules · dependency edges<br/>RecurrenceSchedule · TodoCompletedDomainEvent"]
+        entity["TodoItem aggregate<br/>status and archive rules · dependency edges<br/>RecurrenceSchedule · TodoCompletion"]
     end
 
     subgraph infrastructure["Sleeky.Todo.Infrastructure"]
@@ -441,8 +441,8 @@ Integration tests issue simultaneous mutations with the same version and verify 
 
 ## Transactional recurring completion
 
-Only a real transition from a non-completed state into `Completed` raises a
-`TodoCompletedDomainEvent`. Completion runs through `ITransactionExecutor`:
+Only a real transition from a non-completed state into `Completed` records a
+`TodoCompletion` on the aggregate. Completion runs through `ITransactionExecutor`:
 
 ```mermaid
 sequenceDiagram
@@ -457,7 +457,7 @@ sequenceDiagram
     H->>R: GetByIdAsync(id)
     R->>M: find {_id, ownerId, deletedAt: null}
     H->>H: version guard · dependency evaluator (blocked?)
-    H->>H: todo.ChangeStatus(Completed) raises TodoCompletedDomainEvent
+    H->>H: todo.ChangeStatus(Completed) records todo.Completion
     H->>TX: ExecuteAsync(work)
     TX->>M: start session and transaction
     H->>R: UpdateAsync(todo)
@@ -467,13 +467,31 @@ sequenceDiagram
         TX->>M: abort
         H-->>C: 409 Problem Details
     else replaced
-        H->>H: dispatch event in-process → next date from the scheduled due date
+        H->>H: read the completion event → next date from the scheduled due date
         H->>R: AddAsync(next occurrence: same seriesId, occurrenceNumber + 1)
         R->>M: insertOne (unique partial index on owner + seriesId + occurrenceNumber)
         TX->>M: commit
         H-->>C: 200 {version: N+1, nextOccurrenceId}
     end
 ```
+
+Nothing is dispatched. `ChangeStatus` returns whether anything changed and
+leaves the detail in `todoItem.Completion`; the handler reads that property,
+and when it carries a recurrence it builds the successor through
+`IRecurringOccurrenceFactory` and inserts it inside the same transaction lambda
+as the update — exactly what the bulk path already did with the same factory.
+The completion is therefore how `TodoItem` reports what it decided, including
+the successor's identifier, rather than a message in flight. That keeps both
+writes visibly in one place and leaves one way of creating a next occurrence
+instead of two.
+
+`ChangeStatus` assigns the property on every transition rather than only on a
+completion, so reopening a completed TODO clears it. A stale completion would
+otherwise survive on the aggregate and produce a second successor.
+
+Completing a *non-recurring* TODO records a completion too, but writes only the
+update, so it takes the single-write path like every other status change rather
+than opening a transaction it does not need.
 
 `ITransactionExecutor` takes the work as a lambda and runs it as one atomic
 unit, committing when it returns and aborting when it throws. It is deliberately
@@ -533,8 +551,8 @@ prerequisite alone is not.
 
 Recurring completions build their next occurrences through the shared
 `IRecurringOccurrenceFactory` and join the same batch. The bulk path
-deliberately bypasses `IDomainEventDispatcher`, whose handler would issue a
-separate insert per occurrence.
+deliberately raises no notification, whose handler would issue a separate
+insert per occurrence.
 
 Because a bulk write reports counts rather than documents, written versions are
 computed as `version + 1` and checked against the matched and inserted counts
@@ -629,7 +647,7 @@ rejects the transition when one exists.
 
 Dependency mutations are application commands backed by aggregate methods on
 `TodoItem`. The add path verifies an active target, then uses a breadth-first
-graph service to determine whether the proposed target already reaches the
+cycle detector to determine whether the proposed target already reaches the
 source. Each frontier is loaded with one `GetByIdsAsync` call, and a visited set
 guarantees termination for malformed legacy graphs.
 
