@@ -57,6 +57,29 @@ public sealed class ApiExceptionHandlerTests
         logger.Entries.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// A member acting above their level is told so — they can already see
+    /// the Space, so there is nothing a 404 would hide — and it is an expected
+    /// outcome, not an error worth an event.
+    /// </summary>
+    [TestMethod]
+    public async Task InsufficientSpacePermissionIsForbiddenAndNotLogged()
+    {
+        ApiExceptionTestLogger<ApiExceptionHandler> logger =
+            new ApiExceptionTestLogger<ApiExceptionHandler>();
+        ApiExceptionHandler handler = new ApiExceptionHandler(logger);
+        DefaultHttpContext context = CreateHttpContext();
+        ForbiddenException exception = new ForbiddenException(
+            "Space",
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            "Write");
+
+        _ = await handler.TryHandleAsync(context, exception, CancellationToken.None);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        logger.Entries.Should().BeEmpty();
+    }
+
     private static DefaultHttpContext CreateHttpContext()
     {
         DefaultHttpContext context = new DefaultHttpContext();
