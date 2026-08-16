@@ -58,6 +58,10 @@ public sealed class ApiExceptionHandler : IExceptionHandler
                 StatusCodes.Status404NotFound,
                 "Resource not found.",
                 exception.Message),
+            ForbiddenException => CreateProblem(
+                StatusCodes.Status403Forbidden,
+                "Forbidden.",
+                exception.Message),
             ConcurrencyConflictException => CreateProblem(
                 StatusCodes.Status409Conflict,
                 "Concurrency conflict.",

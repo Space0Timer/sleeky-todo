@@ -5,6 +5,7 @@ using FluentAssertions;
 using NSubstitute;
 
 using Sleeky.Todo.Application.Behaviors;
+using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Application.Todos.Commands.AddDependency;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
@@ -25,6 +26,7 @@ public sealed class ConstructorNullGuardTests
     [
         typeof(RequestLoggingBehavior<ConstructorGuardTestRequest, string>),
         typeof(ValidationBehavior<ConstructorGuardTestRequest, string>),
+        typeof(SpaceAccessBehavior<ConstructorGuardTestRequest, string>),
         typeof(AddDependencyCommandHandler),
         typeof(ChangeTodoStatusCommandHandler),
         typeof(CreateTodoCommandHandler),

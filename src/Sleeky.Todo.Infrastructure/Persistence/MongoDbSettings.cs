@@ -13,4 +13,6 @@ public sealed class MongoDbSettings
     public string UsersCollectionName { get; init; } = "users";
 
     public string AssistantSettingsCollectionName { get; init; } = "assistantSettings";
+
+    public string SpacesCollectionName { get; init; } = "spaces";
 }

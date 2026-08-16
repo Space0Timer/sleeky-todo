@@ -48,6 +48,9 @@ public static class InfrastructureServiceCollectionExtensions
             .Validate(
                 settings => !string.IsNullOrWhiteSpace(settings.AssistantSettingsCollectionName),
                 $"{MongoDbSettings.SectionName}:AssistantSettingsCollectionName is required.")
+            .Validate(
+                settings => !string.IsNullOrWhiteSpace(settings.SpacesCollectionName),
+                $"{MongoDbSettings.SectionName}:SpacesCollectionName is required.")
             .ValidateOnStart();
 
         services.AddSingleton<IMongoClient>(serviceProvider =>
@@ -86,6 +89,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(serviceProvider => ResolveCollection<AssistantSettingsDocument>(
             serviceProvider,
             settings => settings.AssistantSettingsCollectionName));
+        services.AddSingleton(serviceProvider => ResolveCollection<SpaceDocument>(
+            serviceProvider,
+            settings => settings.SpacesCollectionName));
         services.AddSingleton<IClock, SystemClock>();
         services.AddScoped<MongoTransactionContext>();
         services.AddScoped<ITransactionExecutor, MongoTransactionExecutor>();
@@ -93,7 +99,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITodoListReader, MongoTodoListReader>();
         services.AddScoped<IUserDirectoryRepository, UserDirectoryRepository>();
         services.AddScoped<IAssistantSettingsRepository, AssistantSettingsRepository>();
+        services.AddScoped<ISpaceRepository, SpaceRepository>();
         services.AddHostedService<MongoDbIndexInitializer>();
+        services.AddHostedService<MongoSpaceIndexInitializer>();
         services
             .AddHealthChecks()
             .AddCheck<MongoDbHealthCheck>("mongodb");
