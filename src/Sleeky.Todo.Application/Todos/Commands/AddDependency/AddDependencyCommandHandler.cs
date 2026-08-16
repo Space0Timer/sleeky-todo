@@ -57,24 +57,8 @@ public sealed class AddDependencyCommandHandler
             throw new DomainException("A TODO cannot depend on itself.");
         }
 
-        // The other end is only ever asked whether it exists, so it is counted
-        // rather than fetched.
-        bool dependencyExists = await todoRepository.ExistsAsync(
-            request.DependencyId,
-            cancellationToken: cancellationToken);
-        if (!dependencyExists)
-        {
-            throw new NotFoundException("Dependency TODO", request.DependencyId);
-        }
-
-        bool createsCycle = await cycleDetector.WouldCreateCycleAsync(
-            todoItem.Id,
-            request.DependencyId,
-            cancellationToken);
-        if (createsCycle)
-        {
-            throw new DomainException("Adding this dependency would create a cycle.");
-        }
+        await EnsureDependencyExistsAsync(request.DependencyId, cancellationToken);
+        await EnsureNoCycleAsync(todoItem.Id, request.DependencyId, cancellationToken);
 
         todoItem.AddDependency(request.DependencyId, clock.UtcNow);
         TodoItem updatedTodo = await todoRepository.UpdateAsync(
@@ -89,5 +73,39 @@ public sealed class AddDependencyCommandHandler
             updatedTodo.Version);
 
         return TodoDto.FromEntity(updatedTodo);
+    }
+
+    /// <summary>
+    /// The other end is only ever asked whether it exists, so it is counted
+    /// rather than fetched.
+    /// </summary>
+    private async Task EnsureDependencyExistsAsync(
+        Guid dependencyId,
+        CancellationToken cancellationToken)
+    {
+        bool dependencyExists = await todoRepository.ExistsAsync(
+            dependencyId,
+            cancellationToken: cancellationToken);
+
+        if (!dependencyExists)
+        {
+            throw new NotFoundException("Dependency TODO", dependencyId);
+        }
+    }
+
+    private async Task EnsureNoCycleAsync(
+        Guid todoId,
+        Guid dependencyId,
+        CancellationToken cancellationToken)
+    {
+        bool createsCycle = await cycleDetector.WouldCreateCycleAsync(
+            todoId,
+            dependencyId,
+            cancellationToken);
+
+        if (createsCycle)
+        {
+            throw new DomainException("Adding this dependency would create a cycle.");
+        }
     }
 }

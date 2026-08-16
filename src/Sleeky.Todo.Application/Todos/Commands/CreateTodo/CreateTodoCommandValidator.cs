@@ -27,51 +27,8 @@ public sealed class CreateTodoCommandValidator : AbstractValidator<CreateTodoCom
             .IsInEnum()
             .WithMessage("A valid TODO priority is required.");
 
-        When(command => command.RecurrenceType.HasValue, () =>
-        {
-            RuleFor(command => command.RecurrenceType!.Value)
-                .IsInEnum()
-                .WithMessage("A valid recurrence type is required.");
-
-            RuleFor(command => command.RecurrenceInterval)
-                .NotNull()
-                .GreaterThan(0)
-                .WithMessage("The recurrence interval must be positive.");
-
-            RuleFor(command => command.RecurrenceUnit!.Value)
-                .IsInEnum()
-                .When(command => command.RecurrenceUnit.HasValue)
-                .WithMessage("A valid recurrence unit is required.");
-
-            When(command => command.RecurrenceType == RecurrenceType.Custom, () =>
-            {
-                RuleFor(command => command.RecurrenceUnit)
-                    .NotNull()
-                    .WithMessage("A recurrence unit is required for a custom schedule.");
-            });
-
-            When(command => command.RecurrenceType != RecurrenceType.Custom, () =>
-            {
-                RuleFor(command => command.RecurrenceInterval)
-                    .Equal(1)
-                    .WithMessage(
-                        "Daily, weekly, and monthly recurrence intervals must be one.");
-                RuleFor(command => command)
-                    .Must(HasMatchingStandardUnit)
-                    .WithName(nameof(CreateTodoCommand.RecurrenceUnit))
-                    .WithMessage("The recurrence unit does not match the recurrence type.");
-            });
-        });
-
-        When(command => !command.RecurrenceType.HasValue, () =>
-        {
-            RuleFor(command => command.RecurrenceInterval)
-                .Null()
-                .WithMessage("A recurrence type is required when an interval is supplied.");
-            RuleFor(command => command.RecurrenceUnit)
-                .Null()
-                .WithMessage("A recurrence type is required when a unit is supplied.");
-        });
+        When(command => command.RecurrenceType.HasValue, ConfigureRecurrenceRules);
+        When(command => !command.RecurrenceType.HasValue, ConfigureNoRecurrenceRules);
     }
 
     private static bool HasMatchingStandardUnit(CreateTodoCommand command)
@@ -88,5 +45,61 @@ public sealed class CreateTodoCommandValidator : AbstractValidator<CreateTodoCom
             RecurrenceType.Monthly => command.RecurrenceUnit == RecurrenceUnit.Months,
             _ => true,
         };
+    }
+
+    /// <summary>
+    /// The interval and unit a schedule needs, which differ by type: a custom
+    /// schedule supplies both, a daily, weekly, or monthly one is fixed at one
+    /// and may only restate the unit its type implies.
+    /// </summary>
+    private void ConfigureRecurrenceRules()
+    {
+        RuleFor(command => command.RecurrenceType!.Value)
+            .IsInEnum()
+            .WithMessage("A valid recurrence type is required.");
+
+        RuleFor(command => command.RecurrenceInterval)
+            .NotNull()
+            .GreaterThan(0)
+            .WithMessage("The recurrence interval must be positive.");
+
+        RuleFor(command => command.RecurrenceUnit!.Value)
+            .IsInEnum()
+            .When(command => command.RecurrenceUnit.HasValue)
+            .WithMessage("A valid recurrence unit is required.");
+
+        When(command => command.RecurrenceType == RecurrenceType.Custom, () =>
+        {
+            RuleFor(command => command.RecurrenceUnit)
+                .NotNull()
+                .WithMessage("A recurrence unit is required for a custom schedule.");
+        });
+
+        When(command => command.RecurrenceType != RecurrenceType.Custom, () =>
+        {
+            RuleFor(command => command.RecurrenceInterval)
+                .Equal(1)
+                .WithMessage(
+                    "Daily, weekly, and monthly recurrence intervals must be one.");
+            RuleFor(command => command)
+                .Must(HasMatchingStandardUnit)
+                .WithName(nameof(CreateTodoCommand.RecurrenceUnit))
+                .WithMessage("The recurrence unit does not match the recurrence type.");
+        });
+    }
+
+    /// <summary>
+    /// A one-off may not carry schedule parts: an interval or unit without a
+    /// type is more likely a mistake than an intent, so it is refused rather
+    /// than ignored.
+    /// </summary>
+    private void ConfigureNoRecurrenceRules()
+    {
+        RuleFor(command => command.RecurrenceInterval)
+            .Null()
+            .WithMessage("A recurrence type is required when an interval is supplied.");
+        RuleFor(command => command.RecurrenceUnit)
+            .Null()
+            .WithMessage("A recurrence type is required when a unit is supplied.");
     }
 }
