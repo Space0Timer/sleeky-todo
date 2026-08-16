@@ -4,7 +4,7 @@ using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.DTOs;
 
-public sealed class TodoDto
+public sealed record TodoDto
 {
     private TodoDto(
         Guid id,

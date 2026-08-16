@@ -327,11 +327,11 @@ public sealed class GetTodosQueryHandlerTests
             new DateOnly(2026, 8, 1).AddDays(index / 3),
             TodoStatus.Open,
             TodoPriority.Medium,
-            isRecurring: false,
-            isBlocked: false,
-            incompleteDependencyCount: 0,
-            version: 1,
-            deletedAt: null,
-            purgeAt: null);
+            IsRecurring: false,
+            IsBlocked: false,
+            IncompleteDependencyCount: 0,
+            Version: 1,
+            DeletedAt: null,
+            PurgeAt: null);
     }
 }

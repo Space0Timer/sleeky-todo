@@ -4,7 +4,7 @@ using Sleeky.Todo.Application.DTOs;
 
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 
-public sealed class GetTodoSelectionQuery : IRequest<TodoSelection>
+public sealed record GetTodoSelectionQuery : IRequest<TodoSelection>
 {
     public GetTodoSelectionQuery(IReadOnlyCollection<Guid> ids)
     {

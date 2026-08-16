@@ -5,7 +5,7 @@ using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
-public sealed class GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
+public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
 {
     public const int DefaultPageSize = 50;
     public const int MaximumPageSize = 100;

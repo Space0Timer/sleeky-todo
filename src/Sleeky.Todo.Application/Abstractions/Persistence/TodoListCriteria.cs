@@ -3,7 +3,7 @@ using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Abstractions.Persistence;
 
-public sealed class TodoListCriteria
+public sealed record TodoListCriteria
 {
     public TodoListCriteria(
         TodoStatus? status,

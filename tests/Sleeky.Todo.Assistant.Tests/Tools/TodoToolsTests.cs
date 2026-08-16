@@ -574,7 +574,7 @@ public sealed class TodoToolsTests
                     this.Listed = (GetTodosQuery)call
                         .Arg<IRequest<CursorPage<TodoListItemDto>>>();
                     return Task.FromResult(
-                        new CursorPage<TodoListItemDto>(items, nextCursor: null));
+                        new CursorPage<TodoListItemDto>(items, NextCursor: null));
                 });
         }
 
