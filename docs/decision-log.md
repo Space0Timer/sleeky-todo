@@ -92,6 +92,13 @@ records each decision as it was made; the mechanisms are described in
   model: a weaker model degrades helpfulness, not data.
 - **One container serves SPA and API from one origin**, so the session cookie
   has one origin and no gateway is needed.
+- **Rate limiting keyed by user, not IP.** A per-user concurrency limit on
+  assistant turns and a per-user fixed-window limit on mutation endpoints,
+  both partitioned by the authenticated user ID so a rejected request and its
+  request log name the same caller; anonymous, read, and assistant-path
+  traffic are excluded from the mutation limiter so the two policies don't
+  compound. The user's own model key removes the cost concern, not the abuse
+  one.
 
 ## 3. What I chose not to build, and why
 
@@ -122,8 +129,6 @@ records each decision as it was made; the mechanisms are described in
   already the carved-out exception to the "no user, no query" rule.
 - **Observability beyond logs:** OpenTelemetry metrics and traces for request
   latency, Mongo command timing, and assistant token usage.
-- **Rate limiting** on the assistant and mutation endpoints; the user's own key
-  removes the cost concern, not the abuse one.
 - **Component-level frontend tests**, for faster feedback than the browser
   suite gives on UI state.
 - **A full-stack Compose profile** that also runs the application image, so
