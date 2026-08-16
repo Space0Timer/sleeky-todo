@@ -27,6 +27,13 @@ namespace Sleeky.Todo.Assistant.Tools;
 /// every guardrail the HTTP API has. Nothing here reaches a repository, so
 /// there is no path by which the assistant can do something a browser could
 /// not.
+///
+/// Every tool follows the same shape: parse what the model sent, refuse with a
+/// <see cref="ToolFailure"/> the model can act on, dispatch, record what the
+/// model now knows in the ledger, and report. A parameter the tool checks
+/// itself is one whose failure would otherwise surface as a thrown exception,
+/// which the loop reports to the model as a generic error naming nothing — so
+/// it would retry the same call until the turn aborts.
 /// </remarks>
 public sealed class TodoTools
 {
@@ -82,80 +89,34 @@ public sealed class TodoTools
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        TodoStatus? parsedStatus = null;
-        TodoPriority? parsedPriority = null;
-        TodoListScope parsedScope = TodoListScope.Active;
-        DateOnly? parsedFrom = null;
-        DateOnly? parsedTo = null;
-
-        if (status is not null)
+        if (!TodoToolParsing.TryParseOptionalEnum(status, "status", out TodoStatus? parsedStatus, out string? error))
         {
-            if (!TodoToolParsing.TryParseEnum(status, "status", out TodoStatus value, out string? error))
-            {
-                return new ToolFailure(error);
-            }
-
-            parsedStatus = value;
+            return new ToolFailure(error);
         }
 
-        if (priority is not null)
+        if (!TodoToolParsing.TryParseOptionalEnum(priority, "priority", out TodoPriority? parsedPriority, out error))
         {
-            if (!TodoToolParsing.TryParseEnum(priority, "priority", out TodoPriority value, out string? error))
-            {
-                return new ToolFailure(error);
-            }
-
-            parsedPriority = value;
+            return new ToolFailure(error);
         }
 
-        if (scope is not null)
+        if (!TodoToolParsing.TryParseOptionalEnum(scope, "scope", out TodoListScope? parsedScope, out error))
         {
-            if (!TodoToolParsing.TryParseEnum(scope, "scope", out parsedScope, out string? error))
-            {
-                return new ToolFailure(error);
-            }
+            return new ToolFailure(error);
         }
 
-        if (dueFrom is not null)
+        if (!TodoToolParsing.TryParseOptionalDate(dueFrom, "dueFrom", out DateOnly? parsedFrom, out error))
         {
-            if (!TodoToolParsing.TryParseDate(dueFrom, "dueFrom", out DateOnly value, out string? error))
-            {
-                return new ToolFailure(error);
-            }
-
-            parsedFrom = value;
+            return new ToolFailure(error);
         }
 
-        if (dueTo is not null)
+        if (!TodoToolParsing.TryParseOptionalDate(dueTo, "dueTo", out DateOnly? parsedTo, out error))
         {
-            if (!TodoToolParsing.TryParseDate(dueTo, "dueTo", out DateOnly value, out string? error))
-            {
-                return new ToolFailure(error);
-            }
-
-            parsedTo = value;
+            return new ToolFailure(error);
         }
 
-        // The two bounded parameters are checked here like every other one.
-        // Left to the query's validator they would throw instead, and the loop
-        // reports a thrown tool exception to the model as a generic failure
-        // with nothing naming the parameter — so it would retry the same call
-        // until the turn aborts.
-        //
-        // Trimmed before measuring because the query trims before validating,
-        // and a limit that rejected what the server would have accepted would
-        // send the model looking for a fault that is not there.
-        if (search is not null
-            && search.Trim().Length > TodoValidationLimits.SearchTextMaximumLength)
+        if (!TryCheckListBounds(search, limit, out error))
         {
-            return new ToolFailure(
-                $"search must not exceed {TodoValidationLimits.SearchTextMaximumLength} characters.");
-        }
-
-        if (limit is < 1 or > GetTodosQuery.MaximumPageSize)
-        {
-            return new ToolFailure(
-                $"limit must be between 1 and {GetTodosQuery.MaximumPageSize}.");
+            return new ToolFailure(error);
         }
 
         CursorPage<TodoListItemDto> page = await this.DispatchAsync(
@@ -165,17 +126,17 @@ public sealed class TodoTools
                 parsedFrom,
                 parsedTo,
                 dependencyStatus: null,
-                parsedScope,
+                parsedScope ?? TodoListScope.Active,
                 TodoSortField.DueDate,
                 SortDirection.Asc,
                 limit,
                 cursor: null,
                 search),
             cancellationToken);
-        TodoSummary[] items = page.Items.Select(FromListItem).ToArray();
-        this.ledger.RecordRange(items);
 
-        return new TodoPage(items, page.NextCursor is not null);
+        return this.RecordRead(
+            page.Items.Select(TodoSummary.FromListItem),
+            hasMore: page.NextCursor is not null);
     }
 
     public async Task<object> GetTodoSelectionAsync(
@@ -183,23 +144,16 @@ public sealed class TodoTools
         string[] ids,
         CancellationToken cancellationToken = default)
     {
-        if (!TodoToolParsing.TryParseIds(ids, out Guid[]? parsed, out string? error))
+        if (!TryParseSelection(ids, out Guid[]? parsed, out string? error))
         {
             return new ToolFailure(error);
-        }
-
-        if (Exceeds(parsed.Length, out string? capped))
-        {
-            return new ToolFailure(capped);
         }
 
         TodoSelection selection = await this.DispatchAsync(
             new GetTodoSelectionQuery(parsed),
             cancellationToken);
-        TodoSummary[] items = selection.Items.Select(FromTodo).ToArray();
-        this.ledger.RecordRange(items);
 
-        return new TodoPage(items, HasMore: false);
+        return this.RecordRead(selection.Items.Select(TodoSummary.FromTodo), hasMore: false);
     }
 
     public async Task<object> CreateTodoAsync(
@@ -229,27 +183,14 @@ public sealed class TodoTools
             return new ToolFailure(error);
         }
 
-        RecurrenceType? parsedRecurrence = null;
-        RecurrenceUnit? parsedUnit = null;
-
-        if (recurrenceType is not null)
+        if (!TodoToolParsing.TryParseOptionalEnum(recurrenceType, "recurrenceType", out RecurrenceType? parsedRecurrence, out error))
         {
-            if (!TodoToolParsing.TryParseEnum(recurrenceType, "recurrenceType", out RecurrenceType value, out error))
-            {
-                return new ToolFailure(error);
-            }
-
-            parsedRecurrence = value;
+            return new ToolFailure(error);
         }
 
-        if (recurrenceUnit is not null)
+        if (!TodoToolParsing.TryParseOptionalEnum(recurrenceUnit, "recurrenceUnit", out RecurrenceUnit? parsedUnit, out error))
         {
-            if (!TodoToolParsing.TryParseEnum(recurrenceUnit, "recurrenceUnit", out RecurrenceUnit value, out error))
-            {
-                return new ToolFailure(error);
-            }
-
-            parsedUnit = value;
+            return new ToolFailure(error);
         }
 
         TodoDto created = await this.DispatchAsync(
@@ -262,7 +203,7 @@ public sealed class TodoTools
                 recurrenceInterval,
                 parsedUnit),
             cancellationToken);
-        TodoSummary summary = FromTodo(created);
+        TodoSummary summary = TodoSummary.FromTodo(created);
         this.ledger.Record(summary.Id, summary.Version);
 
         await this.ReportAsync(
@@ -286,7 +227,7 @@ public sealed class TodoTools
             return new ToolFailure(error);
         }
 
-        if (!this.TryBind(ids, out IReadOnlyCollection<BulkTodoItemRequest>? items, out error))
+        if (!this.TryBindLastReadVersions(ids, out IReadOnlyCollection<BulkTodoItemRequest>? items, out error))
         {
             return new ToolFailure(error);
         }
@@ -313,14 +254,9 @@ public sealed class TodoTools
         string[] ids,
         CancellationToken cancellationToken = default)
     {
-        if (!TodoToolParsing.TryParseIds(ids, out Guid[]? parsed, out string? error))
+        if (!TryParseSelection(ids, out Guid[]? parsed, out string? error))
         {
             return new ToolFailure(error);
-        }
-
-        if (Exceeds(parsed.Length, out string? capped))
-        {
-            return new ToolFailure(capped);
         }
 
         // Read here rather than trusting the ledger, because this state is what
@@ -336,21 +272,7 @@ public sealed class TodoTools
                 "Some of those TODOs no longer exist. Read them again before deleting.");
         }
 
-        ConfirmationItem[] items = selection.Items
-            .Select(todo => new ConfirmationItem(
-                todo.Id,
-                todo.Name,
-                todo.Version,
-                todo.Status,
-                todo.DeletedAt))
-            .ToArray();
-
-        await this.events.PublishAsync(
-            TurnEvent.ConfirmationRequired(new ConfirmationRequest(
-                TodoToolNames.DeleteTodos,
-                $"Delete {items.Length} TODO{(items.Length == 1 ? string.Empty : "s")}?",
-                items)),
-            cancellationToken);
+        await this.AskToConfirmDeletionAsync(selection, cancellationToken);
         this.controller.Halt();
 
         return new ToolFailure(
@@ -363,7 +285,7 @@ public sealed class TodoTools
         string[] ids,
         CancellationToken cancellationToken = default)
     {
-        if (!this.TryBind(ids, out IReadOnlyCollection<BulkTodoItemRequest>? items, out string? error))
+        if (!this.TryBindLastReadVersions(ids, out IReadOnlyCollection<BulkTodoItemRequest>? items, out string? error))
         {
             return new ToolFailure(error);
         }
@@ -408,30 +330,49 @@ public sealed class TodoTools
             cancellationToken);
     }
 
-    private static TodoSummary FromListItem(TodoListItemDto item)
+    /// <summary>
+    /// The two bounded list parameters, checked here rather than left to the
+    /// query's validator, which would throw. The search text is trimmed before
+    /// measuring because the query trims before validating, and a limit that
+    /// rejected what the server would have accepted would send the model
+    /// looking for a fault that is not there.
+    /// </summary>
+    private static bool TryCheckListBounds(
+        string? search,
+        int? limit,
+        [NotNullWhen(false)] out string? error)
     {
-        return new TodoSummary(
-            item.Id,
-            item.Name,
-            item.Version,
-            item.DueDate,
-            item.Status.ToString(),
-            item.Priority.ToString(),
-            item.DeletedAt is not null,
-            item.IsBlocked);
+        if (search is not null
+            && search.Trim().Length > TodoValidationLimits.SearchTextMaximumLength)
+        {
+            error = $"search must not exceed {TodoValidationLimits.SearchTextMaximumLength} characters.";
+            return false;
+        }
+
+        if (limit is < 1 or > GetTodosQuery.MaximumPageSize)
+        {
+            error = $"limit must be between 1 and {GetTodosQuery.MaximumPageSize}.";
+            return false;
+        }
+
+        error = null;
+        return true;
     }
 
-    private static TodoSummary FromTodo(TodoDto todo)
+    /// <summary>
+    /// Parses a batch of identifiers and holds it to the batch cap.
+    /// </summary>
+    private static bool TryParseSelection(
+        string[] ids,
+        [NotNullWhen(true)] out Guid[]? parsed,
+        [NotNullWhen(false)] out string? error)
     {
-        return new TodoSummary(
-            todo.Id,
-            todo.Name,
-            todo.Version,
-            todo.DueDate,
-            todo.Status.ToString(),
-            todo.Priority.ToString(),
-            todo.DeletedAt is not null,
-            IsBlocked: null);
+        if (!TodoToolParsing.TryParseIds(ids, out parsed, out error))
+        {
+            return false;
+        }
+
+        return !ExceedsBatchCap(parsed.Length, out error);
     }
 
     /// <summary>
@@ -439,6 +380,20 @@ public sealed class TodoTools
     /// guarantee, and the assistant could not then describe honestly what
     /// actually happened.
     /// </summary>
+    private static bool ExceedsBatchCap(int count, [NotNullWhen(true)] out string? error)
+    {
+        if (count <= BulkTodoLimits.MaximumSelectionSize)
+        {
+            error = null;
+            return false;
+        }
+
+        error = $"That is {count} TODOs, and a batch is capped at "
+            + $"{BulkTodoLimits.MaximumSelectionSize}. Narrow the selection and "
+            + "ask the user which ones they mean, rather than splitting it up.";
+        return true;
+    }
+
     /// <summary>
     /// Applies to a confirmed selection the same checks a proposed one gets.
     /// The items come from a client rather than from the model, so they arrive
@@ -457,7 +412,7 @@ public sealed class TodoTools
             return false;
         }
 
-        if (Exceeds(confirmation.Items.Count, out error))
+        if (ExceedsBatchCap(confirmation.Items.Count, out error))
         {
             return false;
         }
@@ -484,33 +439,50 @@ public sealed class TodoTools
         return true;
     }
 
-    private static bool Exceeds(int count, [NotNullWhen(true)] out string? error)
+    /// <summary>
+    /// The written identifiers plus anything they spawned. A recurring
+    /// completion creates an occurrence nobody named, and the client needs to
+    /// know to look at it.
+    /// </summary>
+    private static Guid[] CollectTouchedIds(BulkTodoResult result)
     {
-        if (count <= BulkTodoLimits.MaximumSelectionSize)
-        {
-            error = null;
-            return false;
-        }
-
-        error = $"That is {count} TODOs, and a batch is capped at "
-            + $"{BulkTodoLimits.MaximumSelectionSize}. Narrow the selection and "
-            + "ask the user which ones they mean, rather than splitting it up.";
-        return true;
+        return result.Items
+            .Select(item => item.Id)
+            .Concat(result.Items
+                .Where(item => item.NextOccurrenceId is not null)
+                .Select(item => item.NextOccurrenceId!.Value))
+            .ToArray();
     }
 
-    private bool TryBind(
+    /// <summary>
+    /// How many items the write actually moved. An item whose version came back
+    /// unchanged was already in the requested state, and the outcome says so
+    /// rather than letting the model claim it changed something it did not.
+    /// </summary>
+    private static int CountChanged(
+        IReadOnlyCollection<BulkTodoItemRequest> sent,
+        BulkTodoResult result)
+    {
+        Dictionary<Guid, long> before = sent.ToDictionary(item => item.Id, item => item.Version);
+
+        return result.Items.Count(item =>
+            !before.TryGetValue(item.Id, out long version) || version != item.Version);
+    }
+
+    /// <summary>
+    /// Binds a batch of identifiers to the versions the model last read them
+    /// at. Anything it has not read in this conversation is refused with an
+    /// instruction to read first, rather than written against a version fetched
+    /// behind its back.
+    /// </summary>
+    private bool TryBindLastReadVersions(
         string[] ids,
         out IReadOnlyCollection<BulkTodoItemRequest> items,
         [NotNullWhen(false)] out string? error)
     {
         items = Array.Empty<BulkTodoItemRequest>();
 
-        if (!TodoToolParsing.TryParseIds(ids, out Guid[]? parsed, out error))
-        {
-            return false;
-        }
-
-        if (Exceeds(parsed.Length, out error))
+        if (!TryParseSelection(ids, out Guid[]? parsed, out error))
         {
             return false;
         }
@@ -527,6 +499,49 @@ public sealed class TodoTools
         return true;
     }
 
+    /// <summary>
+    /// Every read passes through here, so the ledger sees every version the
+    /// model does and a later write can bind to it.
+    /// </summary>
+    private TodoPage RecordRead(IEnumerable<TodoSummary> summaries, bool hasMore)
+    {
+        TodoSummary[] items = summaries.ToArray();
+        this.ledger.RecordRange(items);
+
+        return new TodoPage(items, hasMore);
+    }
+
+    /// <summary>
+    /// Publishes the proposal a person will answer, with the selection as it
+    /// stood when it was read.
+    /// </summary>
+    private async Task AskToConfirmDeletionAsync(
+        TodoSelection selection,
+        CancellationToken cancellationToken)
+    {
+        ConfirmationItem[] items = selection.Items
+            .Select(todo => new ConfirmationItem(
+                todo.Id,
+                todo.Name,
+                todo.Version,
+                todo.Status,
+                todo.DeletedAt))
+            .ToArray();
+        string prompt = $"Delete {items.Length} TODO{(items.Length == 1 ? string.Empty : "s")}?";
+
+        await this.events.PublishAsync(
+            TurnEvent.ConfirmationRequired(new ConfirmationRequest(
+                TodoToolNames.DeleteTodos,
+                prompt,
+                items)),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Closes out a write: the ledger learns the versions the write produced,
+    /// the client is told what to refresh, and the model gets an outcome that
+    /// separates what changed from what was already so.
+    /// </summary>
     private async Task<object> ReportWriteAsync(
         string tool,
         string summary,
@@ -534,39 +549,26 @@ public sealed class TodoTools
         BulkTodoResult result,
         CancellationToken cancellationToken)
     {
-        Dictionary<Guid, long> before = sent.ToDictionary(item => item.Id, item => item.Version);
-        int changed = result.Items.Count(item =>
-            !before.TryGetValue(item.Id, out long version) || version != item.Version);
+        int changed = CountChanged(sent, result);
+        this.RecordWrittenVersions(result);
 
+        await this.ReportAsync(tool, summary, CollectTouchedIds(result), cancellationToken);
+
+        TodoSummary[] items = result.Items.Select(TodoSummary.FromWriteResult).ToArray();
+
+        return new TodoWriteOutcome(changed, result.Items.Count - changed, items);
+    }
+
+    /// <summary>
+    /// A write advances versions, and the model may write to the same items
+    /// again in this turn without re-reading them.
+    /// </summary>
+    private void RecordWrittenVersions(BulkTodoResult result)
+    {
         foreach (BulkTodoResultItem item in result.Items)
         {
             this.ledger.Record(item.Id, item.Version);
         }
-
-        // A recurring completion creates an occurrence nobody named, so the
-        // identifiers reported are the ones written plus anything they spawned.
-        Guid[] touched = result.Items
-            .Select(item => item.Id)
-            .Concat(result.Items
-                .Where(item => item.NextOccurrenceId is not null)
-                .Select(item => item.NextOccurrenceId!.Value))
-            .ToArray();
-
-        await this.ReportAsync(tool, summary, touched, cancellationToken);
-
-        TodoSummary[] items = result.Items
-            .Select(item => new TodoSummary(
-                item.Id,
-                Name: string.Empty,
-                item.Version,
-                default,
-                item.Status.ToString(),
-                Priority: string.Empty,
-                item.DeletedAt is not null,
-                IsBlocked: null))
-            .ToArray();
-
-        return new TodoWriteOutcome(changed, result.Items.Count - changed, items);
     }
 
     private async Task ReportAsync(
@@ -583,6 +585,10 @@ public sealed class TodoTools
             cancellationToken);
     }
 
+    /// <summary>
+    /// Sends through MediatR under the assistant's origin marker, so the request
+    /// log can tell the assistant's commands from the person's own.
+    /// </summary>
     private async Task<TResponse> DispatchAsync<TResponse>(
         IRequest<TResponse> request,
         CancellationToken cancellationToken)

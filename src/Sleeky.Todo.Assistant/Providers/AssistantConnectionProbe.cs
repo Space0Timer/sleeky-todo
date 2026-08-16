@@ -5,6 +5,16 @@ using Microsoft.Extensions.AI;
 
 namespace Sleeky.Todo.Assistant.Providers;
 
+/// <summary>
+/// Sends one tiny request through a connection and reports whether it came
+/// back, so the settings form can say "this works" before a turn depends on
+/// it.
+/// </summary>
+/// <remarks>
+/// The probe answers with a message the user can act on, and takes care that
+/// the message describes their configuration and not the network the server
+/// sits in — see <see cref="Describe"/>.
+/// </remarks>
 public sealed class AssistantConnectionProbe : IAssistantConnectionProbe
 {
     private const string Redacted = "***";

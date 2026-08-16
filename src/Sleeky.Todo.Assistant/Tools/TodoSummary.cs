@@ -1,3 +1,6 @@
+using Sleeky.Todo.Application.DTOs;
+using Sleeky.Todo.Application.Todos.Commands.Bulk;
+
 namespace Sleeky.Todo.Assistant.Tools;
 
 /// <summary>
@@ -19,4 +22,56 @@ public sealed record TodoSummary(
     string Status,
     string Priority,
     bool IsDeleted,
-    bool? IsBlocked);
+    bool? IsBlocked)
+{
+    public static TodoSummary FromListItem(TodoListItemDto item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        return new TodoSummary(
+            item.Id,
+            item.Name,
+            item.Version,
+            item.DueDate,
+            item.Status.ToString(),
+            item.Priority.ToString(),
+            item.DeletedAt is not null,
+            item.IsBlocked);
+    }
+
+    public static TodoSummary FromTodo(TodoDto todo)
+    {
+        ArgumentNullException.ThrowIfNull(todo);
+
+        return new TodoSummary(
+            todo.Id,
+            todo.Name,
+            todo.Version,
+            todo.DueDate,
+            todo.Status.ToString(),
+            todo.Priority.ToString(),
+            todo.DeletedAt is not null,
+            IsBlocked: null);
+    }
+
+    /// <summary>
+    /// What a bulk write reports about each item: identifier, version, status
+    /// and deletion state, and nothing else. The fields a write does not report
+    /// are left blank rather than read again, because the write was bound to a
+    /// read the model still has in front of it.
+    /// </summary>
+    public static TodoSummary FromWriteResult(BulkTodoResultItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        return new TodoSummary(
+            item.Id,
+            Name: string.Empty,
+            item.Version,
+            DueDate: default,
+            item.Status.ToString(),
+            Priority: string.Empty,
+            item.DeletedAt is not null,
+            IsBlocked: null);
+    }
+}

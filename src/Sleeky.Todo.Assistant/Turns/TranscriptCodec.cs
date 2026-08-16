@@ -95,7 +95,7 @@ public static class TranscriptCodec
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
-                Record(element, ledger);
+                RecordIfVersioned(element, ledger);
 
                 foreach (JsonProperty property in element.EnumerateObject())
                 {
@@ -148,7 +148,12 @@ public static class TranscriptCodec
         }
     }
 
-    private static void Record(JsonElement element, TodoVersionLedger ledger)
+    /// <summary>
+    /// Any object carrying a readable identifier and version is a TODO the
+    /// model has seen. Anything else — a different pair of properties, or a
+    /// version that is not a number — is passed over rather than guessed at.
+    /// </summary>
+    private static void RecordIfVersioned(JsonElement element, TodoVersionLedger ledger)
     {
         if (!element.TryGetProperty(IdProperty, out JsonElement id)
             || !element.TryGetProperty(VersionProperty, out JsonElement version))

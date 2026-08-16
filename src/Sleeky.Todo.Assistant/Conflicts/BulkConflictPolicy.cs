@@ -60,35 +60,8 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
                 new BulkChangeTodoStatusCommand(status, items),
                 cancellationToken);
         }
-        catch (BulkConcurrencyConflictException)
+        catch (Exception exception) when (IsLostRace(exception))
         {
-            BulkTodoResult? retried = await this.RetryStatusAsync(status, items, cancellationToken);
-
-            if (retried is null)
-            {
-                throw;
-            }
-
-            return retried;
-        }
-        catch (ConcurrencyConflictException)
-        {
-            BulkTodoResult? retried = await this.RetryStatusAsync(status, items, cancellationToken);
-
-            if (retried is null)
-            {
-                throw;
-            }
-
-            return retried;
-        }
-        catch (TransactionConflictException)
-        {
-            // An aborted transaction does not say which document lost, so this
-            // arrives without identifiers — but it is the same "re-run the
-            // read-modify-write" answer, and it is the transient case a single
-            // retry exists to absorb. The browser already retries it, because
-            // the API maps it to the same 409 the version conflicts use.
             BulkTodoResult? retried = await this.RetryStatusAsync(status, items, cancellationToken);
 
             if (retried is null)
@@ -122,6 +95,25 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
         CancellationToken cancellationToken)
     {
         return this.DispatchAsync(new BulkRestoreTodosCommand(items), cancellationToken);
+    }
+
+    /// <summary>
+    /// The three ways a batch loses a race, all answered by re-running the
+    /// read-modify-write once.
+    /// </summary>
+    /// <remarks>
+    /// The two version conflicts name the documents that moved. An aborted
+    /// transaction does not — it arrives without identifiers — but it is the
+    /// same answer, and it is the transient case a single retry exists to
+    /// absorb. The browser already retries it, because the API maps it to the
+    /// same 409 the version conflicts use.
+    /// </remarks>
+    private static bool IsLostRace(Exception exception)
+    {
+        return exception
+            is BulkConcurrencyConflictException
+            or ConcurrencyConflictException
+            or TransactionConflictException;
     }
 
     /// <summary>

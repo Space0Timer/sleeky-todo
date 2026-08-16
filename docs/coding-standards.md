@@ -25,6 +25,10 @@ This document defines the implementation and test standards for the repository.
 
 - Catch the most specific exception type that can be handled.
 - Do not catch `Exception` in ordinary application or infrastructure methods.
+- A `catch (Exception) when (...)` whose filter names specific types is a
+  specific catch. It is how one handler shared by several unrelated exception
+  types is written once rather than once per type; the filter runs before the
+  stack unwinds, so nothing outside the named types is caught.
 - A broad catch is permitted only at the outer process boundary where the host
   must log an unexpected failure and terminate safely.
 - Preserve the original exception as the inner exception when translating an
