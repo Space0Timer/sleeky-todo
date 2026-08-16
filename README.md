@@ -113,9 +113,9 @@ Open `http://localhost:5173`. The application redirects to `/login`; sign in as
 - **Concurrency.** Open Manage on a TODO in two tabs, save in one, then save in
   the other. The second reports a stale version and offers Reload latest
   version rather than overwriting silently.
-- **Session handling.** Sign out and confirm the list is unreachable. Because
-  sign-out clears the application cookie only, the provider session can outlive
-  it and the next sign-in may not prompt for credentials.
+- **Session handling.** Sign out and confirm the list is unreachable. Sign-out
+  ends the provider's session as well as the application's, so signing in again
+  prompts for credentials rather than resuming silently.
 
 ### Run the tests
 
