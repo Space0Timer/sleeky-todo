@@ -35,7 +35,7 @@ public sealed class TodoItemArchivedRuleTests
             .Throw<DomainException>()
             .WithMessage("An archived TODO must be unarchived before it can be completed.");
         item.Status.Should().Be(TodoStatus.Archived);
-        item.DomainEvents.Should().BeEmpty();
+        item.Completion.Should().BeNull();
     }
 
     [TestMethod]

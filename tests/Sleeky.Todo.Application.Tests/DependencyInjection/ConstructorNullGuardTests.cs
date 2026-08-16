@@ -5,7 +5,6 @@ using FluentAssertions;
 using NSubstitute;
 
 using Sleeky.Todo.Application.Behaviors;
-using Sleeky.Todo.Application.Events;
 using Sleeky.Todo.Application.Todos.Commands.AddDependency;
 using Sleeky.Todo.Application.Todos.Commands.ChangeTodoStatus;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
@@ -14,7 +13,6 @@ using Sleeky.Todo.Application.Todos.Commands.RemoveDependency;
 using Sleeky.Todo.Application.Todos.Commands.RestoreTodo;
 using Sleeky.Todo.Application.Todos.Commands.UpdateTodo;
 using Sleeky.Todo.Application.Todos.Dependencies;
-using Sleeky.Todo.Application.Todos.Events;
 using Sleeky.Todo.Application.Todos.Queries.GetTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
@@ -27,7 +25,6 @@ public sealed class ConstructorNullGuardTests
     [
         typeof(RequestLoggingBehavior<ConstructorGuardTestRequest, string>),
         typeof(ValidationBehavior<ConstructorGuardTestRequest, string>),
-        typeof(DomainEventDispatcher),
         typeof(AddDependencyCommandHandler),
         typeof(ChangeTodoStatusCommandHandler),
         typeof(CreateTodoCommandHandler),
@@ -37,7 +34,6 @@ public sealed class ConstructorNullGuardTests
         typeof(UpdateTodoCommandHandler),
         typeof(DependencyGraphService),
         typeof(TodoDependencyEvaluator),
-        typeof(CreateNextRecurringOccurrenceHandler),
         typeof(GetTodoQueryHandler),
         typeof(GetTodosQueryHandler),
     ];

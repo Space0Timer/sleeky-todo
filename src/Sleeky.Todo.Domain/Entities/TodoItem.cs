@@ -1,5 +1,4 @@
 using Sleeky.Todo.Domain.Enums;
-using Sleeky.Todo.Domain.Events;
 using Sleeky.Todo.Domain.Exceptions;
 using Sleeky.Todo.Domain.Services;
 using Sleeky.Todo.Domain.ValueObjects;
@@ -11,7 +10,6 @@ public sealed class TodoItem
     private static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(90);
 
     private readonly List<Guid> dependencyIds = new List<Guid>();
-    private readonly List<IDomainEvent> domainEvents = new List<IDomainEvent>();
 
     private TodoItem(
         Guid id,
@@ -52,7 +50,13 @@ public sealed class TodoItem
 
     public IReadOnlyCollection<Guid> DependencyIds => dependencyIds.AsReadOnly();
 
-    public IReadOnlyCollection<IDomainEvent> DomainEvents => domainEvents.AsReadOnly();
+    /// <summary>
+    /// What the most recent status change decided, when that change was a
+    /// completion; null otherwise. <see cref="ChangeStatus"/> returns whether
+    /// anything changed at all, and this carries the detail a completion
+    /// produces — including the successor's identifier for a recurring TODO.
+    /// </summary>
+    public TodoCompletion? Completion { get; private set; }
 
     /// <summary>
     /// The searchable words of the name and description.
@@ -246,33 +250,15 @@ public sealed class TodoItem
         Status = status;
         UpdatedAt = utcUpdatedAt;
 
-        if (previousStatus != TodoStatus.Completed && status == TodoStatus.Completed)
-        {
-            Guid? nextOccurrenceId = Recurrence is null
-                ? null
-                : Guid.NewGuid();
-            domainEvents.Add(
-                new TodoCompletedDomainEvent(
-                    Id,
-                    SeriesId,
-                    OccurrenceNumber,
-                    nextOccurrenceId,
-                    new TodoCompletionContext(
-                        OwnerId,
-                        Name,
-                        Description,
-                        DueDate,
-                        Priority,
-                        Recurrence,
-                        utcUpdatedAt)));
-        }
+        // Assigned on every transition, not only on a completion, so a second
+        // change on the same instance cannot leave an earlier completion
+        // standing for a status that is no longer Completed.
+        Completion = previousStatus != TodoStatus.Completed
+            && status == TodoStatus.Completed
+            ? BuildCompletion(utcUpdatedAt)
+            : null;
 
         return true;
-    }
-
-    public void ClearDomainEvents()
-    {
-        domainEvents.Clear();
     }
 
     public void SoftDelete(DateTimeOffset deletedAt)
@@ -406,6 +392,22 @@ public sealed class TodoItem
     private static string? NormalizeDescription(string? description)
     {
         return string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+    }
+
+    private TodoCompletion BuildCompletion(DateTimeOffset completedAt)
+    {
+        return new TodoCompletion(
+            Id,
+            OwnerId,
+            Name,
+            Description,
+            DueDate,
+            Priority,
+            Recurrence,
+            completedAt,
+            SeriesId,
+            OccurrenceNumber,
+            Recurrence is null ? null : Guid.NewGuid());
     }
 
     private void EnsureNotDeleted()
