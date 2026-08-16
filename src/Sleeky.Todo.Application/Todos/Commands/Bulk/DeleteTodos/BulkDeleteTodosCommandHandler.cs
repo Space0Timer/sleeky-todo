@@ -42,24 +42,9 @@ public sealed class BulkDeleteTodosCommandHandler
             todoRepository,
             request.Items,
             cancellationToken);
-        Guid[] selectedIds = todos.Select(todoItem => todoItem.Id).ToArray();
+        await EnsureNoDependentsLeftBehindAsync(todos, cancellationToken);
 
-        // Dependents inside the batch are being deleted too, so only dependents
-        // left behind can block the deletion.
-        IReadOnlyCollection<Guid> blockingDependentIds = await todoRepository
-            .GetActiveDependentIdsAsync(selectedIds, selectedIds, cancellationToken);
-        if (blockingDependentIds.Count > 0)
-        {
-            throw new DomainException(
-                "A TODO with active dependents cannot be deleted.");
-        }
-
-        DateTimeOffset deletedAt = clock.UtcNow;
-        foreach (TodoItem todoItem in todos)
-        {
-            todoItem.SoftDelete(deletedAt);
-        }
-
+        SoftDeleteAll(todos);
         await PersistAsync(todos, cancellationToken);
 
         this.logger.LogInformation(
@@ -68,6 +53,15 @@ public sealed class BulkDeleteTodosCommandHandler
             todos.Count,
             todos[0].PurgeAt);
 
+        return BuildResult(todos);
+    }
+
+    /// <summary>
+    /// Every item was written, so each reports the version the write produced,
+    /// which the entity itself never advances.
+    /// </summary>
+    private static BulkTodoResult BuildResult(IReadOnlyList<TodoItem> todos)
+    {
         return new BulkTodoResult(todos
             .Select(todoItem => new BulkTodoResultItem(
                 todoItem.Id,
@@ -76,6 +70,38 @@ public sealed class BulkDeleteTodosCommandHandler
                 todoItem.DeletedAt,
                 null))
             .ToArray());
+    }
+
+    /// <summary>
+    /// Dependents inside the batch are being deleted too, so only dependents
+    /// left behind can block the deletion.
+    /// </summary>
+    private async Task EnsureNoDependentsLeftBehindAsync(
+        IReadOnlyList<TodoItem> todos,
+        CancellationToken cancellationToken)
+    {
+        Guid[] selectedIds = todos.Select(todoItem => todoItem.Id).ToArray();
+        IReadOnlyCollection<Guid> blockingDependentIds = await todoRepository
+            .GetActiveDependentIdsAsync(selectedIds, selectedIds, cancellationToken);
+
+        if (blockingDependentIds.Count > 0)
+        {
+            throw new DomainException(
+                "A TODO with active dependents cannot be deleted.");
+        }
+    }
+
+    /// <summary>
+    /// One instant is read for the whole batch so every write it makes shares
+    /// it.
+    /// </summary>
+    private void SoftDeleteAll(IReadOnlyList<TodoItem> todos)
+    {
+        DateTimeOffset deletedAt = clock.UtcNow;
+        foreach (TodoItem todoItem in todos)
+        {
+            todoItem.SoftDelete(deletedAt);
+        }
     }
 
     /// <summary>

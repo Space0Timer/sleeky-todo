@@ -12,6 +12,7 @@ namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 public static class TodoCursorCodec
 {
     private const int CurrentVersion = 1;
+    private const string DateFormat = "yyyy-MM-dd";
     private const int MaximumEncodedLength = 4096;
 
     private static readonly JsonSerializerOptions JsonOptions = new JsonSerializerOptions
@@ -41,13 +42,7 @@ public static class TodoCursorCodec
                 json,
                 JsonOptions);
 
-            if (payload is null
-                || payload.Version != CurrentVersion
-                || string.IsNullOrWhiteSpace(payload.SortField)
-                || string.IsNullOrWhiteSpace(payload.Direction)
-                || payload.LastSortValue is null
-                || payload.LastTodoId == Guid.Empty
-                || string.IsNullOrWhiteSpace(payload.FilterSignature))
+            if (payload is null || !IsComplete(payload))
             {
                 throw InvalidCursor();
             }
@@ -111,20 +106,7 @@ public static class TodoCursorCodec
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(searchTerms);
 
-        string canonical = string.Join(
-            '|',
-            query.Status?.ToString() ?? string.Empty,
-            query.Priority?.ToString() ?? string.Empty,
-            query.DueFrom?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
-            query.DueTo?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
-            query.DependencyStatus?.ToString() ?? string.Empty,
-            query.Scope.ToString());
-
-        if (searchTerms.Count > 0)
-        {
-            canonical = string.Concat(canonical, "|", string.Join('|', searchTerms));
-        }
-
+        string canonical = BuildCanonicalFilterForm(query, searchTerms);
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return ToBase64Url(hash);
     }
@@ -134,7 +116,25 @@ public static class TodoCursorCodec
         GetTodosQuery query,
         string filterSignature)
     {
-        bool matches = string.Equals(
+        if (MatchesQuery(payload, query, filterSignature))
+        {
+            return;
+        }
+
+        throw new InvalidCursorException(
+            "The cursor does not match the current filters, scope, or sorting.");
+    }
+
+    /// <summary>
+    /// A cursor resumes a query only when its sort, direction, and filter
+    /// signature are the query's own and its sort value parses for that field.
+    /// </summary>
+    private static bool MatchesQuery(
+        TodoCursorPayload payload,
+        GetTodosQuery query,
+        string filterSignature)
+    {
+        return string.Equals(
                 payload.SortField,
                 GetSortFieldName(query.SortField),
                 StringComparison.Ordinal)
@@ -147,12 +147,45 @@ public static class TodoCursorCodec
                 filterSignature,
                 StringComparison.Ordinal)
             && IsValidSortValue(payload.LastSortValue, query.SortField);
+    }
 
-        if (!matches)
+    /// <summary>
+    /// Every field a resumed query reads has to be present; a partial payload
+    /// would decode cleanly and then fail somewhere less explicable.
+    /// </summary>
+    private static bool IsComplete(TodoCursorPayload payload)
+    {
+        return payload.Version == CurrentVersion
+            && !string.IsNullOrWhiteSpace(payload.SortField)
+            && !string.IsNullOrWhiteSpace(payload.Direction)
+            && payload.LastSortValue is not null
+            && payload.LastTodoId != Guid.Empty
+            && !string.IsNullOrWhiteSpace(payload.FilterSignature);
+    }
+
+    /// <summary>
+    /// The filter fields in a fixed order and format, so two equal queries
+    /// always hash the same. Absent filters contribute an empty segment.
+    /// </summary>
+    private static string BuildCanonicalFilterForm(
+        GetTodosQuery query,
+        IReadOnlyList<string> searchTerms)
+    {
+        string canonical = string.Join(
+            '|',
+            query.Status?.ToString() ?? string.Empty,
+            query.Priority?.ToString() ?? string.Empty,
+            query.DueFrom?.ToString(DateFormat, CultureInfo.InvariantCulture) ?? string.Empty,
+            query.DueTo?.ToString(DateFormat, CultureInfo.InvariantCulture) ?? string.Empty,
+            query.DependencyStatus?.ToString() ?? string.Empty,
+            query.Scope.ToString());
+
+        if (searchTerms.Count == 0)
         {
-            throw new InvalidCursorException(
-                "The cursor does not match the current filters, scope, or sorting.");
+            return canonical;
         }
+
+        return string.Concat(canonical, "|", string.Join('|', searchTerms));
     }
 
     private static string GetSortFieldName(TodoSortField sortField)
@@ -182,7 +215,7 @@ public static class TodoCursorCodec
         return sortField switch
         {
             TodoSortField.DueDate => item.DueDate.ToString(
-                "yyyy-MM-dd",
+                DateFormat,
                 CultureInfo.InvariantCulture),
             TodoSortField.Priority => GetNumericPriority(item.Priority)
                 .ToString(CultureInfo.InvariantCulture),
@@ -219,7 +252,7 @@ public static class TodoCursorCodec
         {
             TodoSortField.DueDate => DateOnly.TryParseExact(
                 value,
-                "yyyy-MM-dd",
+                DateFormat,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out _),

@@ -47,12 +47,7 @@ public sealed class BulkRestoreTodosCommandHandler
 
         // Restoration has no dependency gate: a restored TODO blocks nothing,
         // and its own prerequisites are evaluated when it next changes status.
-        DateTimeOffset restoredAt = clock.UtcNow;
-        foreach (TodoItem todoItem in todos)
-        {
-            todoItem.Restore(restoredAt);
-        }
-
+        RestoreAll(todos);
         await PersistAsync(todos, cancellationToken);
 
         this.logger.LogInformation(
@@ -60,6 +55,15 @@ public sealed class BulkRestoreTodosCommandHandler
             "Bulk TODO restoration returned {TodoCount} TODOs to the active list",
             todos.Count);
 
+        return BuildResult(todos);
+    }
+
+    /// <summary>
+    /// Every item was written, so each reports the version the write produced,
+    /// which the entity itself never advances.
+    /// </summary>
+    private static BulkTodoResult BuildResult(IReadOnlyList<TodoItem> todos)
+    {
         return new BulkTodoResult(todos
             .Select(todoItem => new BulkTodoResultItem(
                 todoItem.Id,
@@ -68,6 +72,19 @@ public sealed class BulkRestoreTodosCommandHandler
                 todoItem.DeletedAt,
                 null))
             .ToArray());
+    }
+
+    /// <summary>
+    /// One instant is read for the whole batch so every write it makes shares
+    /// it.
+    /// </summary>
+    private void RestoreAll(IReadOnlyList<TodoItem> todos)
+    {
+        DateTimeOffset restoredAt = clock.UtcNow;
+        foreach (TodoItem todoItem in todos)
+        {
+            todoItem.Restore(restoredAt);
+        }
     }
 
     /// <summary>

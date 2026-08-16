@@ -49,36 +49,13 @@ public sealed class BulkChangeTodoStatusCommandHandler
             todoRepository,
             request.Items,
             cancellationToken);
+        await EnsureDependenciesAllowTransitionAsync(
+            todos,
+            request.Status,
+            cancellationToken);
 
-        if (request.Status is TodoStatus.Completed or TodoStatus.InProgress)
-        {
-            await EnsureDependenciesAllowTransitionAsync(
-                todos,
-                request.Status,
-                cancellationToken);
-        }
-
-        List<TodoItem> updates = new List<TodoItem>(todos.Count);
-        List<TodoItem> inserts = new List<TodoItem>();
-        Dictionary<Guid, Guid> nextOccurrenceIds = new Dictionary<Guid, Guid>();
-        DateTimeOffset timestamp = clock.UtcNow;
-
-        foreach (TodoItem todoItem in todos)
-        {
-            if (!todoItem.ChangeStatus(request.Status, timestamp))
-            {
-                continue;
-            }
-
-            updates.Add(todoItem);
-            TodoCompletion? completion = todoItem.Completion;
-            if (completion?.Recurrence is not null)
-            {
-                inserts.Add(recurringOccurrenceFactory.CreateNext(completion));
-                nextOccurrenceIds[todoItem.Id] = completion.NextOccurrenceId!.Value;
-            }
-        }
-
+        List<TodoItem> updates = ApplyStatusChange(todos, request.Status);
+        List<TodoItem> inserts = CreateRecurringSuccessors(updates);
         await PersistAsync(updates, inserts, cancellationToken);
 
         this.logger.LogInformation(
@@ -88,37 +65,56 @@ public sealed class BulkChangeTodoStatusCommandHandler
             updates.Count,
             inserts.Count);
 
-        return BuildResult(todos, updates, nextOccurrenceIds);
+        return BuildResult(todos, updates);
+    }
+
+    /// <summary>
+    /// The prerequisites of every item the change would actually move. An item
+    /// already at the target status is a no-op and gates nothing.
+    /// </summary>
+    private static Guid[] CollectDependencyIdsOfPendingItems(
+        IReadOnlyList<TodoItem> todos,
+        TodoStatus status)
+    {
+        return todos
+            .Where(todoItem => todoItem.Status != status)
+            .SelectMany(todoItem => todoItem.DependencyIds)
+            .Distinct()
+            .ToArray();
+    }
+
+    private static DomainException BlockedTransition(TodoStatus status)
+    {
+        return new DomainException($"A blocked TODO cannot move to {status}.");
     }
 
     private static BulkTodoResult BuildResult(
         IReadOnlyList<TodoItem> todos,
-        IReadOnlyCollection<TodoItem> updates,
-        IReadOnlyDictionary<Guid, Guid> nextOccurrenceIds)
+        IReadOnlyCollection<TodoItem> updates)
     {
         HashSet<Guid> writtenIds = updates.Select(todoItem => todoItem.Id).ToHashSet();
 
         BulkTodoResultItem[] items = todos
-            .Select(todoItem =>
-            {
-                Guid? nextOccurrenceId =
-                    nextOccurrenceIds.TryGetValue(todoItem.Id, out Guid occurrenceId)
-                        ? occurrenceId
-                        : null;
-                long version = writtenIds.Contains(todoItem.Id)
-                    ? todoItem.Version + 1
-                    : todoItem.Version;
-
-                return new BulkTodoResultItem(
-                    todoItem.Id,
-                    version,
-                    todoItem.Status,
-                    todoItem.DeletedAt,
-                    nextOccurrenceId);
-            })
+            .Select(todoItem => ToResultItem(todoItem, writtenIds.Contains(todoItem.Id)))
             .ToArray();
 
         return new BulkTodoResult(items);
+    }
+
+    /// <summary>
+    /// The version reported is the one the write produced, which the entity
+    /// itself never advances; an item that needed no write echoes its own. The
+    /// successor's identifier is read from the completion, where the entity
+    /// fixed it, rather than tracked separately.
+    /// </summary>
+    private static BulkTodoResultItem ToResultItem(TodoItem todoItem, bool written)
+    {
+        return new BulkTodoResultItem(
+            todoItem.Id,
+            written ? todoItem.Version + 1 : todoItem.Version,
+            todoItem.Status,
+            todoItem.DeletedAt,
+            todoItem.Completion?.NextOccurrenceId);
     }
 
     /// <summary>
@@ -134,20 +130,21 @@ public sealed class BulkChangeTodoStatusCommandHandler
         TodoStatus status,
         CancellationToken cancellationToken)
     {
+        if (status is not (TodoStatus.Completed or TodoStatus.InProgress))
+        {
+            return;
+        }
+
         HashSet<Guid> selectedIds = todos.Select(todoItem => todoItem.Id).ToHashSet();
-        Guid[] dependencyIds = todos
-            .Where(todoItem => todoItem.Status != status)
-            .SelectMany(todoItem => todoItem.DependencyIds)
-            .Distinct()
-            .ToArray();
+        Guid[] dependencyIds = CollectDependencyIdsOfPendingItems(todos, status);
         Guid[] externalDependencyIds = dependencyIds
             .Where(dependencyId => !selectedIds.Contains(dependencyId))
             .ToArray();
 
-        if (status != TodoStatus.Completed
-            && externalDependencyIds.Length != dependencyIds.Length)
+        bool hasDependencyInsideBatch = externalDependencyIds.Length != dependencyIds.Length;
+        if (status != TodoStatus.Completed && hasDependencyInsideBatch)
         {
-            throw new DomainException($"A blocked TODO cannot move to {status}.");
+            throw BlockedTransition(status);
         }
 
         if (externalDependencyIds.Length == 0)
@@ -155,21 +152,74 @@ public sealed class BulkChangeTodoStatusCommandHandler
             return;
         }
 
+        if (await AnyDependencyIncompleteAsync(externalDependencyIds, cancellationToken))
+        {
+            throw BlockedTransition(status);
+        }
+    }
+
+    /// <summary>
+    /// A missing, deleted, or not-yet-completed prerequisite each count as
+    /// incomplete, so the read looks past the soft-delete filter to tell the
+    /// last two apart from the first.
+    /// </summary>
+    private async Task<bool> AnyDependencyIncompleteAsync(
+        IReadOnlyCollection<Guid> dependencyIds,
+        CancellationToken cancellationToken)
+    {
         IReadOnlyCollection<TodoItem> dependencies = await todoRepository.GetByIdsAsync(
-            externalDependencyIds,
+            dependencyIds,
             includeDeleted: true,
             cancellationToken);
         Dictionary<Guid, TodoItem> dependenciesById = dependencies.ToDictionary(
             dependency => dependency.Id);
-        bool blocked = externalDependencyIds.Any(dependencyId =>
+
+        return dependencyIds.Any(dependencyId =>
             !dependenciesById.TryGetValue(dependencyId, out TodoItem? dependency)
             || dependency.DeletedAt is not null
             || dependency.Status != TodoStatus.Completed);
+    }
 
-        if (blocked)
+    /// <summary>
+    /// Moves every item and returns the ones that actually changed. One instant
+    /// is read for the whole batch so every write it makes shares it.
+    /// </summary>
+    private List<TodoItem> ApplyStatusChange(
+        IReadOnlyList<TodoItem> todos,
+        TodoStatus status)
+    {
+        DateTimeOffset timestamp = clock.UtcNow;
+        List<TodoItem> updates = new List<TodoItem>(todos.Count);
+
+        foreach (TodoItem todoItem in todos)
         {
-            throw new DomainException($"A blocked TODO cannot move to {status}.");
+            if (todoItem.ChangeStatus(status, timestamp))
+            {
+                updates.Add(todoItem);
+            }
         }
+
+        return updates;
+    }
+
+    /// <summary>
+    /// One successor per recurring completion; every other update inserts
+    /// nothing.
+    /// </summary>
+    private List<TodoItem> CreateRecurringSuccessors(IReadOnlyCollection<TodoItem> updates)
+    {
+        List<TodoItem> inserts = new List<TodoItem>();
+
+        foreach (TodoItem todoItem in updates)
+        {
+            TodoCompletion? completion = todoItem.Completion;
+            if (completion?.Recurrence is not null)
+            {
+                inserts.Add(recurringOccurrenceFactory.CreateNext(completion));
+            }
+        }
+
+        return inserts;
     }
 
     /// <summary>

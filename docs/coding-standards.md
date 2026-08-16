@@ -5,7 +5,13 @@ This document defines the implementation and test standards for the repository.
 ## Readable implementation
 
 - Keep one top-level type per C# file.
-- Break behavior into small methods with one clear responsibility.
+- Break behavior into small methods with one clear responsibility. A long
+  method — a handler's `Handle`, a multi-step validation, a loop that also
+  builds a result — is broken into descriptive private methods so that its
+  body reads as the sequence of steps it performs. Each step's name says what
+  it does; a doc comment on the private method says why, when that is not
+  obvious. Loading, guarding, mutating, persisting, logging, and shaping the
+  result are separate steps, not one paragraph.
 - Prefer guard clauses and early returns.
 - Avoid `else` branches and nested conditionals when a guard clause or helper
   method expresses the same rule more clearly.

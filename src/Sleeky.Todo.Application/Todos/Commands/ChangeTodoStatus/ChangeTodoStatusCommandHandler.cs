@@ -76,6 +76,16 @@ public sealed class ChangeTodoStatusCommandHandler
             completion,
             cancellationToken);
 
+        LogStatusChange(updatedTodo, previousStatus, completion);
+
+        return TodoDto.FromEntity(updatedTodo, completion?.NextOccurrenceId);
+    }
+
+    private void LogStatusChange(
+        TodoItem updatedTodo,
+        TodoStatus previousStatus,
+        TodoCompletion? completion)
+    {
         this.logger.LogInformation(
             1108,
             "Changed TODO {TodoId} status from {PreviousStatus} to {Status} at version {Version}",
@@ -84,18 +94,17 @@ public sealed class ChangeTodoStatusCommandHandler
             updatedTodo.Status,
             updatedTodo.Version);
 
-        if (completion?.NextOccurrenceId is not null
-            && completion.SeriesId is not null)
+        if (completion?.NextOccurrenceId is null || completion.SeriesId is null)
         {
-            this.logger.LogInformation(
-                1101,
-                "Created recurring TODO {TodoId} for series {SeriesId} after completing TODO {CompletedTodoId}",
-                completion.NextOccurrenceId,
-                completion.SeriesId,
-                completion.TodoId);
+            return;
         }
 
-        return TodoDto.FromEntity(updatedTodo, completion?.NextOccurrenceId);
+        this.logger.LogInformation(
+            1101,
+            "Created recurring TODO {TodoId} for series {SeriesId} after completing TODO {CompletedTodoId}",
+            completion.NextOccurrenceId,
+            completion.SeriesId,
+            completion.TodoId);
     }
 
     private async Task EnsureDependenciesAllowTransitionAsync(

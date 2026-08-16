@@ -49,21 +49,10 @@ public sealed class DependencyCycleDetector : IDependencyCycleDetector
                     "The dependency graph is too deep to validate.");
             }
 
-            // The filter only reads; marking is a separate pass. Folding the two
-            // together works solely because the sequence is enumerated once and
-            // immediately, which is not a property the next edit here has to
-            // preserve.
-            Guid[] batchIds = frontier
-                .Where(dependencyId => !visited.Contains(dependencyId))
-                .ToArray();
+            Guid[] batchIds = ClaimUnvisited(frontier, visited);
             if (batchIds.Length == 0)
             {
                 return false;
-            }
-
-            foreach (Guid dependencyId in batchIds)
-            {
-                visited.Add(dependencyId);
             }
 
             // Only the edges matter here, so the walk reads a projection rather
@@ -77,6 +66,32 @@ public sealed class DependencyCycleDetector : IDependencyCycleDetector
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns the frontier's not-yet-visited nodes and marks them visited, so
+    /// no node is fetched twice however many paths lead to it.
+    /// </summary>
+    /// <remarks>
+    /// The filter only reads; marking is a separate pass. Folding the two
+    /// together works solely because the sequence is enumerated once and
+    /// immediately, which is not a property the next edit here has to
+    /// preserve.
+    /// </remarks>
+    private static Guid[] ClaimUnvisited(
+        IReadOnlySet<Guid> frontier,
+        HashSet<Guid> visited)
+    {
+        Guid[] batchIds = frontier
+            .Where(dependencyId => !visited.Contains(dependencyId))
+            .ToArray();
+
+        foreach (Guid dependencyId in batchIds)
+        {
+            visited.Add(dependencyId);
+        }
+
+        return batchIds;
     }
 
     /// <summary>

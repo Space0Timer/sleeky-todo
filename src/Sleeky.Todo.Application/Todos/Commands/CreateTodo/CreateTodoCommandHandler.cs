@@ -39,13 +39,7 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
         CreateTodoCommand request,
         CancellationToken cancellationToken)
     {
-        RecurrenceSchedule? recurrence = request.RecurrenceType.HasValue
-            ? RecurrenceSchedule.Create(
-                request.RecurrenceType.Value,
-                request.RecurrenceInterval ?? 1,
-                request.RecurrenceUnit,
-                request.DueDate)
-            : null;
+        RecurrenceSchedule? recurrence = BuildRecurrence(request);
         TodoItem todoItem = TodoItem.Create(
             request.Id ?? Guid.NewGuid(),
             currentUser.UserId,
@@ -68,5 +62,22 @@ public sealed class CreateTodoCommandHandler : IRequestHandler<CreateTodoCommand
             todoItem.Version);
 
         return TodoDto.FromEntity(todoItem);
+    }
+
+    /// <summary>
+    /// A schedule anchored on the first due date, or null for a one-off.
+    /// </summary>
+    private static RecurrenceSchedule? BuildRecurrence(CreateTodoCommand request)
+    {
+        if (!request.RecurrenceType.HasValue)
+        {
+            return null;
+        }
+
+        return RecurrenceSchedule.Create(
+            request.RecurrenceType.Value,
+            request.RecurrenceInterval ?? 1,
+            request.RecurrenceUnit,
+            request.DueDate);
     }
 }
