@@ -18,7 +18,7 @@ function todoOf(
     name: id,
     descriptionPreview: null,
     dueDate: '2026-08-15',
-    status: todoStatus.notStarted,
+    status: todoStatus.open,
     priority: todoPriority.medium,
     isRecurring: false,
     isBlocked: false,

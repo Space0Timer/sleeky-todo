@@ -45,7 +45,7 @@ const priorityTones: Record<TodoPriority, BadgeTone> = {
 }
 
 const statusTones: Record<TodoStatus, BadgeTone> = {
-  [todoStatus.notStarted]: 'neutral',
+  [todoStatus.open]: 'neutral',
   [todoStatus.inProgress]: 'info',
   [todoStatus.completed]: 'success',
   [todoStatus.archived]: 'pending',

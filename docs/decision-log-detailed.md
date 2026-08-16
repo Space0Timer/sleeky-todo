@@ -145,7 +145,7 @@ same optimistic version contract as the CRUD commands.
 
 ## Archived TODOs are frozen
 
-Archiving is treated as putting a TODO beyond further work rather than as one status among equals. An archived TODO rejects edits, dependency changes, and completion; only unarchiving to `NotStarted` or `InProgress` reopens it. Soft delete stays available so archived records can still be cleaned up, and archiving itself remains reachable from every other status.
+Archiving is treated as putting a TODO beyond further work rather than as one status among equals. An archived TODO rejects edits, dependency changes, and completion; only unarchiving to `Open` or `InProgress` reopens it. Soft delete stays available so archived records can still be cleaned up, and archiving itself remains reachable from every other status.
 
 The rule lives in the domain, so the single-item and bulk endpoints inherit identical behaviour rather than agreeing by convention. It tightens `PUT /{id}`, `PUT /{id}/status` towards `Completed`, and dependency changes on archived TODOs into 409 responses.
 
@@ -323,7 +323,7 @@ sort uses the TODO ID in the same direction as its final tie-breaker, and the
 reader fetches one item beyond the requested limit to decide whether to return
 another cursor.
 
-Priority ordering is Low, Medium, High; status ordering is NotStarted,
+Priority ordering is Low, Medium, High; status ordering is Open,
 InProgress, Completed, Archived. These are explicit business orders and do not
 depend on the alphabetical BSON representation.
 

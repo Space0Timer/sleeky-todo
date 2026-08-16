@@ -101,7 +101,7 @@ public sealed class AssistantTurnRunnerTests
             .DeleteAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(new BulkTodoResult(new[]
             {
-                new BulkTodoResultItem(First, 6, TodoStatus.NotStarted, TestTodo.Timestamp, null),
+                new BulkTodoResultItem(First, 6, TodoStatus.Open, TestTodo.Timestamp, null),
             }));
 
         await harness.RunAsync(new AssistantTurn(

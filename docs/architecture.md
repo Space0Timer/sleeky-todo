@@ -331,7 +331,7 @@ numeric values are the business sort order:
 
 ```text
 TodoPriority: Low=0, Medium=1, High=2
-TodoStatus: NotStarted=0, InProgress=1, Completed=2, Archived=3
+TodoStatus: Open=0, InProgress=1, Completed=2, Archived=3
 ```
 
 The numeric values are persistence contracts and must not be renumbered. New

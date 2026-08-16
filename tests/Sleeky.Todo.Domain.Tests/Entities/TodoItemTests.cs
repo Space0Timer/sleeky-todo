@@ -31,7 +31,7 @@ public sealed class TodoItemTests
         item.NameNormalized.Should().Be("submit report");
         item.Description.Should().Be("Monthly report");
         item.DueDate.Should().Be(InitialDueDate);
-        item.Status.Should().Be(TodoStatus.NotStarted);
+        item.Status.Should().Be(TodoStatus.Open);
         item.Priority.Should().Be(TodoPriority.High);
         item.DependencyIds.Should().BeEmpty();
         item.Recurrence.Should().BeNull();
@@ -376,7 +376,7 @@ public sealed class TodoItemTests
             "Submit Report",
             null,
             InitialDueDate,
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             TodoPriority.Low,
             Array.Empty<Guid>(),
             null,
@@ -443,7 +443,7 @@ public sealed class TodoItemTests
             "Submit Report",
             null,
             InitialDueDate,
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             TodoPriority.Low,
             Array.Empty<Guid>(),
             null,

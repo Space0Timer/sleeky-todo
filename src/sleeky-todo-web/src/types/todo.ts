@@ -1,5 +1,5 @@
 export const todoStatus = {
-  notStarted: 0,
+  open: 0,
   inProgress: 1,
   completed: 2,
   archived: 3,
@@ -8,7 +8,7 @@ export const todoStatus = {
 export type TodoStatus = (typeof todoStatus)[keyof typeof todoStatus]
 
 export const todoStatusLabels: Record<TodoStatus, string> = {
-  [todoStatus.notStarted]: 'Not started',
+  [todoStatus.open]: 'Open',
   [todoStatus.inProgress]: 'In progress',
   [todoStatus.completed]: 'Completed',
   [todoStatus.archived]: 'Archived',

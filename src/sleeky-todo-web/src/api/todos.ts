@@ -19,7 +19,7 @@ import {
 } from '../types/todo.ts'
 
 const statusNames = {
-  [todoStatus.notStarted]: 'NotStarted',
+  [todoStatus.open]: 'Open',
   [todoStatus.inProgress]: 'InProgress',
   [todoStatus.completed]: 'Completed',
   [todoStatus.archived]: 'Archived',

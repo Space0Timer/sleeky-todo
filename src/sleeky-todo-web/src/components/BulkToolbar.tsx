@@ -72,7 +72,7 @@ export function BulkToolbar({
               title={demotesInProgress
                 ? 'Deselect in-progress TODOs to reopen the rest.'
                 : undefined}
-              onClick={() => onStatus(todoStatus.notStarted)}
+              onClick={() => onStatus(todoStatus.open)}
             >
               Reopen
             </Button>
@@ -90,7 +90,7 @@ export function BulkToolbar({
           <Button
             variant="primary"
             disabled={disabled}
-            onClick={() => onStatus(todoStatus.notStarted)}
+            onClick={() => onStatus(todoStatus.open)}
           >
             Unarchive
           </Button>

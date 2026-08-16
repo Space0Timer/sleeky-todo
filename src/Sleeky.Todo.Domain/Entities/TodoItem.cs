@@ -27,7 +27,7 @@ public sealed class TodoItem
         SetName(name);
         Description = NormalizeDescription(description);
         DueDate = dueDate;
-        Status = TodoStatus.NotStarted;
+        Status = TodoStatus.Open;
         Priority = ValidatePriority(priority);
         Version = 1;
         CreatedAt = createdAt;

@@ -110,7 +110,7 @@ public sealed class MongoTodoListReaderTests
                 "todo-a",
                 "Alpha",
                 new DateOnly(2026, 8, 10),
-                TodoStatus.NotStarted,
+                TodoStatus.Open,
                 TodoPriority.Low),
             CreateDocument(
                 "todo-b",
@@ -165,7 +165,7 @@ public sealed class MongoTodoListReaderTests
                 "todo-b",
                 "alpha",
                 new DateOnly(2026, 8, 10),
-                TodoStatus.NotStarted,
+                TodoStatus.Open,
                 TodoPriority.Low),
             CreateDocument(
                 "todo-c",
@@ -177,7 +177,7 @@ public sealed class MongoTodoListReaderTests
                 "todo-d",
                 "bravo",
                 new DateOnly(2026, 8, 11),
-                TodoStatus.NotStarted,
+                TodoStatus.Open,
                 TodoPriority.High),
             CreateDocument(
                 "todo-e",
@@ -195,7 +195,7 @@ public sealed class MongoTodoListReaderTests
                 "todo-g",
                 "Golf",
                 new DateOnly(2026, 8, 10),
-                TodoStatus.NotStarted,
+                TodoStatus.Open,
                 TodoPriority.High),
         ];
         await SeedAsync(documents);
@@ -629,7 +629,7 @@ public sealed class MongoTodoListReaderTests
         string id,
         string name,
         DateOnly dueDate,
-        TodoStatus status = TodoStatus.NotStarted,
+        TodoStatus status = TodoStatus.Open,
         TodoPriority priority = TodoPriority.Medium,
         IReadOnlyList<string>? dependencies = null,
         bool deleted = false,

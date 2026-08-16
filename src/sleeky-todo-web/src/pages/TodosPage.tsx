@@ -474,7 +474,7 @@ export function TodosPage() {
             })}
           >
             <option value="">All statuses</option>
-            <option value={todoStatus.notStarted}>Not started</option>
+            <option value={todoStatus.open}>Open</option>
             <option value={todoStatus.inProgress}>In progress</option>
             <option value={todoStatus.completed}>Completed</option>
             <option value={todoStatus.archived}>Archived</option>

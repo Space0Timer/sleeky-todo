@@ -60,7 +60,7 @@ test('unarchives a selection from the archived scope', async ({ page }) => {
   await expect(todoCard(page, 'Bulk unarchive')).toHaveCount(0)
 
   await page.getByRole('tab', { name: 'Active' }).click()
-  await expect(todoCard(page, 'Bulk unarchive').getByText('Not started')).toBeVisible()
+  await expect(todoCard(page, 'Bulk unarchive').getByText('Open', { exact: true })).toBeVisible()
 })
 
 test('an archived TODO offers no editing, prerequisites, or completion', async ({ page }) => {
@@ -79,7 +79,7 @@ test('an archived TODO offers no editing, prerequisites, or completion', async (
   // the transition the domain refuses is withheld.
   const status = archived.getByLabel('Status for Frozen card')
   await expect(status.getByRole('option', { name: 'Completed' })).toHaveCount(0)
-  await expect(status.getByRole('option', { name: 'Not started' })).toHaveCount(1)
+  await expect(status.getByRole('option', { name: 'Open', exact: true })).toHaveCount(1)
 })
 
 test('restores a selection from the trash', async ({ page }) => {
@@ -145,7 +145,7 @@ test('a stale selection is repaired and retried', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText(
     /archived|out of date/i,
   )
-  await expect(todoCard(page, 'Repair one').getByText('Not started')).toBeVisible()
+  await expect(todoCard(page, 'Repair one').getByText('Open', { exact: true })).toBeVisible()
 })
 
 test('a conflicted restore is not retried silently', async ({ page }) => {
@@ -194,7 +194,7 @@ test('a filter that hides a selected TODO drops it from the count', async ({ pag
 
   // The count reads from the selection while an action reads from what is on
   // screen, so a filter that drops a selected TODO has to drop it from both.
-  await page.getByLabel('Status filter').selectOption({ label: 'Not started' })
+  await page.getByLabel('Status filter').selectOption({ label: 'Open' })
   await expect(todoCard(page, 'Filter leaving')).toHaveCount(0)
   await expect(page.getByTestId('bulk-selected-count')).toHaveText('1 selected')
 })

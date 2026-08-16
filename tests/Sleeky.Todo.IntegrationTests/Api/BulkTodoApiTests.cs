@@ -132,7 +132,7 @@ public sealed class BulkTodoApiTests
         problem.GetProperty("detail").GetString().Should()
             .Be("A blocked TODO cannot move to Completed.");
         (await GetTodoAsync(GetId(linked))).GetProperty("status").GetInt32()
-            .Should().Be((int)TodoStatus.NotStarted);
+            .Should().Be((int)TodoStatus.Open);
     }
 
     [TestMethod]
@@ -166,7 +166,7 @@ public sealed class BulkTodoApiTests
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         problem.GetProperty("detail").GetString().Should().Contain(GetId(second));
         (await GetTodoAsync(GetId(first))).GetProperty("status").GetInt32()
-            .Should().Be((int)TodoStatus.NotStarted);
+            .Should().Be((int)TodoStatus.Open);
     }
 
     [TestMethod]
@@ -230,7 +230,7 @@ public sealed class BulkTodoApiTests
         problem.GetProperty("detail").GetString().Should()
             .MatchRegex("'[0-9a-fA-F-]{36}'");
         (await GetTodoAsync(recurringId)).GetProperty("status").GetInt32()
-            .Should().Be((int)TodoStatus.NotStarted);
+            .Should().Be((int)TodoStatus.Open);
         (await CountTodoDocumentsAsync()).Should().Be(2);
     }
 
@@ -330,13 +330,13 @@ public sealed class BulkTodoApiTests
         archiveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         HttpResponseMessage response = await ChangeStatusesAsync(
-            TodoStatus.NotStarted,
+            TodoStatus.Open,
             [new BulkTodoSelectionItem { Id = Guid.Parse(GetId(todo)), Version = 2 }]);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         JsonElement body = await ReadJsonAsync(response);
         JsonElement item = body.GetProperty("items").EnumerateArray().Single();
-        item.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.NotStarted);
+        item.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.Open);
         item.GetProperty("version").GetInt64().Should().Be(3);
     }
 
@@ -569,7 +569,7 @@ public sealed class BulkTodoApiTests
             $"/api/todos/{id}/status",
             new ChangeTodoStatusRequest
             {
-                Status = TodoStatus.NotStarted,
+                Status = TodoStatus.Open,
                 Version = version,
             });
         response.StatusCode.Should().Be(HttpStatusCode.OK);

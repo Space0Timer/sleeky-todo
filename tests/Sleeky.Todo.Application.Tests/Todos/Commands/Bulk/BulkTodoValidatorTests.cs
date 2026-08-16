@@ -92,7 +92,7 @@ public sealed class BulkTodoValidatorTests
     [TestMethod]
     [DataRow(TodoStatus.Completed)]
     [DataRow(TodoStatus.Archived)]
-    [DataRow(TodoStatus.NotStarted)]
+    [DataRow(TodoStatus.Open)]
     [DataRow(TodoStatus.InProgress)]
     public void SupportedBulkStatusesAreAccepted(TodoStatus status)
     {

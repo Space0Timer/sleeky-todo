@@ -160,7 +160,7 @@ public sealed class DependencyServicesTests
 
     private static TodoDependencyNode CreateNode(
         string id,
-        TodoStatus status = TodoStatus.NotStarted,
+        TodoStatus status = TodoStatus.Open,
         bool isDeleted = false,
         IReadOnlyCollection<string>? dependencies = null)
     {

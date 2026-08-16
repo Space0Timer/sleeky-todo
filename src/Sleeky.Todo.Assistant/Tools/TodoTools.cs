@@ -66,7 +66,7 @@ public sealed class TodoTools
     }
 
     public async Task<object> GetTodosAsync(
-        [Description("Only TODOs with this status: NotStarted, InProgress, Completed, or Archived.")]
+        [Description("Only TODOs with this status: Open, InProgress, Completed, or Archived.")]
         string? status = null,
         [Description("Only TODOs with this priority: Low, Medium, or High.")]
         string? priority = null,
@@ -275,7 +275,7 @@ public sealed class TodoTools
     }
 
     public async Task<object> ChangeTodoStatusAsync(
-        [Description("The status to set: NotStarted, InProgress, Completed, or Archived.")]
+        [Description("The status to set: Open, InProgress, Completed, or Archived.")]
         string status,
         [Description("The TODOs to change, at most 100, all of which must have been read in this conversation.")]
         string[] ids,
