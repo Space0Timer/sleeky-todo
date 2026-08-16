@@ -20,7 +20,7 @@ import { BulkToolbar } from '../components/BulkToolbar.tsx'
 import { CreateTodoForm } from '../components/CreateTodoForm.tsx'
 import { TodoCard } from '../components/TodoCard.tsx'
 import { UserMenu } from '../components/UserMenu.tsx'
-import { Button, EmptyState } from '../components/common/index.ts'
+import { Button, EmptyState, Toast, ToastRegion } from '../components/common/index.ts'
 import { useBulkActions, type BulkOperation } from '../hooks/useBulkActions.ts'
 import { useDebouncedValue } from '../hooks/useDebouncedValue.ts'
 import {
@@ -44,8 +44,15 @@ import {
 import styles from './TodosPage.module.scss'
 import { mergeTodoPage } from './todoPageMerge.ts'
 
+/**
+ * `dismissed` hides the toast without discarding the error. The same problem
+ * also supplies the per-field messages under the create form and the affected
+ * card, so clearing the state outright would take the validation the user is
+ * still working through with it.
+ */
 type UiError = {
   affectedTodoId?: string
+  dismissed?: boolean
   kind: ApiErrorKind
   problem: ProblemDetails
 }
@@ -64,6 +71,9 @@ const initialFilters: Omit<TodoListOptions, 'scope' | 'cursor'> = {
 
 /** How many prerequisites the dependency picker asks the server for at a time. */
 const dependencySearchLimit = 50
+
+/** How long a success toast stays on screen before it clears itself. */
+const noticeDuration = 5000
 
 const tabs: { label: string; scope: TodoScope }[] = [
   { label: 'Active', scope: todoScope.active },
@@ -142,6 +152,22 @@ export function TodosPage() {
         : { ...current, searchText: debouncedSearch }
     ))
   }, [debouncedSearch])
+
+  // Only a success notice expires. An error carries a trace ID and sometimes the
+  // reload action, so it waits for the user rather than a timer.
+  //
+  // Every path that sets a notice clears it before its await, so the value
+  // always passes through null and the timer re-arms even when the same message
+  // is reported twice in a row.
+  useEffect(() => {
+    const timer = notice === null
+      ? null
+      : setTimeout(() => setNotice(null), noticeDuration)
+
+    return () => {
+      if (timer !== null) clearTimeout(timer)
+    }
+  }, [notice])
 
   useEffect(() => {
     let cancelled = false
@@ -379,33 +405,19 @@ export function TodosPage() {
         </div>
       </header>
 
-      {error && (
-        <section className={styles.errorBanner} data-error-kind={error.kind} role="alert">
-          <div>
-            <strong>{errorTitle}</strong>
-            <p>{error.problem.detail}</p>
-            {error.problem.traceId && <small>Trace: {error.problem.traceId}</small>}
-          </div>
-          {/* Not gated on affectedTodoId: a bulk conflict is captured without
-              one, and reloading is the recovery for both. */}
-          {error.kind === 'concurrency' && (
-            <Button variant="secondary" onClick={reloadLatestVersion}>
-              Reload latest version
-            </Button>
-          )}
-        </section>
-      )}
-
+      {/*
+        Stays in flow rather than joining the toasts. It is not an event that
+        has passed: it captions the ringed cards below and survives until the
+        selection is cleared, so the user can read it against them.
+      */}
       {bulk.repair && (
-        <section className={styles.errorBanner} data-error-kind="concurrency" role="alert">
+        <section className={styles.repairBanner} role="alert">
           <div>
             <strong>The selection is out of date.</strong>
             <p>{bulk.repair.message}</p>
           </div>
         </section>
       )}
-
-      {notice && <output className={styles.noticeBanner}>{notice}</output>}
 
       {scope === todoScope.active && (
         <section className={styles.createPanel}>
@@ -647,6 +659,36 @@ export function TodosPage() {
           onConfirm={(selection) => void confirmBulkDelete(selection)}
         />
       )}
+
+      {/*
+        The error is rendered last so it sits against the bottom edge the region
+        is anchored to. Notices come and go above it, which leaves the one toast
+        the user may still be reading exactly where they found it.
+      */}
+      <ToastRegion>
+        {notice && (
+          <Toast title={notice} tone="notice" onDismiss={() => setNotice(null)} />
+        )}
+        {error && !error.dismissed && (
+          <Toast
+            detail={error.problem.detail}
+            meta={error.problem.traceId ? `Trace: ${error.problem.traceId}` : undefined}
+            title={errorTitle}
+            tone="error"
+            onDismiss={() => setError((current) => (
+              current === null ? null : { ...current, dismissed: true }
+            ))}
+          >
+            {/* Not gated on affectedTodoId: a bulk conflict is captured without
+                one, and reloading is the recovery for both. */}
+            {error.kind === 'concurrency' && (
+              <Button variant="secondary" onClick={reloadLatestVersion}>
+                Reload latest version
+              </Button>
+            )}
+          </Toast>
+        )}
+      </ToastRegion>
     </main>
   )
 }
