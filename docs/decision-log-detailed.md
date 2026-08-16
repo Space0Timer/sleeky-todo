@@ -87,20 +87,19 @@ Application code depends on `ITodoRepository`, while Infrastructure provides `Mo
 
 Integration tests use the public repository contract. Exact storage representations are checked as raw BSON after writing through the repository, avoiding both `InternalsVisibleTo` and a public persistence document type.
 
-## Persisted enum representation and migration
+## Persisted enum representation
 
 `TodoStatus` and `TodoPriority` are persisted as BSON `int32` values because
 their explicit numeric values represent the required business ordering. This
 lets MongoDB use the existing sort indexes directly and removes the temporary
 rank expressions previously needed by list queries.
 
-The startup migrator accepts known legacy names and already-migrated integers,
-rejects unknown or malformed values before modifying either field, and updates
-known names idempotently. This is an in-place deployment step, not a mixed-
-version rolling migration: old writers must be stopped and a recoverable
-database backup taken first. A rollback to string-enum binaries requires an
-explicit reverse migration; the application does not perform that contraction
-automatically.
+Integer storage is the only representation the application reads or writes; a
+startup migrator that converted legacy string values was removed once it had no
+data left to convert. Nothing has been deployed anywhere its data outlives a
+schema change, so a database written by an older build is recreated rather than
+migrated. Reintroducing a conversion step is the cost of the first deployment
+target that owns data worth keeping.
 
 ## Optimistic concurrency
 
@@ -287,7 +286,7 @@ or persistence code to Serilog. Static Serilog access is restricted to bootstrap
 fatal startup reporting, and shutdown flushing in `Program.cs`.
 
 The logging pipeline produces a condensed HTTP completion event, trace context,
-MediatR request timing, index-initialization and startup-migration events, and a
+MediatR request timing, index-initialization events, and a
 post-commit event when a recurring completion creates its next TODO. Successful TODO mutations emit
 Information audit events through direct typed `ILogger<T>` calls with stable
 event IDs and structured placeholders. Logging records identifiers, versions,

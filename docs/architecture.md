@@ -35,7 +35,7 @@ flowchart TB
         repo["MongoTodoRepository<br/>owner-scoped filters · version-matched replace"]
         reader["MongoTodoListReader<br/>aggregation · blocked state · keyset cursor · search hint"]
         tx["MongoTransactionExecutor<br/>scoped session context"]
-        startup["Index initializer · search-token backfill · enum migration"]
+        startup["Index initializer"]
     end
 
     mongo[("MongoDB 8 replica set<br/>todoItems · users · assistantSettings")]
@@ -339,10 +339,11 @@ values are appended only with a deliberate data migration. Integer storage lets
 MongoDB filter, cursor-page, and sort directly on the persisted fields, so the
 reader does not need temporary rank fields or `$switch` expressions.
 
-Legacy string values are validated and converted by
-`MongoDbEnumStorageMigrator` during startup before index initialization. The
-migration is idempotent, rejects unknown values before changing data, and is
-not a mixed-version rollout: old writers must be stopped first.
+Integer storage is the only representation the application reads. Nothing
+converts values written as BSON strings by an older build, because the
+application has never been deployed anywhere its data outlives a schema change;
+local data from before that change is recreated with `docker compose down
+--volumes`.
 
 ### Search tokens
 
@@ -362,12 +363,10 @@ term becomes an anchored, case-sensitive regex on `searchTokens`, and all of
 them must match; both sides are already lowercased, and a case-insensitive flag
 would discard the index bounds.
 
-`MongoDbSearchTokensMigrator` backfills documents written before the field
-existed, filtering on `searchTokens` being absent and writing per-document
-`$set`s in batches. It is registered between the enum migrator and the index
-initializer so the tokens exist before the index covering them is built. Its
-filter is unindexed and therefore costs one collection scan per start, which
-matches what the enum migration beside it already costs.
+A document written before the field existed carries no tokens and therefore
+matches no search until something rewrites it. Nothing backfills those
+documents, for the same reason nothing converts legacy enum values: local data
+that predates the field is recreated rather than migrated.
 
 ### Fluent aggregation design
 
@@ -491,10 +490,10 @@ the caller named. A unique partial index on owner, series ID, and occurrence
 number complements optimistic concurrency and prevents duplicate next
 occurrences.
 
-Schema and data bootstrap never runs inside this boundary. MongoDB forbids index
-creation and removal in a transaction, and the index initializer and enum
-migrator are idempotent hosted services that already tolerate concurrent
-instances, so partial application is safe and self-heals on the next start.
+Schema bootstrap never runs inside this boundary. MongoDB forbids index
+creation and removal in a transaction, and the index initializer is an
+idempotent hosted service that already tolerates concurrent instances, so
+partial application is safe and self-heals on the next start.
 
 The recurrence calculator preserves a stored monthly anchor rather than adding
 months to a previously clamped date. Thus January 31 becomes February's final
@@ -676,7 +675,7 @@ configuration-driven Serilog pipeline after dependency injection is available.
 One HTTP completion event records method, path, status, duration, request ID,
 and trace ID. A MediatR behavior records the application request type and
 successful handling duration, and Infrastructure records successful MongoDB
-index initialization and each startup migration that changed data. Successful
+index initialization. Successful
 health-check completion events are reduced to
 Debug, while unhealthy health checks remain Warning events. A recurring TODO
 completion records the series, completed TODO, and newly created TODO identifiers
@@ -711,9 +710,8 @@ class and event shape remain explicit without provider-specific APIs.
 
 Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
-repository and health check, and runs its schema and data bootstrap through
-hosted services: the enum migration, the search-token backfill, and index
-initialization, in that registration order. This keeps `Program.cs` limited to
+repository and health check, and runs its schema bootstrap through a hosted
+service that initializes indexes. This keeps `Program.cs` limited to
 composition and application startup.
 
 `AddAssistant` binds provider options without validating them on start: an

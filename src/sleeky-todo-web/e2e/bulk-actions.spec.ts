@@ -82,6 +82,34 @@ test('an archived TODO offers no editing, prerequisites, or completion', async (
   await expect(status.getByRole('option', { name: 'Open', exact: true })).toHaveCount(1)
 })
 
+/**
+ * The bulk Unarchive button always lands on Not started, because that is the
+ * only status every archived TODO may legally take: a blocked one cannot move
+ * to In progress. The card's own select is what a user reaches for when the
+ * work is in fact resuming, and it is the only route to that transition, so
+ * nothing else covers it.
+ */
+test('an archived TODO moves straight to in progress from the card', async ({ page }) => {
+  const card = await createTodo(page, 'Resumed card')
+  await selectCard(card)
+  await bulkAction(page, 'Archive').click()
+
+  await page.getByRole('tab', { name: 'Archived' }).click()
+  const archived = todoCard(page, 'Resumed card')
+  await archived.getByRole('button', { name: 'Manage' }).click()
+  await archived.getByLabel('Status for Resumed card')
+    .selectOption({ label: 'In progress' })
+
+  // Leaving Archived drops it from the scope being viewed, which is the same
+  // signal the bulk unarchive test reads for a move to Not started.
+  await expect(todoCard(page, 'Resumed card')).toHaveCount(0)
+
+  await page.getByRole('tab', { name: 'Active' }).click()
+  await expect(
+    todoCard(page, 'Resumed card').getByText('In progress', { exact: true }),
+  ).toBeVisible()
+})
+
 test('restores a selection from the trash', async ({ page }) => {
   const first = await createTodo(page, 'Bulk restore one')
   const second = await createTodo(page, 'Bulk restore two')
