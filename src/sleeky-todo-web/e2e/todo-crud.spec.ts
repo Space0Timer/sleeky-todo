@@ -51,9 +51,9 @@ async function seedTodos(ownerId: string, names: string[]): Promise<void> {
     name,
     nameNormalized: name.toLowerCase(),
     description: 'Cursor acceptance record',
-    // Search reads these rather than the text, and the startup backfill has
-    // already run by the time a spec seeds. A seed without them is a document
-    // no search can reach.
+    // Search reads these rather than the text, and nothing backfills them —
+    // the API writes the field only on its own inserts and replaces. A seed
+    // without them is a document no search can reach.
     searchTokens: searchTokensFor(name),
     dueDate: '2027-04-19',
     // Status and priority persist as their numeric business order, so a

@@ -6,9 +6,9 @@ namespace Sleeky.Todo.Domain.Services;
 /// Splits text into the normalized tokens search stores and matches against.
 /// </summary>
 /// <remarks>
-/// One implementation serves the write path, the query side, and the backfill,
-/// so a stored token and a typed term are produced by the same rules rather
-/// than by two definitions that have to be kept in agreement.
+/// One implementation serves both the write path and the query side, so a
+/// stored token and a typed term are produced by the same rules rather than
+/// by two definitions that have to be kept in agreement.
 ///
 /// Casing follows <c>NameNormalized</c> and is invariant, because the
 /// comparison is between two stored strings rather than between two people's

@@ -11,7 +11,7 @@ flowchart TB
     end
 
     subgraph api["Sleeky.Todo.Api — ASP.NET Core"]
-        auth["Cookie session · OIDC login endpoint<br/>global antiforgery filter"]
+        auth["Cookie session · OIDC login endpoint<br/>global antiforgery filter · per-user rate limits"]
         controllers["Controllers<br/>Todos · Assistant · AssistantSettings · Auth"]
         problems["Global exception handler → RFC Problem Details"]
         static["Static SPA hosting<br/>(container image only)"]
@@ -24,7 +24,7 @@ flowchart TB
     subgraph application["Sleeky.Todo.Application"]
         pipeline["MediatR pipeline behaviours<br/>validation · domain-exception translation · request logging"]
         handlers["Command and query handlers<br/>dependency evaluator · recurrence factory"]
-        abstractions["Abstractions<br/>ITodoRepository · ITodoListReader · ITransactionExecutor<br/>ICurrentUser · IClock · IAssistantSettingsRepository"]
+        abstractions["Abstractions<br/>ITodoRepository · ITodoListReader · ITransactionExecutor<br/>ICurrentUser · IClock · IAssistantSettingsRepository · IUserDirectoryRepository"]
     end
 
     subgraph domain["Sleeky.Todo.Domain"]
@@ -32,7 +32,7 @@ flowchart TB
     end
 
     subgraph infrastructure["Sleeky.Todo.Infrastructure"]
-        repo["MongoTodoRepository<br/>owner-scoped filters · version-matched replace"]
+        repo["TodoRepository<br/>owner-scoped filters · version-matched replace"]
         reader["MongoTodoListReader<br/>aggregation · blocked state · keyset cursor · search hint"]
         tx["MongoTransactionExecutor<br/>scoped session context"]
         startup["Index initializer"]
@@ -68,11 +68,14 @@ The Assistant is a fifth project sitting beside the API rather than beneath it. 
 
 ## React client and persisted workflow
 
-The React client uses a typed API module for list, detail, create, update,
-status, dependency, delete, and restore requests. It parses Problem Details in
-one place and distinguishes validation, domain-rule, concurrency, not-found,
-network, and unexpected failures. Serilog and backend implementation types do
-not cross the HTTP boundary.
+The React client uses a typed API module for its requests: list, detail,
+create, update, status, dependency, delete, and restore for a single TODO; the
+bulk status, delete, and restore batches and the selection lookup that repairs
+them; the session, login, logout, and antiforgery calls; and the assistant's
+turn stream and provider settings. It parses Problem Details in one place and
+distinguishes validation, domain-rule, concurrency, not-found, network, and
+unexpected failures. Serilog and backend implementation types do not cross the
+HTTP boundary.
 
 The main screen is backed by `GET /api/todos`; it does not keep a browser-only
 TODO collection. Active, Archived, and Trash tabs select the matching server
@@ -170,10 +173,11 @@ mutation unprotected should require a deliberate opt-out instead of a remembered
 opt-in.
 
 Antiforgery tokens are bound to the authenticated identity, so a token issued
-before login fails validation after it. The client therefore refreshes its token
-whenever authentication state changes: on startup, after login completes, and
-after logout. The antiforgery cookie may be readable by JavaScript; the session
-cookie remains HttpOnly and is the only authentication credential.
+before login fails validation after it. The client therefore requests a token
+whenever a session is established — on startup and when the login navigation
+returns — and discards the one it holds when the session ends. The antiforgery
+cookie may be readable by JavaScript; the session cookie remains HttpOnly and
+is the only authentication credential.
 
 ### Logout
 
@@ -242,8 +246,9 @@ filters, so reads, existence checks, batch loads, dependency lookups, graph
 traversal, active-dependent checks, mutations, and cursor pages are scoped by
 construction. A future query cannot omit the filter by forgetting it, because no
 handler supplies it. The repository refuses to run without an authenticated
-user; the retention purge path is the deliberate exception, because it is a
-maintenance operation that spans owners.
+user. The retention purge, when it is built, will be the one deliberate
+exception, because it is a maintenance operation that spans owners; today no
+repository member is exempt from the owner filter.
 
 A TODO belonging to another user is reported as `404` rather than `403`, so the
 response does not disclose that the identifier exists.
@@ -280,12 +285,12 @@ domain entity, so the transactional insert requires no separate ownership rule.
 
 ## Persistence boundary
 
-Application handlers depend on the public `ITodoRepository` abstraction. Infrastructure registers `MongoTodoRepository` as its implementation:
+Application handlers depend on the public `ITodoRepository` abstraction. Infrastructure registers `TodoRepository` as its implementation:
 
 ```text
 Application handler
   -> ITodoRepository
-  -> MongoTodoRepository
+  -> TodoRepository
   -> IMongoDatabase / IMongoCollection<TodoDocument>
   -> MongoDB
 ```
@@ -295,7 +300,7 @@ Application handler
 A separate `MongoDbContext` wrapper is intentionally not used. With one database and one collection it only duplicated `IMongoDatabase.GetCollection`; the repository owns collection access directly.
 
 Assistant provider settings are a second collection behind the same boundary:
-`IAssistantSettingsRepository` in Application, `MongoAssistantSettingsRepository`
+`IAssistantSettingsRepository` in Application, `AssistantSettingsRepository`
 in Infrastructure, keyed by the owning user so a user has one record and no
 separate document identity. It stores the API key as ciphertext and cannot
 decrypt it; encryption belongs to the assistant, which is the only layer that
@@ -430,7 +435,7 @@ models ignore unknown BSON elements to support additive rolling schema changes.
 The repository performs each mutation as one MongoDB `FindOneAndReplace` operation with a filter equivalent to:
 
 ```text
-_id == todoId AND version == expectedVersion
+ownerId == currentUser AND _id == todoId AND version == expectedVersion
 ```
 
 Update and soft-delete also require an active document. Restore requires a deleted document. The replacement increments the version by one, and `ReturnDocument.After` returns the actual persisted state.
@@ -450,7 +455,7 @@ sequenceDiagram
     participant C as Client
     participant H as ChangeTodoStatus handler
     participant TX as ITransactionExecutor
-    participant R as MongoTodoRepository
+    participant R as TodoRepository
     participant M as MongoDB
 
     C->>H: PUT /api/todos/{id}/status {status: Completed, version: N}
@@ -461,13 +466,13 @@ sequenceDiagram
     H->>TX: ExecuteAsync(work)
     TX->>M: start session and transaction
     H->>R: UpdateAsync(todo)
-    R->>M: findOneAndReplace {_id, version: N} → version N+1
+    R->>M: findOneAndReplace {_id, ownerId, deletedAt: null, version: N} → version N+1
     alt no document matched
         R-->>H: ConcurrencyConflictException
         TX->>M: abort
         H-->>C: 409 Problem Details
     else replaced
-        H->>H: read the completion event → next date from the scheduled due date
+        H->>H: read todo.Completion → next date from the scheduled due date
         H->>R: AddAsync(next occurrence: same seriesId, occurrenceNumber + 1)
         R->>M: insertOne (unique partial index on owner + seriesId + occurrenceNumber)
         TX->>M: commit
@@ -498,9 +503,8 @@ unit, committing when it returns and aborting when it throws. It is deliberately
 not a unit of work: nothing is tracked, deferred, or coordinated, and repository
 writes stay immediate. The MongoDB repository reads the scoped transaction
 context and uses the active session for both the replacement and the
-event-handler insert, so anything running inside the operation joins the
-transaction without knowing it exists. Any event-handler or write failure aborts
-it.
+successor insert, so anything running inside the operation joins the
+transaction without knowing it exists. Any write failure aborts it.
 
 An aborted transaction surfaces as `TransactionConflictException`, which carries
 no resource identifier because the conflicting document is not always the one
@@ -549,10 +553,10 @@ point at the selection and are not themselves selected, so deleting a
 prerequisite together with its dependent is allowed while deleting the
 prerequisite alone is not.
 
-Recurring completions build their next occurrences through the shared
-`IRecurringOccurrenceFactory` and join the same batch. The bulk path
-deliberately raises no notification, whose handler would issue a separate
-insert per occurrence.
+Recurring completions build their next occurrences through the same
+`IRecurringOccurrenceFactory` the single-item path uses, and the successors
+join the batch as inserts, so one bulk write carries both the completions and
+the occurrences they create.
 
 Because a bulk write reports counts rather than documents, written versions are
 computed as `version + 1` and checked against the matched and inserted counts
@@ -560,10 +564,15 @@ before the transaction commits. A duplicate key arrives as a bulk write error
 rather than the single write error the transaction executor recognises, so the
 repository maps it back to the offending TODO through the write error index.
 
-The browser is no longer the only caller of these batches. The assistant sends
-the same commands and carries its own retry policy; see the assistant section
-below, and "Two conflict policies" in the decision log for why the two are not
-consolidated.
+A rejected batch is repaired through `GET /api/todos/selection`, which reports
+the current version and deletion state of specific identifiers without
+disturbing the list — a list refresh would replace the versions the selection
+was resolved from. The browser retries a status batch once, silently, with the
+versions that probe returns, and only when every selected identifier still
+resolves; deletion is never retried and always returns to the user. The
+assistant sends the same commands and carries its own copy of that policy; see
+the assistant section below, and "Two conflict policies" in the decision log
+for why the two are not consolidated.
 
 ## Assistant
 
@@ -638,10 +647,12 @@ Normal reads and existence checks add `deletedAt == null` to their repository fi
 
 Deletion state is valid only when `deletedAt` and `purgeAt` are either both null or both present, with `purgeAt` later than `deletedAt`. Restore cannot use a timestamp before deletion.
 
-The background job that physically removes records after `purgeAt` is separate
-from this recoverable lifecycle. Before deletion, the application asks the
-repository whether an active, non-archived TODO depends on the target and
-rejects the transition when one exists.
+Physical removal after `purgeAt` belongs to a background job that is separate
+from this recoverable lifecycle and is not yet built; until it is, the retention
+window is enforced by the restore rule alone and expired documents simply
+remain unrestorable. Before deletion, the application asks the repository
+whether an active, non-archived TODO depends on the target and rejects the
+transition when one exists.
 
 ## Dependency graph and status rules
 
@@ -669,10 +680,25 @@ runs before handlers, and a domain-rule pipeline behavior converts domain
 exceptions into the application-facing `DomainRuleException`.
 
 The global API exception handler produces RFC Problem Details. It maps
-`NotFoundException` to 404 and both `ConcurrencyConflictException` and
-`DomainRuleException` to 409. Validation errors use a predictable camel-cased
-`errors` dictionary. All problem responses include the request path and a
-`traceId`.
+`NotFoundException` to 404; `ConcurrencyConflictException`,
+`BulkConcurrencyConflictException`, `TransactionConflictException`, and
+`DomainRuleException` to 409; and `InvalidCursorException` to 400. Validation
+errors are 400 with a predictable camel-cased `errors` dictionary. Anything
+else is a 500. All problem responses include the request path and a `traceId`.
+
+Rate limits sit in the same pipeline, after authorization, and refuse with the
+same contract: a `429` Problem Details body carrying the `traceId`, plus a
+`Retry-After` header when the limiter that refused can say how long. Both
+limiters partition on the internal user ID, never the address, so a refusal
+and its request log name the same caller. Assistant turns are held to a
+per-user concurrency limit applied to that one action by name; every other
+mutation — anything but `GET`, `HEAD`, and `OPTIONS` — passes through a
+per-user fixed window applied globally, which skips anonymous requests
+(authorization has already answered them) and the assistant's own routes, so
+the two limits never compound on one request. Reads are not counted. Queue
+length is zero on both, because a caller waiting for a permit is holding the
+connection the limit exists to protect. The `RateLimiting` section sets the
+numbers and can turn the whole thing off.
 
 The assistant turn endpoint is the one route that does not end in that contract.
 It streams server-sent events, so a failure after the first event cannot become
@@ -751,6 +777,6 @@ first login.
 Constructors fail fast with `ArgumentNullException` for every required injected
 dependency. This makes direct construction and registration mistakes fail at
 the composition boundary instead of later during a request. The optional
-`MongoTransactionContext` parameter on `MongoTodoRepository` is deliberate:
+`MongoTransactionContext` parameter on `TodoRepository` is deliberate:
 normal dependency injection supplies the scoped context, while direct repository
 construction can fall back to a new context when no transaction is required.

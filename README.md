@@ -190,7 +190,7 @@ Override individual values through environment variables when needed:
 MongoDb__ConnectionString="mongodb://localhost:27017/?replicaSet=rs0" dotnet run --project src/Sleeky.Todo.Api
 ```
 
-Application handlers depend on `ITodoRepository`. Infrastructure implements that contract with `MongoTodoRepository`, which accesses the configured collection directly through `IMongoDatabase`. The BSON document and mapping types remain internal to Infrastructure.
+Application handlers depend on `ITodoRepository`. Infrastructure implements that contract with `TodoRepository`, which accesses the configured collection directly through `IMongoDatabase`. The BSON document and mapping types remain internal to Infrastructure.
 
 Backend-owned identifiers are .NET `Guid` values stored as standard BSON UUIDs
 (binary subtype 4). Their JSON representation remains the canonical UUID

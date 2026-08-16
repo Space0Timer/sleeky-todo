@@ -6,10 +6,13 @@ trade-offs, known limitations, and intentionally omitted features.
 ## Layered monolith
 
 The backend is a layered monolith split into Domain, Application,
-Infrastructure, and API projects. This keeps business rules independent of HTTP
-and MongoDB without introducing distributed-system overhead. Dependencies point
-inward: API composes Application and Infrastructure, Infrastructure implements
-Application abstractions, and Domain has no outward dependencies.
+Infrastructure, API, and Assistant projects. This keeps business rules
+independent of HTTP, MongoDB, and any model provider without introducing
+distributed-system overhead. Dependencies point inward: API composes
+Application, Infrastructure, and Assistant; Infrastructure implements
+Application abstractions; Assistant references Application alone and is the
+only project that references a provider SDK; and Domain has no outward
+dependencies.
 
 The React client is a separate build artifact but consumes the same HTTP API.
 Additional deployable backend services should only be introduced when an
@@ -17,9 +20,10 @@ independent scaling or ownership requirement justifies them.
 
 ## CQRS with MediatR
 
-HTTP controllers send commands and queries through MediatR. Each request has a
-single handler, and cross-cutting validation and domain-exception translation
-run as pipeline behaviors. Commands and queries share one MongoDB data model;
+HTTP controllers — and the assistant's tools — send commands and queries
+through MediatR. Each request has a single handler, and cross-cutting request
+logging, validation, and domain-exception translation run as pipeline
+behaviors. Commands and queries share one MongoDB data model;
 CQRS here separates use-case code rather than introducing separate read and
 write databases.
 
@@ -94,7 +98,7 @@ ordering.
 
 ## MongoDB repository boundary
 
-Application code depends on `ITodoRepository`, while Infrastructure provides `MongoTodoRepository`. The repository uses `IMongoDatabase` directly rather than introducing a thin `MongoDbContext` wrapper. MongoDB documents and mapping types remain internal so persistence-specific BSON concerns cannot leak into Application or Domain code.
+Application code depends on `ITodoRepository`, while Infrastructure provides `TodoRepository`. The repository uses `IMongoDatabase` directly rather than introducing a thin `MongoDbContext` wrapper. MongoDB documents and mapping types remain internal so persistence-specific BSON concerns cannot leak into Application or Domain code.
 
 Integration tests use the public repository contract. Exact storage representations are checked as raw BSON after writing through the repository, avoiding both `InternalsVisibleTo` and a public persistence document type.
 
@@ -128,7 +132,7 @@ The name is deliberate: this is not a unit of work. Nothing is tracked, deferred
 
 Conflicts are reported where their detail is known. The repository throws `ConcurrencyConflictException` carrying the TODO ID and expected version, because it issued the filter. The executor throws `TransactionConflictException` without an identifier, because an aborted transaction does not say which document lost. The API maps both to 409, which always means "re-run the read-modify-write" — deliberately including transient cluster events such as a primary stepdown, which are surfaced to the client rather than retried server-side.
 
-Schema and data bootstrap is excluded from this boundary. MongoDB forbids index creation and removal inside a transaction, hosted services run before the request pipeline exists, and the initializers are idempotent, so there is nothing to roll back.
+Schema bootstrap is excluded from this boundary. MongoDB forbids index creation and removal inside a transaction, hosted services run before the request pipeline exists, and the index initializer is idempotent, so there is nothing to roll back.
 
 ## Ninety-day recoverable deletion
 
@@ -412,7 +416,8 @@ no marker interface left, and Domain has no package references — this time
 because nothing needs one, rather than as a rule held for its own sake.
 
 The transaction reuses the existing expected-version filter. A unique partial
-index on `seriesId + occurrenceNumber` is the second idempotency boundary.
+index on `ownerId + seriesId + occurrenceNumber` is the second idempotency
+boundary.
 Concurrent completion therefore produces one committed completion and next
 occurrence, while the stale request returns 409.
 
@@ -477,8 +482,9 @@ omission is a cross-tenant data leak rather than a visible bug. Handlers cannot
 forget a filter they never supply.
 
 The repository refuses to operate without an authenticated user. The retention
-purge path is the deliberate exception, since it is maintenance work that spans
-owners.
+purge, once built, will be the deliberate exception, since it is maintenance
+work that spans owners; no such path exists yet, so today every repository
+member is owner-scoped.
 
 Requests for another user's TODO return `404` rather than `403`, so the response
 does not confirm that the identifier exists.
@@ -552,10 +558,44 @@ ownership filters: an unprotected mutation should require a deliberate opt-out
 rather than a remembered opt-in.
 
 Antiforgery tokens are bound to the authenticated identity, so a token obtained
-before login fails validation afterwards. The client refreshes its token on
-startup, after login, and after logout. The antiforgery cookie may be readable
+before login fails validation afterwards. The client requests a token whenever
+a session is established — on startup and when the login navigation returns —
+and discards it when the session ends. The antiforgery cookie may be readable
 by JavaScript; it is not an authentication credential, and the session cookie
 remains HttpOnly.
+
+## Rate limiting keyed by user, not IP
+
+Two limits exist, both partitioned by the internal user ID: a per-user
+concurrency limit on assistant turns, and a per-user fixed-window limit on
+mutation endpoints. The user's own model key removes the cost concern from
+assistant turns, not the abuse one — a turn holds a model connection and a
+request thread open for as long as the model takes — and a mutation loop
+against the API is the same shape of problem with a cheaper body. Keying by
+the user rather than the address means a refusal names the same caller the
+request log does, and that everyone behind one NAT is not one caller.
+
+The two are wired differently on purpose. The assistant limit is a named
+policy attached to the one action it protects, so it is readable from the
+endpoint. The mutation limit is the global limiter with a predicate: it
+partitions to no limiter for `GET`, `HEAD`, and `OPTIONS`, for anonymous
+requests, and for anything under `/api/assistant`. Reads are left alone
+because they hold nothing past the response and paging a long list is the one
+thing a well-behaved client does in a tight loop. Anonymous callers get no
+limiter rather than a shared bucket, because authorization has already refused
+them by the time the limiter runs — the middleware sits after it — and one
+shared partition for everything unauthenticated would let any caller exhaust it
+for the rest. The assistant path is excluded so the limit a user actually hits
+is one number rather than the interaction of two.
+
+Queue length is zero on both. A caller waiting for a permit is holding open the
+connection the limit exists to protect, so refusing at once says the same thing
+sooner. A refusal is a `429` in the same Problem Details shape as every other
+error, carrying the `traceId`, with a `Retry-After` header only when the
+limiter that refused can state a wait — a concurrency limit has no window to
+wait out. The `RateLimiting` section holds the numbers and an `Enabled` switch;
+the integration tests cover the window, the read exclusion, the per-user
+partition, the assistant permit, the problem contract, and the switch.
 
 ## Local identity provider for development and browser tests
 
@@ -733,12 +773,15 @@ The accepted costs:
   to 300 distinct tokens, all rewritten as multikey entries on every
   full-document replace. This is likely the collection's largest index — fine
   at this scale, recorded so `db.stats()` does not surprise anyone.
-- **Rollback is safe but leaves work for the next start.** `TodoDocument`
-  ignores unknown elements, so a rolled-back binary reads token-carrying
-  documents without complaint, but its full-document replaces drop
-  `searchTokens` from anything edited while rolled back. The next start's
-  backfill heals exactly those documents. A non-event on the single-instance
-  compose deployment; it matters only if deployment ever becomes rolling.
+- **Rollback is safe but not self-healing.** `TodoDocument` ignores unknown
+  elements, so a rolled-back binary reads token-carrying documents without
+  complaint, but its full-document replaces drop `searchTokens` from anything
+  edited while rolled back. Nothing backfills them: the startup migrator that
+  once did was removed with the enum migrator, for the reason "Persisted enum
+  representation" gives, so such a document stays invisible to search until a
+  current build rewrites it. A non-event on the single-instance compose
+  deployment; it matters only if deployment ever becomes rolling, which is
+  when the migration step in §4 of the short log earns its place.
 - **A match can be invisible.** Search covers description words, while a card
   renders only the first 120 characters of the description. A term matched deep
   in a long description produces a card with no visible occurrence of it. This

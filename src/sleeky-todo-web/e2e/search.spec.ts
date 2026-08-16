@@ -13,9 +13,9 @@ function seededId(index: number): string {
 
 /**
  * Search reads the stored `searchTokens` rather than the name, so a seed that
- * omits them is invisible to every assertion here. Seeding runs after the API
- * has started, which means the startup backfill has already been and gone and
- * will not repair these documents.
+ * omits them is invisible to every assertion here. Nothing backfills the field
+ * — the API only writes it on its own inserts and replaces — so a document
+ * seeded without it stays unsearchable.
  *
  * The tokenizer's rules are mirrored here only as far as the fixed names below
  * need: lowercase, split on non-alphanumeric runs. Anything more elaborate

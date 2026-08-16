@@ -1,8 +1,8 @@
 # Decision Log
 
-The short version, in the four parts the brief asks for. Every entry has a
-longer treatment in [decision-log-detailed.md](decision-log-detailed.md), which
-records each decision as it was made; the mechanisms are described in
+The short version, in the four parts the brief asks for. Nearly every entry
+has a longer treatment in [decision-log-detailed.md](decision-log-detailed.md),
+which records each decision as it was made; the mechanisms are described in
 [architecture.md](architecture.md).
 
 ## 1. How I interpreted the ambiguous requirements
@@ -134,14 +134,16 @@ records each decision as it was made; the mechanisms are described in
   the versions are already there; a per-user change feed over SSE could drive
   the existing refresh path with no new consistency rules.
 - **A scheduled retention purge**, whose owner-spanning repository path is
-  already the carved-out exception to the "no user, no query" rule.
+  the one exception reserved in the "no user, no query" rule but not yet
+  written.
 - **Observability beyond logs:** OpenTelemetry metrics and traces for request
   latency, Mongo command timing, and assistant token usage.
 - **Component-level frontend tests**, for faster feedback than the browser
   suite gives on UI state.
 - **A full-stack Compose profile** that also runs the application image, so
   one command starts everything instead of three terminals.
-- **Startup data migrations.** Nothing has been deployed anywhere its data
-  outlives a schema change, so local databases are recreated instead. A real
-  deployment target makes that a migration step rather than a `docker compose
-  down --volumes`.
+- **A migration step instead of startup work.** Nothing has been deployed
+  anywhere its data outlives a schema change, so local databases are recreated
+  instead. A real deployment target makes that a migration step rather than a
+  `docker compose down --volumes`, and index creation leaves startup for the
+  same step, so a build no longer blocks a collection's writes on every start.
