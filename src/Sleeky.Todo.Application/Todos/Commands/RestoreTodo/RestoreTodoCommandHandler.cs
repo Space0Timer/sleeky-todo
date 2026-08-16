@@ -34,6 +34,8 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
         RestoreTodoCommand request,
         CancellationToken cancellationToken)
     {
+        // The target is deleted by definition, so this is the one single-item
+        // command that has to look past the soft-delete filter to find it.
         TodoItem todoItem = await todoRepository.GetByIdAsync(
             request.Id,
             includeDeleted: true,
@@ -41,6 +43,10 @@ public sealed class RestoreTodoCommandHandler : IRequestHandler<RestoreTodoComma
             ?? throw new NotFoundException("TODO", request.Id);
 
         TodoVersionGuard.EnsureExpectedVersion(todoItem, request.Version);
+
+        // Restoration has no dependency gate: a restored TODO blocks nothing,
+        // and its own prerequisites are evaluated when it next changes status.
+        // The retention rule is the entity's own.
         todoItem.Restore(clock.UtcNow);
 
         TodoItem restoredTodoItem = await todoRepository.RestoreAsync(
