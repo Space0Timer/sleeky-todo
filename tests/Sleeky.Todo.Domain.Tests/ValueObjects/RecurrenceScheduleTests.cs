@@ -74,4 +74,34 @@ public sealed class RecurrenceScheduleTests
         nonStandardInterval.Should().Throw<DomainException>();
         mismatchedUnit.Should().Throw<DomainException>();
     }
+
+    /// <summary>
+    /// The ceiling is the same on the way in and on the way back from
+    /// storage: an interval that would only fail when the next date is
+    /// calculated is refused before it can be saved.
+    /// </summary>
+    [TestMethod]
+    public void IntervalsAboveTheMaximumAreRejected()
+    {
+        Action created = () => RecurrenceSchedule.Create(
+            RecurrenceType.Custom,
+            RecurrenceSchedule.MaximumInterval + 1,
+            RecurrenceUnit.Days,
+            DueDate);
+        Action rehydrated = () => RecurrenceSchedule.Rehydrate(
+            RecurrenceType.Custom,
+            RecurrenceSchedule.MaximumInterval + 1,
+            RecurrenceUnit.Days,
+            null);
+        RecurrenceSchedule atTheMaximum = RecurrenceSchedule.Create(
+            RecurrenceType.Custom,
+            RecurrenceSchedule.MaximumInterval,
+            RecurrenceUnit.Days,
+            DueDate);
+
+        created.Should().Throw<DomainException>()
+            .WithMessage($"The recurrence interval must not exceed {RecurrenceSchedule.MaximumInterval}.");
+        rehydrated.Should().Throw<DomainException>();
+        atTheMaximum.Interval.Should().Be(RecurrenceSchedule.MaximumInterval);
+    }
 }

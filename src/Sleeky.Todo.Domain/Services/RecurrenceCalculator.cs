@@ -1,4 +1,5 @@
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.Exceptions;
 using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Domain.Services;
@@ -38,8 +39,9 @@ public sealed class RecurrenceCalculator : IRecurrenceCalculator
     /// <exception cref="ArgumentOutOfRangeException">
     /// The schedule's unit is not a defined <see cref="RecurrenceUnit"/>.
     /// </exception>
-    /// <exception cref="OverflowException">
-    /// A weekly interval multiplies past the range of an integer.
+    /// <exception cref="DomainException">
+    /// The next occurrence would fall past the last representable date, so the
+    /// series cannot continue.
     /// </exception>
     public DateOnly CalculateNext(
         DateOnly scheduledDueDate,
@@ -47,17 +49,33 @@ public sealed class RecurrenceCalculator : IRecurrenceCalculator
     {
         ArgumentNullException.ThrowIfNull(recurrence);
 
-        return recurrence.Unit switch
+        if (!Enum.IsDefined(recurrence.Unit))
         {
-            RecurrenceUnit.Days => scheduledDueDate.AddDays(recurrence.Interval),
-            RecurrenceUnit.Weeks => scheduledDueDate.AddDays(
-                checked(recurrence.Interval * 7)),
-            RecurrenceUnit.Months => CalculateNextMonth(
-                scheduledDueDate,
-                recurrence.Interval,
-                recurrence.AnchorDay!.Value),
-            _ => throw new ArgumentOutOfRangeException(nameof(recurrence)),
-        };
+            throw new ArgumentOutOfRangeException(nameof(recurrence));
+        }
+
+        // The date arithmetic reports "past the calendar" as an argument
+        // error. Here that is a rule about the series, not a caller mistake:
+        // a TODO due on the last representable day has nowhere to recur to.
+        try
+        {
+            return recurrence.Unit switch
+            {
+                RecurrenceUnit.Days => scheduledDueDate.AddDays(recurrence.Interval),
+                RecurrenceUnit.Weeks => scheduledDueDate.AddDays(
+                    checked(recurrence.Interval * 7)),
+                _ => CalculateNextMonth(
+                    scheduledDueDate,
+                    recurrence.Interval,
+                    recurrence.AnchorDay!.Value),
+            };
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new DomainException(
+                "The next occurrence would fall beyond the supported date range.",
+                exception);
+        }
     }
 
     /// <summary>

@@ -56,11 +56,14 @@ public sealed class DependencyCycleDetector : IDependencyCycleDetector
             }
 
             // Only the edges matter here, so the walk reads a projection rather
-            // than materialising an aggregate per node.
+            // than materialising an aggregate per node. Deleted nodes are read
+            // too: a TODO in the trash keeps its edges and can be restored, so
+            // a path that runs through one is a path the graph still has.
             IReadOnlyCollection<TodoDependencyNode> batch =
                 await todoRepository.GetDependencyNodesAsync(
                     batchIds,
-                    cancellationToken: cancellationToken);
+                    includeDeleted: true,
+                    cancellationToken);
 
             frontier = BuildNextFrontier(batch, visited);
         }

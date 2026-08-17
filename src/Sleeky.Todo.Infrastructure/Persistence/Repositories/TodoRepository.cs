@@ -46,6 +46,15 @@ internal sealed class TodoRepository : ITodoRepository
             .Include(document => document.DeletedAt)
             .Include(document => document.DependencyIds);
 
+    /// <summary>
+    /// The two fields that place a TODO in its series; nothing else is read
+    /// when the question is only whether that position is taken.
+    /// </summary>
+    private static readonly ProjectionDefinition<TodoDocument> SeriesFields =
+        Builders<TodoDocument>.Projection
+            .Include(document => document.SeriesId)
+            .Include(document => document.OccurrenceNumber);
+
     private readonly ISpaceScope spaceScope;
     private readonly SessionAwareCollection<TodoDocument> todoItems;
 
@@ -176,6 +185,43 @@ internal sealed class TodoRepository : ITodoRepository
             cancellationToken);
 
         return count > 0;
+    }
+
+    public async Task<IReadOnlyCollection<TodoSeriesOccurrence>> GetExistingSeriesOccurrencesAsync(
+        IReadOnlyCollection<TodoSeriesOccurrence> occurrences,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(occurrences);
+
+        if (occurrences.Count == 0)
+        {
+            return Array.Empty<TodoSeriesOccurrence>();
+        }
+
+        // Deleted documents are deliberately not filtered out: the unique
+        // series index still holds their position, so an insert there would
+        // collide whether or not the occupant is in the trash.
+        FilterDefinition<TodoDocument> filter = BuildSpaceFilter()
+            & Builders<TodoDocument>.Filter.Or(occurrences.Select(occurrence =>
+                Builders<TodoDocument>.Filter.Eq(
+                    document => document.SeriesId,
+                    occurrence.SeriesId)
+                & Builders<TodoDocument>.Filter.Eq(
+                    document => document.OccurrenceNumber,
+                    occurrence.OccurrenceNumber)));
+        List<TodoDocument> documents = await todoItems
+            .Find(filter)
+            .Project<TodoDocument>(SeriesFields)
+            .ToListAsync(cancellationToken);
+
+        return documents
+            .Where(document => document.SeriesId is not null
+                && document.OccurrenceNumber is not null)
+            .Select(document => new TodoSeriesOccurrence(
+                document.SeriesId!.Value,
+                document.OccurrenceNumber!.Value))
+            .Distinct()
+            .ToArray();
     }
 
     public async Task<IReadOnlyCollection<Guid>> GetActiveDependentIdsAsync(

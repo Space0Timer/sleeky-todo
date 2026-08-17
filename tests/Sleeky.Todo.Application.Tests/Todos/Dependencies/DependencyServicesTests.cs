@@ -32,6 +32,33 @@ public sealed class DependencyServicesTests
         await repository.Received(1).GetDependencyNodesAsync(
             Arg.Is<IEnumerable<Guid>>(ids =>
                 ids.ToHashSet().SetEquals(new[] { Id("todo-c"), Id("todo-d") })),
+            true,
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A TODO in the trash keeps its edges and can be restored, so a path
+    /// through it still counts. Skipping deleted nodes would let an edge be
+    /// added that closes a cycle the moment the node comes back.
+    /// </summary>
+    [TestMethod]
+    public async Task GraphServiceWalksThroughDeletedNodes()
+    {
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        StubGraph(
+            repository,
+            CreateNode("todo-b", dependencies: new[] { "todo-c" }),
+            CreateNode("todo-c", isDeleted: true, dependencies: new[] { "todo-a" }),
+            CreateNode("todo-a"));
+        DependencyCycleDetector detector = new DependencyCycleDetector(repository);
+
+        bool createsCycle = await detector.WouldCreateCycleAsync(
+            Id("todo-a"),
+            Id("todo-b"));
+
+        createsCycle.Should().BeTrue();
+        await repository.DidNotReceive().GetDependencyNodesAsync(
+            Arg.Any<IEnumerable<Guid>>(),
             false,
             Arg.Any<CancellationToken>());
     }
@@ -53,7 +80,7 @@ public sealed class DependencyServicesTests
         createsCycle.Should().BeFalse();
         await repository.Received(2).GetDependencyNodesAsync(
             Arg.Any<IEnumerable<Guid>>(),
-            false,
+            true,
             Arg.Any<CancellationToken>());
     }
 

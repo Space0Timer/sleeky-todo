@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Sleeky.Todo.Api.Contracts.Assistant;
 using Sleeky.Todo.Api.Contracts.Auth;
+using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Assistant.Turns;
 using Sleeky.Todo.Domain.Enums;
@@ -31,6 +32,7 @@ public sealed class RateLimitingApiTests
 {
     private const string LogoutPath = "/api/auth/logout";
     private const string TurnsPath = "/api/assistant/turns";
+    private const string SettingsPath = "/api/assistant/settings";
 
     private static readonly Guid UserId =
         Guid.Parse("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
@@ -187,6 +189,30 @@ public sealed class RateLimitingApiTests
         runner.Release();
     }
 
+    /// <summary>
+    /// Only the turn route carries its own policy. The assistant's settings
+    /// routes are ordinary mutations — one of them opens an outbound connection
+    /// to a host the user names — so they stay inside the mutation window
+    /// rather than sharing the turn route's exemption.
+    /// </summary>
+    [TestMethod]
+    public async Task AssistantSettingsMutationsCountAgainstTheMutationWindow()
+    {
+        factory = CreateFactory(
+            new Dictionary<string, string?>
+            {
+                ["RateLimiting:MutationPermitLimit"] = "1",
+            },
+            services => services.AddSingleton<IAssistantSettingsRepository, EmptySettings>());
+        HttpClient client = await CreateAuthenticatedClientAsync(UserId);
+
+        using HttpResponseMessage first = await client.DeleteAsync(SettingsPath);
+        using HttpResponseMessage second = await client.DeleteAsync(SettingsPath);
+
+        first.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
     [TestMethod]
     public async Task LimitsCanBeTurnedOff()
     {
@@ -309,6 +335,35 @@ public sealed class RateLimitingApiTests
         {
             return Task.FromResult(
                 new SpaceAccessContext(spaceId, "Test Space", SpacePermission.Owner));
+        }
+    }
+
+    /// <summary>
+    /// A settings store with nothing in it, so a settings route can be reached
+    /// without the database this suite does not have; what the test measures
+    /// is the limiter in front of the route, not the route itself.
+    /// </summary>
+    private sealed class EmptySettings : IAssistantSettingsRepository
+    {
+        public Task<AssistantSettingsRecord?> GetAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<AssistantSettingsRecord?>(null);
+        }
+
+        public Task SaveAsync(
+            AssistantSettingsRecord settings,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> DeleteAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(false);
         }
     }
 }

@@ -39,6 +39,16 @@ public interface ITodoRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns which of <paramref name="occurrences"/> already exist in the
+    /// bound Space. Soft-deleted occurrences count, because the unique series
+    /// index counts them too: what this answers is whether an insert at that
+    /// position would collide.
+    /// </summary>
+    Task<IReadOnlyCollection<TodoSeriesOccurrence>> GetExistingSeriesOccurrencesAsync(
+        IReadOnlyCollection<TodoSeriesOccurrence> occurrences,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns the identifiers of active, non-archived TODOs that depend on any
     /// of <paramref name="dependencyIds"/>, ignoring those in
     /// <paramref name="excludedIds"/>. A batch deletion excludes its own members

@@ -209,13 +209,12 @@ public sealed class BulkTodoApiTests
     }
 
     /// <summary>
-    /// Re-completing a reopened occurrence would insert occurrence two a second
-    /// time. The unique series index rejects it, and the driver reports that as
-    /// a bulk write error rather than the single write error the transaction
-    /// executor classifies, so the repository has to translate it.
+    /// Re-completing a reopened occurrence finds occurrence two already there.
+    /// The batch completes it without inserting a second one, so the series
+    /// keeps its one successor and the item reports no new occurrence.
     /// </summary>
     [TestMethod]
-    public async Task ADuplicateRecurringOccurrenceRollsBackWithAConflict()
+    public async Task ARecompletedRecurringOccurrenceInsertsNoSecondSuccessor()
     {
         JsonElement recurring = await CreateTodoAsync(new RecurrenceRequest
         {
@@ -230,14 +229,13 @@ public sealed class BulkTodoApiTests
         HttpResponseMessage response = await ChangeStatusesAsync(
             TodoStatus.Completed,
             [new BulkTodoSelectionItem { Id = Guid.Parse(recurringId), Version = 3 }]);
-        JsonElement problem = await ReadJsonAsync(response);
+        JsonElement body = await ReadJsonAsync(response);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        problem.GetProperty("title").GetString().Should().Be("Concurrency conflict.");
-        problem.GetProperty("detail").GetString().Should()
-            .MatchRegex("'[0-9a-fA-F-]{36}'");
-        (await GetTodoAsync(recurringId)).GetProperty("status").GetInt32()
-            .Should().Be((int)TodoStatus.Open);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonElement item = body.GetProperty("items").EnumerateArray().Single();
+        item.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.Completed);
+        item.GetProperty("version").GetInt64().Should().Be(4);
+        item.GetProperty("nextOccurrenceId").ValueKind.Should().Be(JsonValueKind.Null);
         (await CountTodoDocumentsAsync()).Should().Be(2);
     }
 

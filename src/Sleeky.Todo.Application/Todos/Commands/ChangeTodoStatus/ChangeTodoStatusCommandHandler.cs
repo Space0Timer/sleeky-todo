@@ -73,21 +73,23 @@ public sealed class ChangeTodoStatusCommandHandler
         // carries the successor a recurring TODO needs inserted.
         TodoStatus previousStatus = todoItem.Status;
         _ = todoItem.ChangeStatus(request.Status, clock.UtcNow);
-        TodoCompletion? completion = todoItem.Completion;
+        TodoItem? successor = await BuildMissingSuccessorAsync(
+            todoItem.Completion,
+            cancellationToken);
         TodoItem updatedTodo = await PersistStatusChangeAsync(
             todoItem,
-            completion,
+            successor,
             cancellationToken);
 
-        LogStatusChange(updatedTodo, previousStatus, completion);
+        LogStatusChange(updatedTodo, previousStatus, successor);
 
-        return TodoDto.FromEntity(updatedTodo, completion?.NextOccurrenceId);
+        return TodoDto.FromEntity(updatedTodo, successor?.Id);
     }
 
     private void LogStatusChange(
         TodoItem updatedTodo,
         TodoStatus previousStatus,
-        TodoCompletion? completion)
+        TodoItem? successor)
     {
         this.logger.LogInformation(
             1108,
@@ -97,7 +99,7 @@ public sealed class ChangeTodoStatusCommandHandler
             updatedTodo.Status,
             updatedTodo.Version);
 
-        if (completion?.NextOccurrenceId is null || completion.SeriesId is null)
+        if (successor is null)
         {
             return;
         }
@@ -105,9 +107,62 @@ public sealed class ChangeTodoStatusCommandHandler
         this.logger.LogInformation(
             1101,
             "Created recurring TODO {TodoId} for series {SeriesId} after completing TODO {CompletedTodoId}",
-            completion.NextOccurrenceId,
-            completion.SeriesId,
-            completion.TodoId);
+            successor.Id,
+            successor.SeriesId,
+            updatedTodo.Id);
+    }
+
+    /// <summary>
+    /// The successor a recurring completion needs inserted, or null when there
+    /// is nothing to insert: the TODO is not recurring, or the next occurrence
+    /// already exists.
+    /// </summary>
+    /// <remarks>
+    /// The second case is a reopened occurrence being completed again. Its
+    /// successor was created the first time round and may already have been
+    /// worked on, so completing this one again must leave the series as it is
+    /// rather than collide with the unique series index — a collision the
+    /// client would otherwise see, on every attempt, as a concurrency conflict.
+    /// </remarks>
+    private async Task<TodoItem?> BuildMissingSuccessorAsync(
+        TodoCompletion? completion,
+        CancellationToken cancellationToken)
+    {
+        if (completion?.Recurrence is null)
+        {
+            return null;
+        }
+
+        if (await NextOccurrenceExistsAsync(completion, cancellationToken))
+        {
+            this.logger.LogInformation(
+                1113,
+                "Left series {SeriesId} unchanged after completing TODO {CompletedTodoId} again: the next occurrence already exists",
+                completion.SeriesId,
+                completion.TodoId);
+            return null;
+        }
+
+        return recurringOccurrenceFactory.CreateNext(completion);
+    }
+
+    private async Task<bool> NextOccurrenceExistsAsync(
+        TodoCompletion completion,
+        CancellationToken cancellationToken)
+    {
+        if (completion.SeriesId is null || completion.OccurrenceNumber is null)
+        {
+            return false;
+        }
+
+        IReadOnlyCollection<TodoSeriesOccurrence> existing =
+            await todoRepository.GetExistingSeriesOccurrencesAsync(
+                [new TodoSeriesOccurrence(
+                    completion.SeriesId.Value,
+                    completion.OccurrenceNumber.Value + 1)],
+                cancellationToken);
+
+        return existing.Count > 0;
     }
 
     /// <summary>
@@ -138,22 +193,23 @@ public sealed class ChangeTodoStatusCommandHandler
     }
 
     /// <summary>
-    /// A recurring completion also inserts the next occurrence, so those two
+    /// A completion that carries a successor inserts it alongside, so those two
     /// writes share a transaction. Every other status change, including
-    /// completing a non-recurring TODO, is a single write.
+    /// completing a non-recurring TODO or re-completing an occurrence whose
+    /// successor already exists, is a single write.
     /// </summary>
     /// <remarks>
-    /// The successor is built and inserted here rather than dispatched to a
-    /// separate handler, matching what the bulk path does with the same factory.
-    /// Both writes are then plainly inside the transaction, and an insert
-    /// failure aborts the completion.
+    /// The successor is inserted here rather than dispatched to a separate
+    /// handler, matching what the bulk path does with the same factory. Both
+    /// writes are then plainly inside the transaction, and an insert failure
+    /// aborts the completion.
     /// </remarks>
     private Task<TodoItem> PersistStatusChangeAsync(
         TodoItem todoItem,
-        TodoCompletion? completion,
+        TodoItem? successor,
         CancellationToken cancellationToken)
     {
-        if (completion?.Recurrence is null)
+        if (successor is null)
         {
             return todoRepository.UpdateAsync(todoItem, cancellationToken);
         }
@@ -164,9 +220,7 @@ public sealed class ChangeTodoStatusCommandHandler
                 TodoItem persistedTodo = await todoRepository.UpdateAsync(
                     todoItem,
                     transactionCancellationToken);
-                await todoRepository.AddAsync(
-                    recurringOccurrenceFactory.CreateNext(completion),
-                    transactionCancellationToken);
+                await todoRepository.AddAsync(successor, transactionCancellationToken);
 
                 return persistedTodo;
             },

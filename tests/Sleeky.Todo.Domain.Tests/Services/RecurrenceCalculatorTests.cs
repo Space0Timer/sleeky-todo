@@ -1,6 +1,7 @@
 using FluentAssertions;
 
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.Exceptions;
 using Sleeky.Todo.Domain.Services;
 using Sleeky.Todo.Domain.ValueObjects;
 
@@ -112,5 +113,26 @@ public sealed class RecurrenceCalculatorTests
         }
 
         next.Should().Be(new DateOnly(2028, 2, 29));
+    }
+
+    /// <summary>
+    /// A series due on the last representable day has nowhere to recur to.
+    /// That is a rule about the series, reported as one, rather than the
+    /// arithmetic error the calendar raises underneath.
+    /// </summary>
+    [TestMethod]
+    public void ANextOccurrencePastTheCalendarIsADomainRule()
+    {
+        RecurrenceSchedule daily = RecurrenceSchedule.Create(
+            RecurrenceType.Daily,
+            1,
+            null,
+            DateOnly.MaxValue);
+
+        Action next = () => calculator.CalculateNext(DateOnly.MaxValue, daily);
+
+        next.Should().Throw<DomainException>()
+            .WithMessage("The next occurrence would fall beyond the supported date range.")
+            .WithInnerException<ArgumentOutOfRangeException>();
     }
 }
