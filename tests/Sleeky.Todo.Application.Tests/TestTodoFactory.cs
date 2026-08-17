@@ -15,18 +15,20 @@ internal static class TestTodoFactory
         0,
         TimeSpan.Zero);
 
-    public static readonly Guid OwnerId = CreateId("owner-1");
+    public static readonly Guid SpaceId = CreateId("space-1");
+    public static readonly Guid CreatedByUserId = CreateId("user-1");
 
     public static TodoItem Create(string id = "todo-1")
     {
-        return Create(id, OwnerId);
+        return Create(id, SpaceId, CreatedByUserId);
     }
 
-    public static TodoItem Create(string id, Guid ownerId)
+    public static TodoItem Create(string id, Guid spaceId, Guid createdByUserId)
     {
         return TodoItem.Create(
             CreateId(id),
-            ownerId,
+            spaceId,
+            createdByUserId,
             "Submit report",
             "Monthly report",
             DueDate,
@@ -52,7 +54,8 @@ internal static class TestTodoFactory
     {
         return TodoItem.Rehydrate(
             todoItem.Id,
-            todoItem.OwnerId,
+            todoItem.SpaceId,
+            todoItem.CreatedByUserId,
             todoItem.Name,
             todoItem.Description,
             todoItem.DueDate,

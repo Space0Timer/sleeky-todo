@@ -11,7 +11,7 @@ public sealed class DependencyCycleDetector : IDependencyCycleDetector
     /// <remarks>
     /// The traversal always terminates — <c>visited</c> makes sure of that —
     /// but nothing bounds how much it reads on the way. A pathological graph
-    /// could hold the request open while it pages through the owner's whole
+    /// could hold the request open while it pages through the Space's whole
     /// set, so the walk gives up and reports a conflict instead. Both limits
     /// sit far above any hand-built dependency chain; reaching either means the
     /// graph is not one a person authored.

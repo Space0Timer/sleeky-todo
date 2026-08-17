@@ -1,6 +1,7 @@
 using FluentValidation;
 
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
+using Sleeky.Todo.Application.Todos.Validation;
 
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 
@@ -8,6 +9,9 @@ public sealed class GetTodoSelectionQueryValidator : AbstractValidator<GetTodoSe
 {
     public GetTodoSelectionQueryValidator()
     {
+        RuleFor(query => query.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(query => query.Ids)
             .Cascade(CascadeMode.Stop)
             .NotEmpty()

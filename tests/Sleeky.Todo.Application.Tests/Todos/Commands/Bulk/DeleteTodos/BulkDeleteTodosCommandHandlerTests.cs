@@ -157,7 +157,7 @@ public sealed class BulkDeleteTodosCommandHandlerTests
             NullLogger<BulkDeleteTodosCommandHandler>.Instance);
 
         return handler.Handle(
-            new BulkDeleteTodosCommand(items),
+            new BulkDeleteTodosCommand(TestTodoFactory.SpaceId, items),
             CancellationToken.None);
     }
 }

@@ -40,9 +40,15 @@ public sealed class AssistantTurnApiTests
     private static MongoDbContainer? mongoDbContainer;
 
     private HttpClient client = null!;
+    private Guid spaceId;
     private string databaseName = null!;
     private TodoApiFactory factory = null!;
     private ScriptedChatClientFactory clients = null!;
+
+    /// <summary>
+    /// Every TODO route hangs off the Space the suite seeded.
+    /// </summary>
+    private string Todos => $"/api/spaces/{spaceId}/todos";
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext testContext)
@@ -97,6 +103,7 @@ public sealed class AssistantTurnApiTests
                     }));
             });
         client = await factory.CreateAuthenticatedClientAsync(UserId);
+        spaceId = await factory.CreateSpaceAsync(UserId);
     }
 
     [TestCleanup]
@@ -133,7 +140,7 @@ public sealed class AssistantTurnApiTests
             ScriptedChatClient.Says("Marked 1 completed."));
 
         IReadOnlyList<(string Event, string Data)> events = await RunTurnAsync(
-            new AssistantTurnRequest { Message = "Complete the report." });
+            new AssistantTurnRequest { SpaceId = spaceId, Message = "Complete the report." });
 
         events.Select(entry => entry.Event).Should().ContainInOrder(
             TurnEventType.TurnStarted,
@@ -173,7 +180,7 @@ public sealed class AssistantTurnApiTests
             ScriptedChatClient.Says("You have one TODO."));
 
         IReadOnlyList<(string Event, string Data)> first = await RunTurnAsync(
-            new AssistantTurnRequest { Message = "What is on my list?" });
+            new AssistantTurnRequest { SpaceId = spaceId, Message = "What is on my list?" });
         JsonElement transcript = Payload(first, TurnEventType.TurnCompleted)
             .GetProperty("messages");
 
@@ -192,6 +199,7 @@ public sealed class AssistantTurnApiTests
         IReadOnlyList<(string Event, string Data)> second = await RunTurnAsync(
             new AssistantTurnRequest
             {
+                SpaceId = spaceId,
                 Message = "Complete it.",
                 Transcript = transcript,
             });
@@ -217,7 +225,7 @@ public sealed class AssistantTurnApiTests
                 new Dictionary<string, object?> { ["ids"] = new[] { id } }));
 
         IReadOnlyList<(string Event, string Data)> events = await RunTurnAsync(
-            new AssistantTurnRequest { Message = "Delete it." });
+            new AssistantTurnRequest { SpaceId = spaceId, Message = "Delete it." });
 
         events.Select(entry => entry.Event)
             .Should().Contain(TurnEventType.ConfirmationRequired)
@@ -248,6 +256,7 @@ public sealed class AssistantTurnApiTests
         IReadOnlyList<(string Event, string Data)> events = await RunTurnAsync(
             new AssistantTurnRequest
             {
+                SpaceId = spaceId,
                 Confirmation = new AssistantConfirmationRequest
                 {
                     Tool = TodoToolNames.DeleteTodos,
@@ -264,6 +273,91 @@ public sealed class AssistantTurnApiTests
         // which does not report a soft-deleted TODO at all.
         (await ProbeTodoAsync(id)).GetProperty("deletedAt").ValueKind
             .Should().NotBe(JsonValueKind.Null);
+    }
+
+    /// <summary>
+    /// The Space check is the turn's first act, so a turn naming a Space the
+    /// caller cannot see is an ordinary 404 rather than a stream that opens and
+    /// then stops — and the model is never asked anything.
+    /// </summary>
+    /// <remarks>
+    /// The status code is the point of doing it in the controller as well as in
+    /// the runner: once a server-sent event response has started, an exception
+    /// can no longer become one.
+    /// </remarks>
+    [TestMethod]
+    public async Task ATurnInASpaceTheUserCannotSeeIsRefusedBeforeTheModel()
+    {
+        clients.Client.Script(ScriptedChatClient.Says("Never sent."));
+
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/assistant/turns",
+            new AssistantTurnRequest
+            {
+                SpaceId = Guid.NewGuid(),
+                Message = "What is on my list?",
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        clients.Client.CallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A turn has to name a Space, and one that does not is a field error on
+    /// the request rather than a turn that runs against nothing.
+    /// </summary>
+    [TestMethod]
+    public async Task ATurnWithoutASpaceIsAValidationFailure()
+    {
+        clients.Client.Script(ScriptedChatClient.Says("Never sent."));
+
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/assistant/turns",
+            new AssistantTurnRequest { Message = "What is on my list?" });
+        JsonElement problem = JsonDocument
+            .Parse(await response.Content.ReadAsStringAsync())
+            .RootElement;
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        problem.GetProperty("errors").TryGetProperty("spaceId", out JsonElement errors)
+            .Should().BeTrue();
+        errors.EnumerateArray().Select(value => value.GetString())
+            .Should().Contain("A Space identifier is required.");
+        clients.Client.CallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A confirmation carries no Space of its own, so it executes in the Space
+    /// the turn names. One replayed against a Space the caller cannot see is
+    /// refused before it is applied, which is why the check precedes the
+    /// confirmation rather than following it.
+    /// </summary>
+    [TestMethod]
+    public async Task AConfirmationInAnUnreachableSpaceDeletesNothing()
+    {
+        JsonElement todo = await CreateTodoAsync("Still here");
+        string id = todo.GetProperty("id").GetString()!;
+        clients.Client.Script(ScriptedChatClient.Says("Never sent."));
+
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/assistant/turns",
+            new AssistantTurnRequest
+            {
+                SpaceId = Guid.NewGuid(),
+                Confirmation = new AssistantConfirmationRequest
+                {
+                    Tool = TodoToolNames.DeleteTodos,
+                    Items = new[]
+                    {
+                        new AssistantConfirmationItem { Id = Guid.Parse(id), Version = 1 },
+                    },
+                },
+            });
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        clients.Client.CallCount.Should().Be(0);
+        (await ReadTodoAsync(id)).GetProperty("deletedAt").ValueKind
+            .Should().Be(JsonValueKind.Null);
     }
 
     private static bool ShouldRunMongoDbTests()
@@ -324,7 +418,7 @@ public sealed class AssistantTurnApiTests
     private async Task<JsonElement> CreateTodoAsync(string name)
     {
         using HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos",
+            $"{Todos}",
             new CreateTodoRequest
             {
                 Name = name,
@@ -344,7 +438,7 @@ public sealed class AssistantTurnApiTests
     private async Task<JsonElement> ProbeTodoAsync(string id)
     {
         using HttpResponseMessage response = await client.GetAsync(
-            $"/api/todos/selection?id={id}");
+            $"{Todos}/selection?id={id}");
         response.EnsureSuccessStatusCode();
 
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync())
@@ -353,7 +447,7 @@ public sealed class AssistantTurnApiTests
 
     private async Task<JsonElement> ReadTodoAsync(string id)
     {
-        using HttpResponseMessage response = await client.GetAsync($"/api/todos/{id}");
+        using HttpResponseMessage response = await client.GetAsync($"{Todos}/{id}");
         response.EnsureSuccessStatusCode();
 
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;

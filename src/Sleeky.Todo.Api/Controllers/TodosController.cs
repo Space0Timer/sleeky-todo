@@ -22,9 +22,21 @@ using Sleeky.Todo.Application.Todos.Queries.GetTodoSelection;
 
 namespace Sleeky.Todo.Api.Controllers;
 
+/// <summary>
+/// The TODO routes, each nested under the Space it acts in.
+/// </summary>
+/// <remarks>
+/// The Space identifier is part of every route rather than a header or a
+/// body field, so a request cannot name a TODO without also naming the Space
+/// it expects to find it in. The controller only forwards it: the pipeline
+/// behavior authorizes the caller against the Space before any handler runs,
+/// and persistence then confines every read and write to that Space. A TODO
+/// that lives in another Space — even one the caller is a member of — is
+/// therefore a 404 on this route, not a leak.
+/// </remarks>
 [ApiController]
 [Authorize]
-[Route("api/todos")]
+[Route("api/spaces/{spaceId:guid}/todos")]
 public sealed class TodosController : ControllerBase
 {
     private readonly ISender sender;
@@ -39,11 +51,14 @@ public sealed class TodosController : ControllerBase
     [HttpGet]
     [ProducesResponseType<CursorPage<TodoListItemDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CursorPage<TodoListItemDto>>> List(
+        Guid spaceId,
         [FromQuery] GetTodosRequest request,
         CancellationToken cancellationToken)
     {
         GetTodosQuery query = new GetTodosQuery(
+            spaceId,
             request.Status,
             request.Priority,
             request.DueFrom,
@@ -63,12 +78,16 @@ public sealed class TodosController : ControllerBase
     [HttpPost]
     [ProducesResponseType<TodoDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> Create(
+        Guid spaceId,
         CreateTodoRequest request,
         CancellationToken cancellationToken)
     {
         CreateTodoCommand command = new CreateTodoCommand(
+            spaceId,
             request.Name,
             request.Description,
             request.DueDate,
@@ -78,7 +97,7 @@ public sealed class TodosController : ControllerBase
             request.Recurrence?.Unit);
         TodoDto todo = await sender.Send(command, cancellationToken);
 
-        return CreatedAtAction(nameof(Get), new { id = todo.Id }, todo);
+        return CreatedAtAction(nameof(Get), new { spaceId, id = todo.Id }, todo);
     }
 
     /// <summary>
@@ -89,12 +108,14 @@ public sealed class TodosController : ControllerBase
     [HttpGet("selection")]
     [ProducesResponseType<TodoSelection>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TodoSelection>> GetSelection(
+        Guid spaceId,
         [FromQuery(Name = "id")] Guid[] ids,
         CancellationToken cancellationToken)
     {
         TodoSelection selection = await sender.Send(
-            new GetTodoSelectionQuery(ids ?? Array.Empty<Guid>()),
+            new GetTodoSelectionQuery(spaceId, ids ?? Array.Empty<Guid>()),
             cancellationToken);
         return Ok(selection);
     }
@@ -104,24 +125,28 @@ public sealed class TodosController : ControllerBase
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TodoDto>> Get(
+        Guid spaceId,
         Guid id,
         CancellationToken cancellationToken)
     {
-        TodoDto todo = await sender.Send(new GetTodoQuery(id), cancellationToken);
+        TodoDto todo = await sender.Send(new GetTodoQuery(spaceId, id), cancellationToken);
         return Ok(todo);
     }
 
     [HttpPut("{id:guid}")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> Update(
+        Guid spaceId,
         Guid id,
         UpdateTodoRequest request,
         CancellationToken cancellationToken)
     {
         UpdateTodoCommand command = new UpdateTodoCommand(
+            spaceId,
             id,
             request.Name,
             request.Description,
@@ -136,15 +161,17 @@ public sealed class TodosController : ControllerBase
     [HttpPost("{id:guid}/dependencies")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> AddDependency(
+        Guid spaceId,
         Guid id,
         AddDependencyRequest request,
         CancellationToken cancellationToken)
     {
         TodoDto todo = await sender.Send(
-            new AddDependencyCommand(id, request.DependencyId, request.Version),
+            new AddDependencyCommand(spaceId, id, request.DependencyId, request.Version),
             cancellationToken);
 
         return Ok(todo);
@@ -153,16 +180,18 @@ public sealed class TodosController : ControllerBase
     [HttpDelete("{id:guid}/dependencies/{dependencyId:guid}")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> RemoveDependency(
+        Guid spaceId,
         Guid id,
         Guid dependencyId,
         RemoveDependencyRequest request,
         CancellationToken cancellationToken)
     {
         TodoDto todo = await sender.Send(
-            new RemoveDependencyCommand(id, dependencyId, request.Version),
+            new RemoveDependencyCommand(spaceId, id, dependencyId, request.Version),
             cancellationToken);
 
         return Ok(todo);
@@ -171,15 +200,17 @@ public sealed class TodosController : ControllerBase
     [HttpPut("{id:guid}/status")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> ChangeStatus(
+        Guid spaceId,
         Guid id,
         ChangeTodoStatusRequest request,
         CancellationToken cancellationToken)
     {
         TodoDto todo = await sender.Send(
-            new ChangeTodoStatusCommand(id, request.Status, request.Version),
+            new ChangeTodoStatusCommand(spaceId, id, request.Status, request.Version),
             cancellationToken);
 
         return Ok(todo);
@@ -188,15 +219,17 @@ public sealed class TodosController : ControllerBase
     [HttpDelete("{id:guid}")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> Delete(
+        Guid spaceId,
         Guid id,
         DeleteTodoRequest request,
         CancellationToken cancellationToken)
     {
         TodoDto todo = await sender.Send(
-            new DeleteTodoCommand(id, request.Version),
+            new DeleteTodoCommand(spaceId, id, request.Version),
             cancellationToken);
 
         return Ok(todo);
@@ -205,15 +238,17 @@ public sealed class TodosController : ControllerBase
     [HttpPost("{id:guid}/restore")]
     [ProducesResponseType<TodoDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TodoDto>> Restore(
+        Guid spaceId,
         Guid id,
         RestoreTodoRequest request,
         CancellationToken cancellationToken)
     {
         TodoDto todo = await sender.Send(
-            new RestoreTodoCommand(id, request.Version),
+            new RestoreTodoCommand(spaceId, id, request.Version),
             cancellationToken);
 
         return Ok(todo);
@@ -222,14 +257,16 @@ public sealed class TodosController : ControllerBase
     [HttpPut("status")]
     [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BulkTodoResult>> ChangeStatuses(
+        Guid spaceId,
         BulkChangeTodoStatusRequest request,
         CancellationToken cancellationToken)
     {
         BulkTodoResult result = await sender.Send(
-            new BulkChangeTodoStatusCommand(request.Status, ToSelection(request.Items)),
+            new BulkChangeTodoStatusCommand(spaceId, request.Status, ToSelection(request.Items)),
             cancellationToken);
 
         return Ok(result);
@@ -238,14 +275,16 @@ public sealed class TodosController : ControllerBase
     [HttpPost("restore")]
     [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BulkTodoResult>> RestoreMany(
+        Guid spaceId,
         BulkRestoreTodosRequest request,
         CancellationToken cancellationToken)
     {
         BulkTodoResult result = await sender.Send(
-            new BulkRestoreTodosCommand(ToSelection(request.Items)),
+            new BulkRestoreTodosCommand(spaceId, ToSelection(request.Items)),
             cancellationToken);
 
         return Ok(result);
@@ -254,14 +293,16 @@ public sealed class TodosController : ControllerBase
     [HttpDelete]
     [ProducesResponseType<BulkTodoResult>(StatusCodes.Status200OK)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BulkTodoResult>> DeleteMany(
+        Guid spaceId,
         BulkDeleteTodosRequest request,
         CancellationToken cancellationToken)
     {
         BulkTodoResult result = await sender.Send(
-            new BulkDeleteTodosCommand(ToSelection(request.Items)),
+            new BulkDeleteTodosCommand(spaceId, ToSelection(request.Items)),
             cancellationToken);
 
         return Ok(result);

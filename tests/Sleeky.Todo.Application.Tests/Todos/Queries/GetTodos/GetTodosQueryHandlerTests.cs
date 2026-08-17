@@ -29,7 +29,7 @@ public sealed class GetTodosQueryHandlerTests
                 Arg.Do<TodoListCriteria>(criteria => capturedCriteria = criteria),
                 Arg.Any<CancellationToken>())
             .Returns(storedItems);
-        GetTodosQuery query = new GetTodosQuery();
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId);
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         CursorPage<TodoListItemDto> page = await handler.Handle(
@@ -58,6 +58,7 @@ public sealed class GetTodosQueryHandlerTests
                 Arg.Any<CancellationToken>())
             .Returns(Array.Empty<TodoListItemDto>());
         GetTodosQuery query = new GetTodosQuery(
+            TestTodoFactory.SpaceId,
             TodoStatus.Completed,
             TodoPriority.High,
             new DateOnly(2026, 8, 1),
@@ -86,7 +87,7 @@ public sealed class GetTodosQueryHandlerTests
     [TestMethod]
     public async Task MalformedCursorIsRejectedBeforeDatabaseAccess()
     {
-        GetTodosQuery query = new GetTodosQuery(cursor: "not+a+base64url+cursor");
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId, cursor: "not+a+base64url+cursor");
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         Func<Task> act = async () =>
@@ -102,9 +103,10 @@ public sealed class GetTodosQueryHandlerTests
     [TestMethod]
     public async Task CursorReusedWithDifferentFilterIsRejected()
     {
-        GetTodosQuery firstQuery = new GetTodosQuery(priority: TodoPriority.High);
+        GetTodosQuery firstQuery = new GetTodosQuery(TestTodoFactory.SpaceId, priority: TodoPriority.High);
         string cursor = CreateCursorFor(firstQuery);
         GetTodosQuery changedQuery = new GetTodosQuery(
+            TestTodoFactory.SpaceId,
             priority: TodoPriority.Low,
             cursor: cursor);
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
@@ -115,6 +117,46 @@ public sealed class GetTodosQueryHandlerTests
         await act.Should()
             .ThrowAsync<InvalidCursorException>()
             .WithMessage("The cursor does not match the current filters, scope, or sorting.");
+    }
+
+    /// <summary>
+    /// The Space is part of what a cursor is signed over. One minted while
+    /// listing Space A cannot resume a page of Space B, however identical the
+    /// filters, so a client that switches Space with a cursor still in hand is
+    /// told to start again rather than shown B from A's position.
+    /// </summary>
+    [TestMethod]
+    public async Task CursorReusedInAnotherSpaceIsRejected()
+    {
+        Guid otherSpaceId = TestTodoFactory.CreateId("space-2");
+        GetTodosQuery firstQuery = new GetTodosQuery(TestTodoFactory.SpaceId, priority: TodoPriority.High);
+        string cursor = CreateCursorFor(firstQuery);
+        GetTodosQuery otherSpaceQuery = new GetTodosQuery(
+            otherSpaceId,
+            priority: TodoPriority.High,
+            cursor: cursor);
+        GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
+
+        Func<Task> act = async () =>
+            await handler.Handle(otherSpaceQuery, CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidCursorException>()
+            .WithMessage("The cursor does not match the current filters, scope, or sorting.");
+        await listReader.DidNotReceiveWithAnyArgs()
+            .GetTodosAsync(default!, default);
+    }
+
+    [TestMethod]
+    public void SignatureDiffersBetweenSpacesWithIdenticalFilters()
+    {
+        GetTodosQuery inSpaceA = new GetTodosQuery(TestTodoFactory.SpaceId, priority: TodoPriority.High);
+        GetTodosQuery inSpaceB = new GetTodosQuery(
+            TestTodoFactory.CreateId("space-2"),
+            priority: TodoPriority.High);
+
+        TodoCursorCodec.CreateFilterSignature(inSpaceA, Array.Empty<string>())
+            .Should().NotBe(TodoCursorCodec.CreateFilterSignature(inSpaceB, Array.Empty<string>()));
     }
 
     [TestMethod]
@@ -128,7 +170,7 @@ public sealed class GetTodosQueryHandlerTests
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         _ = await handler.Handle(
-            new GetTodosQuery(searchText: "  Buy MILK, please "),
+            new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "  Buy MILK, please "),
             CancellationToken.None);
 
         capturedCriteria.Should().NotBeNull();
@@ -151,7 +193,7 @@ public sealed class GetTodosQueryHandlerTests
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         _ = await handler.Handle(
-            new GetTodosQuery(searchText: "--- !!!"),
+            new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "--- !!!"),
             CancellationToken.None);
 
         capturedCriteria.Should().NotBeNull();
@@ -168,7 +210,7 @@ public sealed class GetTodosQueryHandlerTests
             .Returns(Array.Empty<TodoListItemDto>());
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
-        _ = await handler.Handle(new GetTodosQuery(), CancellationToken.None);
+        _ = await handler.Handle(new GetTodosQuery(TestTodoFactory.SpaceId), CancellationToken.None);
 
         capturedCriteria.Should().NotBeNull();
         capturedCriteria!.SearchTerms.Should().BeEmpty();
@@ -177,11 +219,11 @@ public sealed class GetTodosQueryHandlerTests
     [TestMethod]
     public async Task CursorFromOneSearchIsRejectedUnderAnother()
     {
-        string cursor = CreateCursorFor(new GetTodosQuery(searchText: "milk"));
+        string cursor = CreateCursorFor(new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "milk"));
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         Func<Task> act = async () => await handler.Handle(
-            new GetTodosQuery(searchText: "bread", cursor: cursor),
+            new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "bread", cursor: cursor),
             CancellationToken.None);
 
         await act.Should()
@@ -192,11 +234,11 @@ public sealed class GetTodosQueryHandlerTests
     [TestMethod]
     public async Task CursorFromASearchIsRejectedWithNoSearch()
     {
-        string cursor = CreateCursorFor(new GetTodosQuery(searchText: "milk"));
+        string cursor = CreateCursorFor(new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "milk"));
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         Func<Task> act = async () => await handler.Handle(
-            new GetTodosQuery(cursor: cursor),
+            new GetTodosQuery(TestTodoFactory.SpaceId, cursor: cursor),
             CancellationToken.None);
 
         await act.Should()
@@ -217,29 +259,29 @@ public sealed class GetTodosQueryHandlerTests
             .ToArray();
         listReader.GetTodosAsync(Arg.Any<TodoListCriteria>(), Arg.Any<CancellationToken>())
             .Returns(storedItems);
-        string cursor = CreateCursorFor(new GetTodosQuery(searchText: "Buy Milk"));
+        string cursor = CreateCursorFor(new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "Buy Milk"));
         GetTodosQueryHandler handler = new GetTodosQueryHandler(listReader);
 
         CursorPage<TodoListItemDto> page = await handler.Handle(
-            new GetTodosQuery(searchText: "  buy   milk!  ", cursor: cursor, limit: 2),
+            new GetTodosQuery(TestTodoFactory.SpaceId, searchText: "  buy   milk!  ", cursor: cursor, limit: 2),
             CancellationToken.None);
 
         page.Items.Should().HaveCount(2);
     }
 
     /// <summary>
-    /// A cursor minted before search existed carries a signature over six
-    /// components. Appending a seventh only when terms exist is what keeps that
-    /// cursor usable across the deployment that introduced this.
+    /// The search component is appended only when terms exist, so blank search
+    /// text and no search text sign identically: the canonical form of an
+    /// unsearched query does not depend on which code path built it.
     /// </summary>
     [TestMethod]
     public void SignatureOfAnUnsearchedQueryIsUnchangedByTheSearchComponent()
     {
-        GetTodosQuery query = new GetTodosQuery(priority: TodoPriority.High);
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId, priority: TodoPriority.High);
 
         TodoCursorCodec.CreateFilterSignature(query, Array.Empty<string>())
             .Should().Be(TodoCursorCodec.CreateFilterSignature(
-                new GetTodosQuery(priority: TodoPriority.High, searchText: "   "),
+                new GetTodosQuery(TestTodoFactory.SpaceId, priority: TodoPriority.High, searchText: "   "),
                 Array.Empty<string>()));
     }
 
@@ -290,7 +332,7 @@ public sealed class GetTodosQueryHandlerTests
 
     private static GetTodosQuery BuildQuery(TodoSortField sortField, int sortValue)
     {
-        GetTodosQuery query = new GetTodosQuery(sortField: sortField);
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId, sortField: sortField);
         TodoCursorPayload minted = TodoCursorCodec.Create(
             query,
             CreateItem(1),
@@ -305,7 +347,7 @@ public sealed class GetTodosQueryHandlerTests
             FilterSignature = minted.FilterSignature,
         });
 
-        return new GetTodosQuery(sortField: sortField, cursor: cursor);
+        return new GetTodosQuery(TestTodoFactory.SpaceId, sortField: sortField, cursor: cursor);
     }
 
     private static string CreateCursorFor(GetTodosQuery query)
@@ -322,6 +364,8 @@ public sealed class GetTodosQueryHandlerTests
     {
         return new TodoListItemDto(
             TestTodoFactory.CreateId($"todo-{index:D3}"),
+            TestTodoFactory.SpaceId,
+            TestTodoFactory.CreatedByUserId,
             $"TODO {index:D3}",
             null,
             new DateOnly(2026, 8, 1).AddDays(index / 3),

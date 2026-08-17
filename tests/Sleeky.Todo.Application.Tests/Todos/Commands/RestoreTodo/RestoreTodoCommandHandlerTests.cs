@@ -27,7 +27,7 @@ public sealed class RestoreTodoCommandHandlerTests
         repository
             .GetByIdAsync(todoId, true, Arg.Any<CancellationToken>())
             .Returns((TodoItem?)null);
-        RestoreTodoCommand command = new RestoreTodoCommand(todoId, 1);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, todoId, 1);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
@@ -55,7 +55,7 @@ public sealed class RestoreTodoCommandHandlerTests
         repository
             .RestoreAsync(todoItem, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
-        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
         TodoDto result = await handler.Handle(command, CancellationToken.None);
@@ -82,7 +82,7 @@ public sealed class RestoreTodoCommandHandlerTests
         repository
             .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
             .Returns(todoItem);
-        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version + 1);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, todoItem.Id, todoItem.Version + 1);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
@@ -109,7 +109,7 @@ public sealed class RestoreTodoCommandHandlerTests
                 "TODO",
                 todoItem.Id,
                 todoItem.Version));
-        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
@@ -127,7 +127,7 @@ public sealed class RestoreTodoCommandHandlerTests
         repository
             .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
             .Returns(todoItem);
-        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);
@@ -150,7 +150,7 @@ public sealed class RestoreTodoCommandHandlerTests
         repository
             .GetByIdAsync(todoItem.Id, true, Arg.Any<CancellationToken>())
             .Returns(todoItem);
-        RestoreTodoCommand command = new RestoreTodoCommand(todoItem.Id, todoItem.Version);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, todoItem.Id, todoItem.Version);
         RestoreTodoCommandHandler handler = CreateHandler(repository, clock);
 
         Func<Task> act = async () => await handler.Handle(command, CancellationToken.None);

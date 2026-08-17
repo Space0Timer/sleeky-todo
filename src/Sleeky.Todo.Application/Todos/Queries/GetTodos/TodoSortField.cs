@@ -1,7 +1,7 @@
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
 /// <summary>
-/// The field a TODO list is ordered by. Each is backed by an owner-scoped index
+/// The field a TODO list is ordered by. Each is backed by a Space-scoped index
 /// that ends in <c>_id</c>, which is what lets a page resume exactly where the
 /// previous one stopped.
 /// </summary>

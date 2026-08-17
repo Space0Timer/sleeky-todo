@@ -6,6 +6,7 @@ using MediatR;
 using Microsoft.Extensions.Logging;
 
 using Sleeky.Todo.Application.DTOs;
+using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Application.Todos.Commands.Bulk;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Queries.GetTodos;
@@ -19,14 +20,22 @@ namespace Sleeky.Todo.Assistant.Tools;
 
 /// <summary>
 /// The six operations the assistant can perform, each a thin pass over a
-/// command or query.
+/// command or query, all inside one Space.
 /// </summary>
 /// <remarks>
 /// Thin is the point. Every call goes through MediatR, so it inherits
-/// validation, domain-rule translation, request logging, and owner scoping —
-/// every guardrail the HTTP API has. Nothing here reaches a repository, so
-/// there is no path by which the assistant can do something a browser could
-/// not.
+/// validation, Space access, domain-rule translation, request logging, and
+/// Space scoping — every guardrail the HTTP API has. Nothing here reaches a
+/// repository, so there is no path by which the assistant can do something a
+/// browser could not.
+///
+/// The Space is fixed when the tools are built, from the turn the client sent,
+/// and stamped onto every command and query here. The model never sees it and
+/// has no parameter to choose another: the tool schemas are identical for
+/// every Space and every permission. What a Read member cannot do fails in the
+/// pipeline, exactly as it would over HTTP; the tool only rephrases that
+/// refusal as a <see cref="ToolFailure"/> so the model tells the user rather
+/// than retrying.
 ///
 /// Every tool follows the same shape: parse what the model sent, refuse with a
 /// <see cref="ToolFailure"/> the model can act on, dispatch, record what the
@@ -37,6 +46,17 @@ namespace Sleeky.Todo.Assistant.Tools;
 /// </remarks>
 public sealed class TodoTools
 {
+    /// <summary>
+    /// What a write is answered with when the pipeline refuses it on the
+    /// user's level in the Space. The refusal itself is the handler's, exactly
+    /// as it would be over HTTP; the tool only phrases it so the model relays
+    /// it instead of retrying a generic error.
+    /// </summary>
+    private const string ReadOnlySpace =
+        "You have read-only access to this space, so writes are refused.";
+
+    private readonly Guid spaceId;
+
     private readonly ISender sender;
 
     private readonly IBulkConflictPolicy policy;
@@ -50,6 +70,7 @@ public sealed class TodoTools
     private readonly ILogger<TodoTools> logger;
 
     public TodoTools(
+        Guid spaceId,
         ISender sender,
         IBulkConflictPolicy policy,
         TodoVersionLedger ledger,
@@ -64,6 +85,7 @@ public sealed class TodoTools
         ArgumentNullException.ThrowIfNull(controller);
         ArgumentNullException.ThrowIfNull(logger);
 
+        this.spaceId = spaceId;
         this.sender = sender;
         this.policy = policy;
         this.ledger = ledger;
@@ -121,6 +143,7 @@ public sealed class TodoTools
 
         CursorPage<TodoListItemDto> page = await this.DispatchAsync(
             new GetTodosQuery(
+                this.spaceId,
                 parsedStatus,
                 parsedPriority,
                 parsedFrom,
@@ -150,7 +173,7 @@ public sealed class TodoTools
         }
 
         TodoSelection selection = await this.DispatchAsync(
-            new GetTodoSelectionQuery(parsed),
+            new GetTodoSelectionQuery(this.spaceId, parsed),
             cancellationToken);
 
         return this.RecordRead(selection.Items.Select(TodoSummary.FromTodo), hasMore: false);
@@ -193,16 +216,26 @@ public sealed class TodoTools
             return new ToolFailure(error);
         }
 
-        TodoDto created = await this.DispatchAsync(
-            new CreateTodoCommand(
-                name,
-                description,
-                parsedDueDate,
-                parsedPriority,
-                parsedRecurrence,
-                recurrenceInterval,
-                parsedUnit),
-            cancellationToken);
+        TodoDto created;
+        try
+        {
+            created = await this.DispatchAsync(
+                new CreateTodoCommand(
+                    this.spaceId,
+                    name,
+                    description,
+                    parsedDueDate,
+                    parsedPriority,
+                    parsedRecurrence,
+                    recurrenceInterval,
+                    parsedUnit),
+                cancellationToken);
+        }
+        catch (ForbiddenException)
+        {
+            return new ToolFailure(ReadOnlySpace);
+        }
+
         TodoSummary summary = TodoSummary.FromTodo(created);
         this.ledger.Record(summary.Id, summary.Version);
 
@@ -232,10 +265,19 @@ public sealed class TodoTools
             return new ToolFailure(error);
         }
 
-        BulkTodoResult result = await this.policy.ChangeStatusAsync(
-            parsedStatus,
-            items,
-            cancellationToken);
+        BulkTodoResult result;
+        try
+        {
+            result = await this.policy.ChangeStatusAsync(
+                this.spaceId,
+                parsedStatus,
+                items,
+                cancellationToken);
+        }
+        catch (ForbiddenException)
+        {
+            return new ToolFailure(ReadOnlySpace);
+        }
 
         return await this.ReportWriteAsync(
             TodoToolNames.ChangeTodoStatus,
@@ -263,7 +305,7 @@ public sealed class TodoTools
         // a person is about to answer for. It is also what the confirming turn
         // sends, so what they saw is what gets written.
         TodoSelection selection = await this.DispatchAsync(
-            new GetTodoSelectionQuery(parsed),
+            new GetTodoSelectionQuery(this.spaceId, parsed),
             cancellationToken);
 
         if (selection.Items.Count != parsed.Length)
@@ -290,7 +332,18 @@ public sealed class TodoTools
             return new ToolFailure(error);
         }
 
-        BulkTodoResult result = await this.policy.RestoreAsync(items, cancellationToken);
+        BulkTodoResult result;
+        try
+        {
+            result = await this.policy.RestoreAsync(
+                this.spaceId,
+                items,
+                cancellationToken);
+        }
+        catch (ForbiddenException)
+        {
+            return new ToolFailure(ReadOnlySpace);
+        }
 
         return await this.ReportWriteAsync(
             TodoToolNames.RestoreTodos,
@@ -305,6 +358,12 @@ public sealed class TodoTools
     /// shown. The model is not consulted again: they confirmed this selection,
     /// not a fresh proposal.
     /// </summary>
+    /// <remarks>
+    /// The confirmation carries no Space of its own. It runs in the Space the
+    /// turn was bound to, so a confirmation replayed after switching Spaces —
+    /// or one that names identifiers from another Space — finds none of them
+    /// and deletes nothing.
+    /// </remarks>
     public async Task<object> ExecuteConfirmedDeletionAsync(
         ConfirmedAction confirmation,
         CancellationToken cancellationToken)
@@ -320,7 +379,18 @@ public sealed class TodoTools
             return new ToolFailure(error);
         }
 
-        BulkTodoResult result = await this.policy.DeleteAsync(items, cancellationToken);
+        BulkTodoResult result;
+        try
+        {
+            result = await this.policy.DeleteAsync(
+                this.spaceId,
+                items,
+                cancellationToken);
+        }
+        catch (ForbiddenException)
+        {
+            return new ToolFailure(ReadOnlySpace);
+        }
 
         return await this.ReportWriteAsync(
             TodoToolNames.DeleteTodos,

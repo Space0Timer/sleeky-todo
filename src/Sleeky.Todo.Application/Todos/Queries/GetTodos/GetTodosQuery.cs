@@ -1,12 +1,13 @@
 using MediatR;
 
 using Sleeky.Todo.Application.DTOs;
+using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 
 /// <summary>
-/// One page of the owner's TODO list under a filter, scope, sort, and optional
+/// One page of a Space's TODO list under a filter, scope, sort, and optional
 /// search, resumed from a cursor when one is supplied.
 /// </summary>
 /// <remarks>
@@ -14,7 +15,7 @@ namespace Sleeky.Todo.Application.Todos.Queries.GetTodos;
 /// signature, and the reader all see one form: an absent limit becomes the
 /// default, and blank cursor or search text becomes null.
 /// </remarks>
-public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
+public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>, ISpaceScopedRequest
 {
     /// <summary>
     /// The page size when the caller names none.
@@ -29,6 +30,7 @@ public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
     public const int MaximumPageSize = 100;
 
     public GetTodosQuery(
+        Guid spaceId,
         TodoStatus? status = null,
         TodoPriority? priority = null,
         DateOnly? dueFrom = null,
@@ -41,6 +43,7 @@ public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
         string? cursor = null,
         string? searchText = null)
     {
+        SpaceId = spaceId;
         Status = status;
         Priority = priority;
         DueFrom = dueFrom;
@@ -59,6 +62,8 @@ public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
         // both work on one canonical form.
         SearchText = string.IsNullOrWhiteSpace(searchText) ? null : searchText.Trim();
     }
+
+    public Guid SpaceId { get; }
 
     public TodoStatus? Status { get; }
 
@@ -81,4 +86,6 @@ public sealed record GetTodosQuery : IRequest<CursorPage<TodoListItemDto>>
     public string? Cursor { get; }
 
     public string? SearchText { get; }
+
+    public SpacePermission RequiredPermission => SpacePermission.Read;
 }

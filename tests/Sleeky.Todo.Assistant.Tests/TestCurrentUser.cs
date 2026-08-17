@@ -6,7 +6,7 @@ internal sealed class TestCurrentUser : ICurrentUser
 {
     public TestCurrentUser(Guid? userId = null, string? displayName = "Sam")
     {
-        this.UserId = userId ?? TestTodo.OwnerId;
+        this.UserId = userId ?? TestTodo.CreatedByUserId;
         this.DisplayName = displayName;
     }
 

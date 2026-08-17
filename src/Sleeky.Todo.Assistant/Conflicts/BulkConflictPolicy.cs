@@ -48,6 +48,7 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
     /// reason.
     /// </summary>
     public async Task<BulkTodoResult> ChangeStatusAsync(
+        Guid spaceId,
         TodoStatus status,
         IReadOnlyCollection<BulkTodoItemRequest> items,
         CancellationToken cancellationToken)
@@ -57,12 +58,16 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
         try
         {
             return await this.DispatchAsync(
-                new BulkChangeTodoStatusCommand(status, items),
+                new BulkChangeTodoStatusCommand(spaceId, status, items),
                 cancellationToken);
         }
         catch (Exception exception) when (IsLostRace(exception))
         {
-            BulkTodoResult? retried = await this.RetryStatusAsync(status, items, cancellationToken);
+            BulkTodoResult? retried = await this.RetryStatusAsync(
+                spaceId,
+                status,
+                items,
+                cancellationToken);
 
             if (retried is null)
             {
@@ -79,10 +84,11 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
     /// so a conflict goes back to a person.
     /// </summary>
     public Task<BulkTodoResult> DeleteAsync(
+        Guid spaceId,
         IReadOnlyCollection<BulkTodoItemRequest> items,
         CancellationToken cancellationToken)
     {
-        return this.DispatchAsync(new BulkDeleteTodosCommand(items), cancellationToken);
+        return this.DispatchAsync(new BulkDeleteTodosCommand(spaceId, items), cancellationToken);
     }
 
     /// <summary>
@@ -91,10 +97,11 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
     /// second attempt would fail anyway.
     /// </summary>
     public Task<BulkTodoResult> RestoreAsync(
+        Guid spaceId,
         IReadOnlyCollection<BulkTodoItemRequest> items,
         CancellationToken cancellationToken)
     {
-        return this.DispatchAsync(new BulkRestoreTodosCommand(items), cancellationToken);
+        return this.DispatchAsync(new BulkRestoreTodosCommand(spaceId, items), cancellationToken);
     }
 
     /// <summary>
@@ -124,12 +131,13 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
     /// turns back into the original conflict.
     /// </returns>
     private async Task<BulkTodoResult?> RetryStatusAsync(
+        Guid spaceId,
         TodoStatus status,
         IReadOnlyCollection<BulkTodoItemRequest> items,
         CancellationToken cancellationToken)
     {
         IReadOnlyCollection<BulkTodoItemRequest>? refreshed =
-            await this.RereadAsync(items, cancellationToken);
+            await this.RereadAsync(spaceId, items, cancellationToken);
 
         if (refreshed is null)
         {
@@ -137,7 +145,7 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
         }
 
         return await this.DispatchAsync(
-            new BulkChangeTodoStatusCommand(status, refreshed),
+            new BulkChangeTodoStatusCommand(spaceId, status, refreshed),
             cancellationToken);
     }
 
@@ -147,12 +155,13 @@ public sealed class BulkConflictPolicy : IBulkConflictPolicy
     /// subset nobody chose.
     /// </summary>
     private async Task<IReadOnlyCollection<BulkTodoItemRequest>?> RereadAsync(
+        Guid spaceId,
         IReadOnlyCollection<BulkTodoItemRequest> items,
         CancellationToken cancellationToken)
     {
         Guid[] ids = items.Select(item => item.Id).ToArray();
         TodoSelection selection = await this.sender.Send(
-            new GetTodoSelectionQuery(ids),
+            new GetTodoSelectionQuery(spaceId, ids),
             cancellationToken);
         Dictionary<Guid, long> versions = selection.Items
             .ToDictionary(todo => todo.Id, todo => todo.Version);

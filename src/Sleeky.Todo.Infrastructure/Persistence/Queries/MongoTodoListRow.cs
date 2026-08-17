@@ -12,6 +12,14 @@ internal sealed class MongoTodoListRow
     [BsonGuidRepresentation(GuidRepresentation.Standard)]
     public Guid Id { get; set; }
 
+    [BsonElement(MongoTodoFields.SpaceId)]
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public Guid SpaceId { get; set; }
+
+    [BsonElement(MongoTodoFields.CreatedByUserId)]
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    public Guid CreatedByUserId { get; set; }
+
     [BsonElement(MongoTodoFields.Name)]
     public string Name { get; set; } = string.Empty;
 

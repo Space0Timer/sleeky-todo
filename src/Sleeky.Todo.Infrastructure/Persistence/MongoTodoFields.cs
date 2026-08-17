@@ -4,6 +4,7 @@ internal static class MongoTodoFields
 {
     public const string CompletedDependencies = "completedDependencies";
     public const string CreatedAt = "createdAt";
+    public const string CreatedByUserId = "createdByUserId";
     public const string DateFormat = "yyyy-MM-dd";
     public const string DeletedAt = "deletedAt";
     public const string DependencyIds = "dependencyIds";
@@ -16,12 +17,12 @@ internal static class MongoTodoFields
     public const string Name = "name";
     public const string NameNormalized = "nameNormalized";
     public const string OccurrenceNumber = "occurrenceNumber";
-    public const string OwnerId = "ownerId";
     public const string Priority = "priority";
     public const string PurgeAt = "purgeAt";
     public const string Recurrence = "recurrence";
     public const string SearchTokens = "searchTokens";
     public const string SeriesId = "seriesId";
+    public const string SpaceId = "spaceId";
     public const string Status = "status";
     public const string UpdatedAt = "updatedAt";
     public const string Version = "version";

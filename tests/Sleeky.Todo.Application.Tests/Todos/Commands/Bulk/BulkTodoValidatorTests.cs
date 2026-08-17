@@ -97,6 +97,7 @@ public sealed class BulkTodoValidatorTests
     public void SupportedBulkStatusesAreAccepted(TodoStatus status)
     {
         BulkChangeTodoStatusCommand command = new BulkChangeTodoStatusCommand(
+            TestTodoFactory.SpaceId,
             status,
             [new BulkTodoItemRequest(TestTodoFactory.CreateId("todo-1"), 1)]);
 
@@ -108,6 +109,7 @@ public sealed class BulkTodoValidatorTests
     public void UnknownBulkStatusIsRejected()
     {
         BulkChangeTodoStatusCommand command = new BulkChangeTodoStatusCommand(
+            TestTodoFactory.SpaceId,
             (TodoStatus)99,
             [new BulkTodoItemRequest(TestTodoFactory.CreateId("todo-1"), 1)]);
 
@@ -123,6 +125,6 @@ public sealed class BulkTodoValidatorTests
     private static ValidationResult Validate(IReadOnlyCollection<BulkTodoItemRequest> items)
     {
         return new BulkDeleteTodosCommandValidator()
-            .Validate(new BulkDeleteTodosCommand(items));
+            .Validate(new BulkDeleteTodosCommand(TestTodoFactory.SpaceId, items));
     }
 }

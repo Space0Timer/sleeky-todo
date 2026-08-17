@@ -18,6 +18,8 @@ using MongoDB.Driver;
 using Sleeky.Todo.Api.Authentication;
 using Sleeky.Todo.Api.Contracts.Assistant;
 using Sleeky.Todo.Api.Contracts.Todos;
+using Sleeky.Todo.Application.Exceptions;
+using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Providers;
 using Sleeky.Todo.Assistant.Tools;
@@ -37,11 +39,17 @@ public sealed class AssistantApiTests
     private static readonly Guid OtherUserId =
         Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
+    private static readonly Guid ReadOnlyUserId =
+        Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+
     private static MongoDbContainer? mongoDbContainer;
 
     private HttpClient client = null!;
     private string databaseName = null!;
     private TodoApiFactory factory = null!;
+    private Guid spaceId;
+
+    private string Todos => $"/api/spaces/{spaceId}/todos";
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext testContext)
@@ -80,6 +88,7 @@ public sealed class AssistantApiTests
             mongoDbContainer.GetConnectionString(),
             databaseName);
         client = await factory.CreateAuthenticatedClientAsync(UserId);
+        spaceId = await factory.CreateSpaceAsync(UserId, "Project Alpha");
     }
 
     [TestCleanup]
@@ -111,6 +120,7 @@ public sealed class AssistantApiTests
         {
             Content = JsonContent.Create(new AssistantTurnRequest
             {
+                SpaceId = spaceId,
                 Message = "What is due today?",
             }),
         };
@@ -202,17 +212,22 @@ public sealed class AssistantApiTests
 
     /// <summary>
     /// The assistant dispatches the same commands the HTTP API does, so it
-    /// inherits the ownership scoping enforced in the persistence boundary. A
-    /// batch naming someone else's TODO fails rather than touching it.
+    /// inherits the Space scoping enforced in the persistence boundary. Tools
+    /// built for one Space cannot read or write another's TODOs, even when the
+    /// same user is a member of both.
     /// </summary>
     [TestMethod]
-    public async Task AssistantWritesCannotReachAnotherOwnersTodo()
+    public async Task AssistantToolsCannotReachAnotherSpacesTodo()
     {
-        using HttpClient other = await factory.CreateAuthenticatedClientAsync(OtherUserId);
-        JsonElement foreignTodo = await CreateTodoAsync(other, "Not yours");
+        Guid otherSpaceId = await factory.CreateSpaceAsync(UserId, "Project Beta");
+        string otherTodosRoute = $"/api/spaces/{otherSpaceId}/todos";
+        JsonElement foreignTodo = await CreateTodoAsync(
+            client,
+            otherTodosRoute,
+            "In another space");
         string foreignId = foreignTodo.GetProperty("id").GetString()!;
 
-        TodoTools tools = BuildToolsFor(UserId, out RecordedEvents events);
+        TodoTools tools = BuildToolsFor(UserId, spaceId, out RecordedEvents events);
         object read = await tools.GetTodoSelectionAsync(
             new[] { foreignId },
             CancellationToken.None);
@@ -228,11 +243,80 @@ public sealed class AssistantApiTests
         write.Should().BeOfType<ToolFailure>();
         events.Published.Should().NotContain(TurnEventType.TodosChanged);
 
-        JsonElement unchanged = await ReadTodoAsync(other, foreignId);
+        JsonElement unchanged = await ReadTodoAsync(client, otherTodosRoute, foreignId);
         unchanged.GetProperty("status").GetInt32()
             .Should().Be((int)TodoStatus.Open);
         unchanged.GetProperty("version").GetInt64()
             .Should().Be(foreignTodo.GetProperty("version").GetInt64());
+    }
+
+    /// <summary>
+    /// The toolset is identical for every permission, so a Read member can
+    /// list and look up but their writes are refused by the same pipeline that
+    /// refuses them over HTTP — reported back as a tool failure the model can
+    /// relay, with nothing created.
+    /// </summary>
+    [TestMethod]
+    public async Task AReadMembersToolsCanListButNotWrite()
+    {
+        await factory.GrantAsync(spaceId, ReadOnlyUserId, SpacePermission.Read);
+        _ = await CreateTodoAsync(client, Todos, "Visible to everyone");
+
+        TodoTools tools = BuildToolsFor(
+            ReadOnlyUserId,
+            spaceId,
+            out RecordedEvents events,
+            SpacePermission.Read);
+
+        object listed = await tools.GetTodosAsync(cancellationToken: CancellationToken.None);
+        object created = await tools.CreateTodoAsync(
+            "Should not exist",
+            "2026-09-30",
+            nameof(TodoPriority.Medium),
+            cancellationToken: CancellationToken.None);
+
+        listed.Should().BeOfType<TodoPage>()
+            .Which.Items.Should().ContainSingle()
+            .Which.Name.Should().Be("Visible to everyone");
+        created.Should().BeOfType<ToolFailure>()
+            .Which.Error.Should().Contain("read-only");
+        events.Published.Should().NotContain(TurnEventType.TodosChanged);
+
+        JsonElement page = await ReadJsonAsync(await client.GetAsync(Todos));
+        page.GetProperty("items").GetArrayLength().Should().Be(1);
+    }
+
+    /// <summary>
+    /// A confirmed deletion carries no Space of its own: it runs in the Space
+    /// the turn was bound to, so identifiers from elsewhere resolve to nothing
+    /// and the batch fails rather than deleting across the boundary.
+    /// </summary>
+    [TestMethod]
+    public async Task AConfirmedDeletionCarryingAnotherSpacesIdsDeletesNothing()
+    {
+        Guid otherSpaceId = await factory.CreateSpaceAsync(UserId, "Project Beta");
+        string otherTodosRoute = $"/api/spaces/{otherSpaceId}/todos";
+        JsonElement foreignTodo = await CreateTodoAsync(
+            client,
+            otherTodosRoute,
+            "In another space");
+        Guid foreignId = foreignTodo.GetProperty("id").GetGuid();
+
+        TodoTools tools = BuildToolsFor(UserId, spaceId, out RecordedEvents events);
+        Func<Task> act = () => tools.ExecuteConfirmedDeletionAsync(
+            new ConfirmedAction(
+                TodoToolNames.DeleteTodos,
+                new[] { new TodoVersionReference(foreignId, 1) }),
+            CancellationToken.None);
+
+        // The same answer a stale confirmation gets: the batch loader reads
+        // through the Space filter, so an identifier from elsewhere is simply
+        // not there.
+        await act.Should().ThrowAsync<NotFoundException>();
+        events.Published.Should().NotContain(TurnEventType.TodosChanged);
+
+        JsonElement unchanged = await ReadTodoAsync(client, otherTodosRoute, foreignId.ToString());
+        unchanged.GetProperty("deletedAt").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     private static bool ShouldRunMongoDbTests()
@@ -243,10 +327,13 @@ public sealed class AssistantApiTests
             StringComparison.OrdinalIgnoreCase);
     }
 
-    private static async Task<JsonElement> CreateTodoAsync(HttpClient owner, string name)
+    private static async Task<JsonElement> CreateTodoAsync(
+        HttpClient member,
+        string todosRoute,
+        string name)
     {
-        using HttpResponseMessage response = await owner.PostAsJsonAsync(
-            "/api/todos",
+        using HttpResponseMessage response = await member.PostAsJsonAsync(
+            todosRoute,
             new CreateTodoRequest
             {
                 Name = name,
@@ -259,9 +346,12 @@ public sealed class AssistantApiTests
         return await ReadJsonAsync(response);
     }
 
-    private static async Task<JsonElement> ReadTodoAsync(HttpClient owner, string id)
+    private static async Task<JsonElement> ReadTodoAsync(
+        HttpClient member,
+        string todosRoute,
+        string id)
     {
-        using HttpResponseMessage response = await owner.GetAsync($"/api/todos/{id}");
+        using HttpResponseMessage response = await member.GetAsync($"{todosRoute}/{id}");
         response.EnsureSuccessStatusCode();
 
         return await ReadJsonAsync(response);
@@ -300,10 +390,19 @@ public sealed class AssistantApiTests
 
     /// <summary>
     /// Builds the tool layer against the running host's own services, as the
-    /// given user, so the write goes through the real pipeline and the real
-    /// database rather than a substitute for either.
+    /// given user in the given Space, so the write goes through the real
+    /// pipeline and the real database rather than a substitute for either.
     /// </summary>
-    private TodoTools BuildToolsFor(Guid userId, out RecordedEvents events)
+    /// <remarks>
+    /// The scope is bound directly, standing in for the turn-level check the
+    /// runner performs: these tests are about what the tools reach once a turn
+    /// has been authorized, not about the check itself.
+    /// </remarks>
+    private TodoTools BuildToolsFor(
+        Guid userId,
+        Guid toolSpaceId,
+        out RecordedEvents events,
+        SpacePermission permission = SpacePermission.Owner)
     {
         IServiceScope scope = factory.Services.CreateScope();
         IHttpContextAccessor accessor = scope.ServiceProvider
@@ -315,10 +414,14 @@ public sealed class AssistantApiTests
                 new[] { new Claim(TodoClaimTypes.UserId, userId.ToString()) },
                 "Testing")),
         };
+        scope.ServiceProvider
+            .GetRequiredService<SpaceScope>()
+            .Bind(new SpaceAccessContext(toolSpaceId, "Project Alpha", permission));
 
         events = new RecordedEvents();
 
         return new TodoTools(
+            toolSpaceId,
             scope.ServiceProvider.GetRequiredService<ISender>(),
             scope.ServiceProvider.GetRequiredService<IBulkConflictPolicy>(),
             new TodoVersionLedger(),

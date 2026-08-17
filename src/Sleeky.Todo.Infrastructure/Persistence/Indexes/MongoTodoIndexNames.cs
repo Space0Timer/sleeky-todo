@@ -16,5 +16,5 @@ namespace Sleeky.Todo.Infrastructure.Persistence.Indexes;
 /// </remarks>
 internal static class MongoTodoIndexNames
 {
-    public const string OwnerActiveSearchTokens = "owner_active_search_tokens";
+    public const string SpaceActiveSearchTokens = "space_active_search_tokens";
 }

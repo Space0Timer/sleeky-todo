@@ -38,8 +38,11 @@ public sealed class DatabaseCommandTallyTests
         0,
         TimeSpan.Zero);
 
-    private static readonly Guid OwnerId =
+    private static readonly Guid SpaceId =
         Guid.Parse("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+
+    private static readonly Guid CreatedByUserId =
+        Guid.Parse("bbbbbbbb-cccc-4ddd-8eee-ffffffffffff");
 
     private static MongoDbContainer? mongoDbContainer;
 
@@ -88,7 +91,7 @@ public sealed class DatabaseCommandTallyTests
         };
 
         ServiceCollection services = new ServiceCollection();
-        services.AddSingleton<ICurrentUser>(new TestCurrentUser(OwnerId));
+        services.AddSingleton<ISpaceScope>(new TestSpaceScope(SpaceId));
         services.AddInfrastructure(new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build());
@@ -152,7 +155,8 @@ public sealed class DatabaseCommandTallyTests
     {
         return TodoItem.Create(
             Guid.NewGuid(),
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Tally a command",
             "Runs one write so the tally has something to total",
             new DateOnly(2026, 8, 20),

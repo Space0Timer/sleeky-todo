@@ -296,7 +296,8 @@ public sealed class BulkChangeTodoStatusCommandHandlerTests
 
         return TodoItem.Create(
             TestTodoFactory.CreateId(id),
-            TestTodoFactory.OwnerId,
+            TestTodoFactory.SpaceId,
+            TestTodoFactory.CreatedByUserId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -356,7 +357,7 @@ public sealed class BulkChangeTodoStatusCommandHandlerTests
             NullLogger<BulkChangeTodoStatusCommandHandler>.Instance);
 
         return handler.Handle(
-            new BulkChangeTodoStatusCommand(status, items),
+            new BulkChangeTodoStatusCommand(TestTodoFactory.SpaceId, status, items),
             CancellationToken.None);
     }
 }

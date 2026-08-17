@@ -44,7 +44,7 @@ public sealed class DependencyCommandHandlerTests
             NullLogger<AddDependencyCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(
-            new AddDependencyCommand(source.Id, dependency.Id, 1),
+            new AddDependencyCommand(TestTodoFactory.SpaceId, source.Id, dependency.Id, 1),
             CancellationToken.None);
 
         result.DependencyIds.Should().Equal(dependency.Id);
@@ -76,10 +76,10 @@ public sealed class DependencyCommandHandlerTests
             NullLogger<AddDependencyCommandHandler>.Instance);
 
         Func<Task> missing = async () => await handler.Handle(
-            new AddDependencyCommand(source.Id, TestTodoFactory.CreateId("missing"), 1),
+            new AddDependencyCommand(TestTodoFactory.SpaceId, source.Id, TestTodoFactory.CreateId("missing"), 1),
             CancellationToken.None);
         Func<Task> cycle = async () => await handler.Handle(
-            new AddDependencyCommand(source.Id, dependency.Id, 1),
+            new AddDependencyCommand(TestTodoFactory.SpaceId, source.Id, dependency.Id, 1),
             CancellationToken.None);
 
         await missing.Should().ThrowAsync<NotFoundException>();
@@ -104,12 +104,13 @@ public sealed class DependencyCommandHandlerTests
 
         Func<Task> stale = async () => await handler.Handle(
             new AddDependencyCommand(
+                TestTodoFactory.SpaceId,
                 source.Id,
                 TestTodoFactory.CreateId("dependency"),
                 2),
             CancellationToken.None);
         Func<Task> self = async () => await handler.Handle(
-            new AddDependencyCommand(source.Id, source.Id, 1),
+            new AddDependencyCommand(TestTodoFactory.SpaceId, source.Id, source.Id, 1),
             CancellationToken.None);
 
         await stale.Should().ThrowAsync<ConcurrencyConflictException>();
@@ -135,7 +136,7 @@ public sealed class DependencyCommandHandlerTests
             NullLogger<RemoveDependencyCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(
-            new RemoveDependencyCommand(source.Id, TestTodoFactory.CreateId("dependency"), 1),
+            new RemoveDependencyCommand(TestTodoFactory.SpaceId, source.Id, TestTodoFactory.CreateId("dependency"), 1),
             CancellationToken.None);
 
         result.DependencyIds.Should().BeEmpty();
@@ -149,6 +150,7 @@ public sealed class DependencyCommandHandlerTests
             .Returns(sourceWithoutDependencies);
         Func<Task> missing = async () => await handler.Handle(
             new RemoveDependencyCommand(
+                TestTodoFactory.SpaceId,
                 sourceWithoutDependencies.Id,
                 TestTodoFactory.CreateId("missing"),
                 1),

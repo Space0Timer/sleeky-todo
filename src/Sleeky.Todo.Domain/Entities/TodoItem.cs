@@ -31,7 +31,8 @@ public sealed class TodoItem
 
     private TodoItem(
         Guid id,
-        Guid ownerId,
+        Guid spaceId,
+        Guid createdByUserId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -39,7 +40,8 @@ public sealed class TodoItem
         DateTimeOffset createdAt)
     {
         Id = id;
-        OwnerId = ownerId;
+        SpaceId = spaceId;
+        CreatedByUserId = createdByUserId;
         SetName(name);
         Description = NormalizeDescription(description);
         DueDate = dueDate;
@@ -57,10 +59,18 @@ public sealed class TodoItem
     public Guid Id { get; }
 
     /// <summary>
-    /// The user this TODO belongs to, fixed at creation. Ownership is enforced
-    /// in the persistence boundary, so every read and write is scoped to it.
+    /// The Space this TODO lives in, fixed at creation. Containment is enforced
+    /// in the persistence boundary, so every read and write is scoped to it;
+    /// which users may reach the Space is the Space's own concern.
     /// </summary>
-    public Guid OwnerId { get; }
+    public Guid SpaceId { get; }
+
+    /// <summary>
+    /// The user who created this TODO, fixed at creation. Audit information
+    /// only: it never decides who may read or change the TODO, which is
+    /// settled by membership of <see cref="SpaceId"/>.
+    /// </summary>
+    public Guid CreatedByUserId { get; }
 
     /// <summary>
     /// The trimmed, non-blank display name.
@@ -92,7 +102,7 @@ public sealed class TodoItem
     public TodoStatus Status { get; private set; }
 
     /// <summary>
-    /// The urgency the owner assigned; validated to a defined value.
+    /// The urgency assigned to this TODO; validated to a defined value.
     /// </summary>
     public TodoPriority Priority { get; private set; }
 
@@ -203,12 +213,13 @@ public sealed class TodoItem
     /// series would produce successors belonging to nothing.
     /// </remarks>
     /// <exception cref="DomainException">
-    /// The identifier, owner, name, or priority is invalid, or the recurrence
-    /// arguments are inconsistent.
+    /// The identifier, Space, creator, name, or priority is invalid, or the
+    /// recurrence arguments are inconsistent.
     /// </exception>
     public static TodoItem Create(
         Guid id,
-        Guid ownerId,
+        Guid spaceId,
+        Guid createdByUserId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -219,14 +230,16 @@ public sealed class TodoItem
         int? occurrenceNumber = null)
     {
         Guid validatedId = ValidateId(id);
-        Guid validatedOwnerId = ValidateOwnerId(ownerId);
+        Guid validatedSpaceId = ValidateSpaceId(spaceId);
+        Guid validatedCreatedByUserId = ValidateCreatedByUserId(createdByUserId);
         DateTimeOffset utcCreatedAt = createdAt.ToUniversalTime();
 
         ValidateRecurrenceState(recurrence, seriesId, occurrenceNumber);
 
         return new TodoItem(
             validatedId,
-            validatedOwnerId,
+            validatedSpaceId,
+            validatedCreatedByUserId,
             name,
             description,
             dueDate,
@@ -255,7 +268,8 @@ public sealed class TodoItem
     /// </exception>
     public static TodoItem Rehydrate(
         Guid id,
-        Guid ownerId,
+        Guid spaceId,
+        Guid createdByUserId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -288,7 +302,8 @@ public sealed class TodoItem
 
         TodoItem todoItem = new TodoItem(
             ValidateId(id),
-            ValidateOwnerId(ownerId),
+            ValidateSpaceId(spaceId),
+            ValidateCreatedByUserId(createdByUserId),
             name,
             description,
             dueDate,
@@ -518,14 +533,24 @@ public sealed class TodoItem
         return id;
     }
 
-    private static Guid ValidateOwnerId(Guid ownerId)
+    private static Guid ValidateSpaceId(Guid spaceId)
     {
-        if (ownerId == Guid.Empty)
+        if (spaceId == Guid.Empty)
         {
-            throw new DomainException("A TODO owner identifier is required.");
+            throw new DomainException("A TODO Space identifier is required.");
         }
 
-        return ownerId;
+        return spaceId;
+    }
+
+    private static Guid ValidateCreatedByUserId(Guid createdByUserId)
+    {
+        if (createdByUserId == Guid.Empty)
+        {
+            throw new DomainException("A TODO creator identifier is required.");
+        }
+
+        return createdByUserId;
     }
 
     private static string ValidateName(string name)
@@ -610,7 +635,8 @@ public sealed class TodoItem
     {
         return new TodoCompletion(
             Id,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             Name,
             Description,
             DueDate,

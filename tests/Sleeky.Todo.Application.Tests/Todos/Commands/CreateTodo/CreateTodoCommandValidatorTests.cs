@@ -17,6 +17,7 @@ public sealed class CreateTodoCommandValidatorTests
     public void ValidateAcceptsTrimmedBoundaryLengths()
     {
         CreateTodoCommand command = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             $"  {new string('n', TodoValidationLimits.NameMaximumLength)}  ",
             $"  {new string('d', TodoValidationLimits.DescriptionMaximumLength)}  ",
             TestTodoFactory.DueDate,
@@ -66,6 +67,7 @@ public sealed class CreateTodoCommandValidatorTests
     public void ValidateRejectsDefaultDueDate()
     {
         CreateTodoCommand command = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             "Monthly report",
             default,
@@ -92,6 +94,7 @@ public sealed class CreateTodoCommandValidatorTests
     public void ValidateAcceptsCustomRecurrence()
     {
         CreateTodoCommand command = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -109,6 +112,7 @@ public sealed class CreateTodoCommandValidatorTests
     public void ValidateRejectsInvalidRecurrenceInputs()
     {
         CreateTodoCommand missingUnit = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -116,6 +120,7 @@ public sealed class CreateTodoCommandValidatorTests
             RecurrenceType.Custom,
             2);
         CreateTodoCommand zeroInterval = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -124,6 +129,7 @@ public sealed class CreateTodoCommandValidatorTests
             0,
             RecurrenceUnit.Days);
         CreateTodoCommand nonStandardInterval = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -131,6 +137,7 @@ public sealed class CreateTodoCommandValidatorTests
             RecurrenceType.Daily,
             2);
         CreateTodoCommand mismatchedUnit = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -151,6 +158,7 @@ public sealed class CreateTodoCommandValidatorTests
         TodoPriority priority = TodoPriority.High)
     {
         return new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             name,
             description,
             TestTodoFactory.DueDate,

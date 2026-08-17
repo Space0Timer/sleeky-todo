@@ -26,8 +26,9 @@ namespace Sleeky.Todo.IntegrationTests.Persistence;
 [TestClass]
 public sealed class MongoTodoListReaderTests
 {
-    private static readonly Guid OwnerId = Id("owner-1");
-    private static readonly Guid OtherOwnerId = Id("owner-2");
+    private static readonly Guid SpaceId = Id("space-1");
+    private static readonly Guid OtherSpaceId = Id("space-2");
+    private static readonly Guid CreatedByUserId = Id("user-1");
 
     private static MongoDbContainer? mongoDbContainer;
 
@@ -95,7 +96,7 @@ public sealed class MongoTodoListReaderTests
                     new DateOnly(2026, 8, 1).AddDays(index / 4)))
                 .ToArray());
 
-        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery(SpaceId));
 
         page.Items.Should().HaveCount(50);
         page.NextCursor.Should().NotBeNullOrWhiteSpace();
@@ -126,11 +127,12 @@ public sealed class MongoTodoListReaderTests
                 TodoPriority.Medium));
 
         CursorPage<TodoListItemDto> statusPage = await ListAsync(
-            new GetTodosQuery(status: TodoStatus.Completed));
+            new GetTodosQuery(SpaceId, status: TodoStatus.Completed));
         CursorPage<TodoListItemDto> priorityPage = await ListAsync(
-            new GetTodosQuery(priority: TodoPriority.High));
+            new GetTodosQuery(SpaceId, priority: TodoPriority.High));
         CursorPage<TodoListItemDto> duePage = await ListAsync(
             new GetTodosQuery(
+                SpaceId,
                 dueFrom: new DateOnly(2026, 8, 15),
                 dueTo: new DateOnly(2026, 8, 31)));
 
@@ -208,6 +210,7 @@ public sealed class MongoTodoListReaderTests
         {
             CursorPage<TodoListItemDto> page = await ListAsync(
                 new GetTodosQuery(
+                    SpaceId,
                     sortField: sortField,
                     sortDirection: direction,
                     limit: 2,
@@ -240,11 +243,11 @@ public sealed class MongoTodoListReaderTests
                 deleted: true));
 
         CursorPage<TodoListItemDto> active = await ListAsync(
-            new GetTodosQuery(scope: TodoListScope.Active));
+            new GetTodosQuery(SpaceId, scope: TodoListScope.Active));
         CursorPage<TodoListItemDto> archived = await ListAsync(
-            new GetTodosQuery(scope: TodoListScope.Archived));
+            new GetTodosQuery(SpaceId, scope: TodoListScope.Archived));
         CursorPage<TodoListItemDto> deleted = await ListAsync(
-            new GetTodosQuery(scope: TodoListScope.Deleted));
+            new GetTodosQuery(SpaceId, scope: TodoListScope.Deleted));
 
         active.Items.Select(item => item.Id).Should().Equal(Id("active"));
         archived.Items.Select(item => item.Id).Should().Equal(Id("archived"));
@@ -298,9 +301,9 @@ public sealed class MongoTodoListReaderTests
                 dependencies: new[] { "dependency-complete" }));
 
         CursorPage<TodoListItemDto> blocked = await ListAsync(
-            new GetTodosQuery(dependencyStatus: TodoDependencyStatus.Blocked));
+            new GetTodosQuery(SpaceId, dependencyStatus: TodoDependencyStatus.Blocked));
         CursorPage<TodoListItemDto> unblocked = await ListAsync(
-            new GetTodosQuery(dependencyStatus: TodoDependencyStatus.Unblocked));
+            new GetTodosQuery(SpaceId, dependencyStatus: TodoDependencyStatus.Unblocked));
 
         blocked.Items.Select(item => item.Id).Should().BeEquivalentTo(
             new[]
@@ -322,6 +325,7 @@ public sealed class MongoTodoListReaderTests
         {
             CursorPage<TodoListItemDto> page = await ListAsync(
                 new GetTodosQuery(
+                    SpaceId,
                     dependencyStatus: TodoDependencyStatus.Blocked,
                     limit: 1,
                     cursor: cursor));
@@ -359,7 +363,7 @@ public sealed class MongoTodoListReaderTests
             new DateOnly(2026, 8, 1),
             description: description));
 
-        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery(SpaceId));
 
         page.Items.Single().DescriptionPreview.Should().Be(description);
     }
@@ -375,7 +379,7 @@ public sealed class MongoTodoListReaderTests
             new DateOnly(2026, 8, 1),
             description: new string('x', length)));
 
-        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery(SpaceId));
 
         string? preview = page.Items.Single().DescriptionPreview;
         preview.Should().Be(new string('x', 117) + "...");
@@ -395,7 +399,7 @@ public sealed class MongoTodoListReaderTests
             new DateOnly(2026, 8, 1),
             description: new string('日', 400)));
 
-        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery(SpaceId));
 
         page.Items.Single().DescriptionPreview
             .Should().Be(new string('日', 117) + "...");
@@ -411,7 +415,7 @@ public sealed class MongoTodoListReaderTests
         document["description"] = BsonNull.Value;
         await SeedAsync(document);
 
-        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery());
+        CursorPage<TodoListItemDto> page = await ListAsync(new GetTodosQuery(SpaceId));
 
         page.Items.Single().DescriptionPreview.Should().BeNull();
     }
@@ -422,7 +426,7 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> page = await ListAsync(
-            new GetTodosQuery(searchText: "mil"));
+            new GetTodosQuery(SpaceId, searchText: "mil"));
 
         page.Items.Select(item => item.Id).Should().BeEquivalentTo(
             new[] { Id("milk"), Id("milkshake") });
@@ -439,7 +443,7 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> page = await ListAsync(
-            new GetTodosQuery(searchText: "ilk"));
+            new GetTodosQuery(SpaceId, searchText: "ilk"));
 
         page.Items.Should().BeEmpty();
     }
@@ -450,7 +454,7 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> page = await ListAsync(
-            new GetTodosQuery(searchText: "semiskimmed"));
+            new GetTodosQuery(SpaceId, searchText: "semiskimmed"));
 
         page.Items.Select(item => item.Id).Should().Equal(Id("milk"));
     }
@@ -461,9 +465,9 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> both = await ListAsync(
-            new GetTodosQuery(searchText: "milk semi"));
+            new GetTodosQuery(SpaceId, searchText: "milk semi"));
         CursorPage<TodoListItemDto> unmatched = await ListAsync(
-            new GetTodosQuery(searchText: "milk bicycle"));
+            new GetTodosQuery(SpaceId, searchText: "milk bicycle"));
 
         both.Items.Select(item => item.Id).Should().Equal(Id("milk"));
         unmatched.Items.Should().BeEmpty();
@@ -475,9 +479,9 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> typed = await ListAsync(
-            new GetTodosQuery(searchText: "  BUY,  MIL!  "));
+            new GetTodosQuery(SpaceId, searchText: "  BUY,  MIL!  "));
         CursorPage<TodoListItemDto> canonical = await ListAsync(
-            new GetTodosQuery(searchText: "buy mil"));
+            new GetTodosQuery(SpaceId, searchText: "buy mil"));
 
         typed.Items.Select(item => item.Id).Should().Equal(Id("milk"));
         typed.Items.Select(item => item.Id).Should().Equal(
@@ -490,27 +494,27 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> page = await ListAsync(
-            new GetTodosQuery(searchText: "!!! ---"));
+            new GetTodosQuery(SpaceId, searchText: "!!! ---"));
 
         page.Items.Should().HaveCount(4);
     }
 
     [TestMethod]
-    public async Task SearchDoesNotReachAnotherOwnersTodos()
+    public async Task SearchDoesNotReachAnotherSpacesTodos()
     {
         await SeedSearchCorpusAsync();
         await SeedAsync(CreateDocument(
-            "other-owner-milk",
+            "other-space-milk",
             "Buy milk",
             new DateOnly(2026, 8, 1),
-            ownerId: OtherOwnerId));
+            spaceId: OtherSpaceId));
 
         CursorPage<TodoListItemDto> page = await ListAsync(
-            new GetTodosQuery(searchText: "milk"));
+            new GetTodosQuery(SpaceId, searchText: "milk"));
 
         page.Items.Select(item => item.Id).Should().BeEquivalentTo(
             new[] { Id("milk"), Id("milkshake") });
-        page.Items.Select(item => item.Id).Should().NotContain(Id("other-owner-milk"));
+        page.Items.Select(item => item.Id).Should().NotContain(Id("other-space-milk"));
     }
 
     [TestMethod]
@@ -519,11 +523,11 @@ public sealed class MongoTodoListReaderTests
         await SeedSearchCorpusAsync();
 
         CursorPage<TodoListItemDto> active = await ListAsync(
-            new GetTodosQuery(searchText: "archived"));
+            new GetTodosQuery(SpaceId, searchText: "archived"));
         CursorPage<TodoListItemDto> archived = await ListAsync(
-            new GetTodosQuery(scope: TodoListScope.Archived, searchText: "archived"));
+            new GetTodosQuery(SpaceId, scope: TodoListScope.Archived, searchText: "archived"));
         CursorPage<TodoListItemDto> trash = await ListAsync(
-            new GetTodosQuery(scope: TodoListScope.Deleted, searchText: "deleted"));
+            new GetTodosQuery(SpaceId, scope: TodoListScope.Deleted, searchText: "deleted"));
 
         active.Items.Should().BeEmpty();
         archived.Items.Select(item => item.Id).Should().Equal(Id("archived-milk"));
@@ -547,7 +551,7 @@ public sealed class MongoTodoListReaderTests
         do
         {
             CursorPage<TodoListItemDto> page = await ListAsync(
-                new GetTodosQuery(searchText: "grocery", limit: 3, cursor: cursor));
+                new GetTodosQuery(SpaceId, searchText: "grocery", limit: 3, cursor: cursor));
             collected.AddRange(page.Items.Select(item => item.Id));
             cursor = page.NextCursor;
         }
@@ -566,7 +570,7 @@ public sealed class MongoTodoListReaderTests
     /// Under a hint the winning plan names the search index whatever happens,
     /// including when the token bounds collapse to the whole key range and the
     /// query degenerates into the scan this feature exists to avoid. What has
-    /// to hold is that the owner and scope are matched exactly and the first
+    /// to hold is that the Space and scope are matched exactly and the first
     /// term is answered as a prefix range, so those are what is measured. The
     /// non-ASCII term is here because a prefix range is built by incrementing
     /// the last character, which is not an ASCII-only operation.
@@ -579,8 +583,8 @@ public sealed class MongoTodoListReaderTests
         BsonDocument plan = await ExplainSearchAsync("café milk");
         BsonDocument bounds = plan["indexBounds"].AsBsonDocument;
 
-        plan["indexName"].AsString.Should().Be("owner_active_search_tokens");
-        ReadBound(bounds, "ownerId").Should().ContainSingle()
+        plan["indexName"].AsString.Should().Be("space_active_search_tokens");
+        ReadBound(bounds, "spaceId").Should().ContainSingle()
             .Which.Should().MatchRegex(@"^\[.+, .+\]$");
 
         // One exact point interval. A null match also covers a document where
@@ -603,7 +607,7 @@ public sealed class MongoTodoListReaderTests
     /// <summary>
     /// A query with nothing to search for is left to the planner exactly as it
     /// was before search existed: no hint is sent, and it settles on one of the
-    /// owner-scoped sort indexes rather than the search index. Which one it
+    /// Space-scoped sort indexes rather than the search index. Which one it
     /// picks is the planner's call and is deliberately not asserted.
     /// </summary>
     [TestMethod]
@@ -611,10 +615,10 @@ public sealed class MongoTodoListReaderTests
     {
         await SeedSearchCorpusAsync();
 
-        BsonDocument plan = await ExplainListAsync(new GetTodosQuery());
+        BsonDocument plan = await ExplainListAsync(new GetTodosQuery(SpaceId));
 
         aggregateCommands[^1].Contains("hint").Should().BeFalse();
-        plan["indexName"].AsString.Should().NotBe("owner_active_search_tokens");
+        plan["indexName"].AsString.Should().NotBe("space_active_search_tokens");
     }
 
     private static bool ShouldRunMongoDbTests()
@@ -633,7 +637,7 @@ public sealed class MongoTodoListReaderTests
         TodoPriority priority = TodoPriority.Medium,
         IReadOnlyList<string>? dependencies = null,
         bool deleted = false,
-        Guid? ownerId = null,
+        Guid? spaceId = null,
         string? description = null)
     {
         DateTime timestamp = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -649,8 +653,12 @@ public sealed class MongoTodoListReaderTests
                 new BsonBinaryData(Id(id), GuidRepresentation.Standard)
             },
             {
-                "ownerId",
-                new BsonBinaryData(ownerId ?? OwnerId, GuidRepresentation.Standard)
+                "spaceId",
+                new BsonBinaryData(spaceId ?? SpaceId, GuidRepresentation.Standard)
+            },
+            {
+                "createdByUserId",
+                new BsonBinaryData(CreatedByUserId, GuidRepresentation.Standard)
             },
             { "name", name },
             { "nameNormalized", name.ToLowerInvariant() },
@@ -760,6 +768,11 @@ public sealed class MongoTodoListReaderTests
     /// the suite resolves the reader contract from the real registration rather
     /// than constructing the concrete type.
     /// </summary>
+    /// <remarks>
+    /// <c>AddInfrastructure</c> registers no scope — the Application layer does,
+    /// together with the behavior that binds it — so this suite supplies its
+    /// own, standing in for a check that has already passed.
+    /// </remarks>
     private ITodoListReader ResolveListReader(string databaseName)
     {
         Dictionary<string, string?> values = new Dictionary<string, string?>
@@ -771,7 +784,7 @@ public sealed class MongoTodoListReaderTests
         };
         ServiceCollection services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<ICurrentUser>(new TestCurrentUser(OwnerId));
+        services.AddSingleton<ISpaceScope>(new TestSpaceScope(SpaceId));
         services.AddInfrastructure(new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build());
@@ -871,7 +884,7 @@ public sealed class MongoTodoListReaderTests
 
     private async Task<BsonDocument> ExplainSearchAsync(string searchText)
     {
-        _ = await ListAsync(new GetTodosQuery(searchText: searchText));
+        _ = await ListAsync(new GetTodosQuery(SpaceId, searchText: searchText));
 
         return await ExplainLastAggregateAsync();
     }

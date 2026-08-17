@@ -67,7 +67,7 @@ public sealed class ApiStartupTests
         using HttpClient client = CreateClient();
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos",
+            $"/api/spaces/{Guid.NewGuid()}/todos",
             new { name = "startup probe" });
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -8,6 +8,9 @@ public sealed class DeleteTodoCommandValidator : AbstractValidator<DeleteTodoCom
 {
     public DeleteTodoCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id)
             .ValidTodoIdentifier();
 

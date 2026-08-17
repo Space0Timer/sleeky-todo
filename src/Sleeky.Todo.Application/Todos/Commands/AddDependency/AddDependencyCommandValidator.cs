@@ -8,6 +8,9 @@ public sealed class AddDependencyCommandValidator : AbstractValidator<AddDepende
 {
     public AddDependencyCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id)
             .ValidTodoIdentifier();
 

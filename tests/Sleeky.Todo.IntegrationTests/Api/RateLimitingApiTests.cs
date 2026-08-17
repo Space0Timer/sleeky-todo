@@ -10,7 +10,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Sleeky.Todo.Api.Contracts.Assistant;
 using Sleeky.Todo.Api.Contracts.Auth;
+using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Assistant.Turns;
+using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.IntegrationTests.Api;
 
@@ -35,6 +37,9 @@ public sealed class RateLimitingApiTests
 
     private static readonly Guid OtherUserId =
         Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff");
+
+    private static readonly Guid SpaceId =
+        Guid.Parse("11111111-1111-4111-8111-111111111111");
 
     private ApiStartupFactory factory = null!;
 
@@ -149,7 +154,15 @@ public sealed class RateLimitingApiTests
             {
                 ["RateLimiting:AssistantTurnConcurrency"] = "1",
             },
-            services => services.AddSingleton<IAssistantTurnRunner>(runner));
+            services =>
+            {
+                services.AddSingleton<IAssistantTurnRunner>(runner);
+
+                // Stubbed for the same reason the runner is: this suite has no
+                // database, and what it measures is the host's permit rather
+                // than the Space check the turn also performs.
+                services.AddSingleton<ISpaceAccessService, GrantingSpaceAccess>();
+            });
         HttpClient client = await CreateAuthenticatedClientAsync(UserId);
 
         using HttpRequestMessage holding = BuildTurnRequest();
@@ -197,6 +210,7 @@ public sealed class RateLimitingApiTests
         {
             Content = JsonContent.Create(new AssistantTurnRequest
             {
+                SpaceId = SpaceId,
                 Message = "What is due today?",
             }),
         };
@@ -279,6 +293,22 @@ public sealed class RateLimitingApiTests
             // Cancellation is the disposal path: the suite releases the turn on
             // its way out, and the host cancels it if a test fails first.
             await release.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Grants every Space at Owner level, so a turn reaches the rate limiter
+    /// rather than a database this suite deliberately does not have.
+    /// </summary>
+    private sealed class GrantingSpaceAccess : ISpaceAccessService
+    {
+        public Task<SpaceAccessContext> RequireAsync(
+            Guid spaceId,
+            SpacePermission requiredPermission,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(
+                new SpaceAccessContext(spaceId, "Test Space", SpacePermission.Owner));
         }
     }
 }

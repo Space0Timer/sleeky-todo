@@ -27,9 +27,13 @@ public sealed class InfrastructureServiceCollectionExtensionsTests
         ServiceCollection services = new ServiceCollection();
 
         // The current user is supplied by the composition root, because only
-        // the API layer can read it from the request.
+        // the API layer can read it from the request. The authorized Space
+        // comes from the Application layer, which registers the scope the
+        // access behavior binds; persistence only reads it.
         services.AddSingleton<ICurrentUser>(
             new TestCurrentUser(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")));
+        services.AddSingleton<ISpaceScope>(
+            new TestSpaceScope(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")));
         services.AddInfrastructure(configuration);
         using ServiceProvider serviceProvider = services.BuildServiceProvider();
 

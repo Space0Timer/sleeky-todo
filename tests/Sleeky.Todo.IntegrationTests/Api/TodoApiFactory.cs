@@ -8,6 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Sleeky.Todo.Api;
 using Sleeky.Todo.Api.Contracts.Auth;
+using Sleeky.Todo.Application.Abstractions.Persistence;
+using Sleeky.Todo.Domain.Entities;
+using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.IntegrationTests.Api;
 
@@ -73,6 +76,45 @@ internal sealed class TodoApiFactory : WebApplicationFactory<Program>
         return client;
     }
 
+    /// <summary>
+    /// Seeds a Space owned by <paramref name="ownerUserId"/> and returns its
+    /// identifier, which every TODO route is then nested under.
+    /// </summary>
+    /// <remarks>
+    /// Written through the repository from the host's own container rather
+    /// than through the Space API, so the TODO suites do not depend on those
+    /// endpoints existing to have somewhere to put a TODO.
+    /// </remarks>
+    public async Task<Guid> CreateSpaceAsync(Guid ownerUserId, string name = "Test Space")
+    {
+        Guid spaceId = Guid.NewGuid();
+        Space space = Space.Create(spaceId, name, ownerUserId, DateTimeOffset.UtcNow);
+
+        using IServiceScope scope = Services.CreateScope();
+        await scope.ServiceProvider
+            .GetRequiredService<ISpaceRepository>()
+            .AddAsync(space);
+
+        return spaceId;
+    }
+
+    /// <summary>
+    /// Grants <paramref name="userId"/> the given level in an existing Space,
+    /// which is how a suite builds the membership table a permission scenario
+    /// needs.
+    /// </summary>
+    public async Task GrantAsync(Guid spaceId, Guid userId, SpacePermission permission)
+    {
+        using IServiceScope scope = Services.CreateScope();
+        ISpaceRepository spaces = scope.ServiceProvider
+            .GetRequiredService<ISpaceRepository>();
+        Space space = await spaces.GetByIdAsync(spaceId)
+            ?? throw new InvalidOperationException($"Space '{spaceId}' should exist.");
+
+        space.AddAccess(userId, SubjectType.User, permission, DateTimeOffset.UtcNow);
+        _ = await spaces.UpdateAsync(space);
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment(environmentName);
@@ -80,6 +122,7 @@ internal sealed class TodoApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("MongoDb:DatabaseName", databaseName);
         builder.UseSetting("MongoDb:TodoItemsCollectionName", "todoItems");
         builder.UseSetting("MongoDb:UsersCollectionName", "users");
+        builder.UseSetting("MongoDb:SpacesCollectionName", "spaces");
 
         builder.ConfigureTestServices(services =>
         {

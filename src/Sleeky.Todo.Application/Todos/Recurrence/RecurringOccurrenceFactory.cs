@@ -38,9 +38,13 @@ public sealed class RecurringOccurrenceFactory : IRecurringOccurrenceFactory
             completion.ScheduledDueDate,
             completion.Recurrence);
 
+        // The successor stays in the completed occurrence's Space and keeps its
+        // original creator: completing a step does not re-attribute the series
+        // to whoever completed it.
         return TodoItem.Create(
             completion.NextOccurrenceId.Value,
-            completion.OwnerId,
+            completion.SpaceId,
+            completion.CreatedByUserId,
             completion.Name,
             completion.Description,
             nextDueDate,

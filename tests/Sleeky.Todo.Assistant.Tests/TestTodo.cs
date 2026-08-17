@@ -11,7 +11,9 @@ internal static class TestTodo
     public static readonly DateTimeOffset Timestamp =
         new DateTimeOffset(2026, 8, 14, 9, 0, 0, TimeSpan.Zero);
 
-    public static readonly Guid OwnerId = Id("owner-1");
+    public static readonly Guid SpaceId = Id("space-1");
+
+    public static readonly Guid CreatedByUserId = Id("user-1");
 
     public static Guid Id(string value)
     {
@@ -35,7 +37,8 @@ internal static class TestTodo
     {
         return TodoItem.Rehydrate(
             id,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             name,
             description: null,
             DueDate,

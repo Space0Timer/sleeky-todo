@@ -8,6 +8,9 @@ public sealed class UpdateTodoCommandValidator : AbstractValidator<UpdateTodoCom
 {
     public UpdateTodoCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id)
             .ValidTodoIdentifier();
 
