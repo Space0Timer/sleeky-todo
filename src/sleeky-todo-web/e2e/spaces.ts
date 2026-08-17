@@ -3,6 +3,15 @@ import { expect, type Locator, type Page } from '@playwright/test'
 import { spaceUrlPattern } from './auth.ts'
 import { currentSpaceId } from './todos.ts'
 
+/**
+ * Permissions travel over the wire as their numeric order, so a select bound
+ * to one carries the number rather than the word the user picked.
+ */
+const permissionValues = {
+  Read: '1',
+  Write: '2',
+} as const
+
 export function spaceSelector(page: Page): Locator {
   return page.getByTestId('space-selector')
 }
@@ -42,6 +51,54 @@ export async function navigateToSpace(
 
   await expectActiveSpace(page, name)
   await expect(page.getByText('Loading TODOs…')).toHaveCount(0)
+}
+
+/** The Space settings dialog, which any member can open from the selector. */
+export async function openSpaceSettings(page: Page): Promise<Locator> {
+  await page.getByTestId('manage-space').click()
+
+  const dialog = page.getByTestId('space-settings-dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByTestId('member-list')).toBeVisible()
+
+  return dialog
+}
+
+export async function closeSpaceSettings(page: Page): Promise<void> {
+  await page.getByTestId('space-settings-close').click()
+  await expect(page.getByTestId('space-settings-dialog')).toHaveCount(0)
+}
+
+/**
+ * Shares the open Space the way an Owner does: type enough of a name for the
+ * server to answer, pick the person, choose what they may do, and add them.
+ *
+ * The search is debounced and answers only from the user directory, so the
+ * result being waited for here is also the assertion that the person is
+ * findable at all.
+ */
+export async function addMemberThroughUi(
+  page: Page,
+  options: { term: string; subjectId: string; permission: 'Read' | 'Write' },
+): Promise<void> {
+  const dialog = page.getByTestId('space-settings-dialog')
+
+  await dialog.getByTestId('member-search').fill(options.term)
+
+  const result = dialog.getByTestId(`member-result-${options.subjectId}`)
+  await expect(result).toBeVisible()
+  await result.click()
+
+  await dialog.getByTestId('add-member-permission').selectOption({ label: options.permission })
+  await dialog.getByTestId('add-member-submit').click()
+
+  await expect(memberRow(page, options.subjectId)).toBeVisible()
+  await expect(dialog.getByTestId(`member-permission-${options.subjectId}`))
+    .toHaveValue(permissionValues[options.permission])
+}
+
+export function memberRow(page: Page, subjectId: string): Locator {
+  return page.getByTestId(`member-row-${subjectId}`)
 }
 
 /**

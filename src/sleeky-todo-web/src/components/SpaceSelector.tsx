@@ -5,6 +5,7 @@ import { useSpaces } from '../spaces/SpaceContext.ts'
 import { canWrite, type SpaceSummary } from '../types/space.ts'
 import { CreateSpaceDialog } from './CreateSpaceDialog.tsx'
 import styles from './SpaceSelector.module.scss'
+import { SpaceSettingsDialog } from './SpaceSettingsDialog.tsx'
 import { Badge, Button } from './common/index.ts'
 
 type SpaceSelectorProps = {
@@ -20,6 +21,7 @@ export function SpaceSelector({ space }: SpaceSelectorProps) {
   const { spaces } = useSpaces()
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
+  const [managing, setManaging] = useState(false)
 
   return (
     <div className={styles.spaceSelector}>
@@ -53,14 +55,32 @@ export function SpaceSelector({ space }: SpaceSelectorProps) {
         <span data-testid="space-permission">
           {!canWrite(space.permission) && <Badge tone="neutral">Read-only</Badge>}
         </span>
-        <Button
-          data-testid="create-space"
-          variant="text"
-          onClick={() => setCreating(true)}
-        >
-          New space…
-        </Button>
+        <span className={styles.actions}>
+          {/*
+            Offered to every member, not only to Owners. Who else is in a Space
+            is part of knowing what you are working in, and the dialog draws
+            only the controls the reader's own level allows.
+          */}
+          <Button
+            data-testid="manage-space"
+            variant="text"
+            onClick={() => setManaging(true)}
+          >
+            Manage space…
+          </Button>
+          <Button
+            data-testid="create-space"
+            variant="text"
+            onClick={() => setCreating(true)}
+          >
+            New space…
+          </Button>
+        </span>
       </div>
+
+      {managing && (
+        <SpaceSettingsDialog space={space} onClose={() => setManaging(false)} />
+      )}
 
       {creating && (
         <CreateSpaceDialog
