@@ -384,11 +384,11 @@ public sealed class TodoRepositoryTests
     }
 
     /// <summary>
-    /// A TODO belonging to someone else is absent, exactly as it is from every
-    /// other read on this repository.
+    /// A TODO in another Space is absent, exactly as it is from every other
+    /// read on this repository: the bound Space scopes dependency lookups too.
     /// </summary>
     [TestMethod]
-    public async Task GetDependencyNodesDoesNotCrossOwners()
+    public async Task GetDependencyNodesDoesNotCrossSpaces()
     {
         TodoItem mine = CreateTodo("node-mine");
         await repository.AddAsync(mine);
