@@ -4,6 +4,9 @@ import { type TodoStatus } from '../src/types/todo.ts'
 
 export const apiOrigin = 'http://127.0.0.1:5173'
 
+/** The Space a page is on, which the application keeps in the URL. */
+const spacePathPattern = /\/spaces\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+
 /**
  * Requests made through the Playwright request context carry the session
  * cookie but no antiforgery header, which the API requires for mutations.
@@ -15,7 +18,7 @@ export async function antiforgeryHeader(page: Page): Promise<Record<string, stri
   return { [token.headerName]: token.token }
 }
 
-/** Every TODO is owner-scoped, so seeded documents need the signed-in user. */
+/** Seeded documents record who created them, so they need the signed-in user. */
 export async function currentUserId(page: Page): Promise<string> {
   const response = await page.request.get(`${apiOrigin}/api/auth/me`)
   const user = (await response.json()) as { userId: string | null }
@@ -25,6 +28,40 @@ export async function currentUserId(page: Page): Promise<string> {
   }
 
   return user.userId
+}
+
+/**
+ * The Space every TODO route is nested under. Read from the URL, which is
+ * where the application keeps it, and from the Space list when the page is not
+ * on a Space yet — the first entry is the personal Space the server ensures on
+ * that call, so this works before anything has been navigated to.
+ */
+export async function currentSpaceId(page: Page): Promise<string> {
+  const fromUrl = spacePathPattern.exec(page.url())
+  if (fromUrl !== null) return fromUrl[1]
+
+  const response = await page.request.get(`${apiOrigin}/api/spaces`)
+  const spaces = (await response.json()) as { id: string }[]
+
+  if (spaces.length === 0) {
+    throw new Error('The signed-in user has no spaces.')
+  }
+
+  return spaces[0].id
+}
+
+/** Every Space the signed-in user is a member of, oldest first. */
+export async function listSpaces(
+  page: Page,
+): Promise<{ id: string; name: string; permission: number }[]> {
+  const response = await page.request.get(`${apiOrigin}/api/spaces`)
+
+  return (await response.json()) as { id: string; name: string; permission: number }[]
+}
+
+/** The nested TODO route for the Space the page is currently on. */
+async function todosUrl(page: Page, suffix = ''): Promise<string> {
+  return `${apiOrigin}/api/spaces/${await currentSpaceId(page)}/todos${suffix}`
 }
 
 export function todoCard(page: Page, name: string): Locator {
@@ -79,7 +116,7 @@ export async function changeStatusOutOfBand(
   version: number,
   status: TodoStatus,
 ): Promise<void> {
-  const response = await page.request.put(`${apiOrigin}/api/todos/${id}/status`, {
+  const response = await page.request.put(await todosUrl(page, `/${id}/status`), {
     data: { status, version },
     headers: await antiforgeryHeader(page),
   })
@@ -92,7 +129,7 @@ export async function changeStatusOutOfBand(
  * soft-deleted TODOs, so a version can be staged from the trash as well.
  */
 export async function currentVersion(page: Page, id: string): Promise<number> {
-  const response = await page.request.get(`${apiOrigin}/api/todos/selection?id=${id}`)
+  const response = await page.request.get(await todosUrl(page, `/selection?id=${id}`))
   const selection = (await response.json()) as {
     items: { id: string; version: number }[]
   }
@@ -115,7 +152,7 @@ export async function restoreOutOfBand(
   id: string,
   version: number,
 ): Promise<void> {
-  const response = await page.request.post(`${apiOrigin}/api/todos/${id}/restore`, {
+  const response = await page.request.post(await todosUrl(page, `/${id}/restore`), {
     data: { version },
     headers: await antiforgeryHeader(page),
   })

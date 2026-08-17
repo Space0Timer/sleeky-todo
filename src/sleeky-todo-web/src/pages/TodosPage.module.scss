@@ -29,20 +29,18 @@
   color: t.$color-brand;
 }
 
+// The panel beside the hero: which Space is open, and who is signed in.
 .session-note {
   @include m.typography(note);
 
   display: grid;
-  max-width: 15rem;
+  width: 15rem;
+  max-width: 100%;
   padding: 1rem;
   border: t.$border-width solid t.$color-border-soft;
   border-radius: t.$radius-xl;
   color: t.$color-text-body;
   gap: 0.25rem;
-
-  strong {
-    color: t.$color-text-strong;
-  }
 }
 
 // Named for the one message it now carries. Page-level errors moved to the
@@ -183,7 +181,7 @@
   }
 
   .session-note {
-    max-width: none;
+    width: auto;
   }
 
   .filter-panel {

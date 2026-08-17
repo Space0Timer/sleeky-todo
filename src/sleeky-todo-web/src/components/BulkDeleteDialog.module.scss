@@ -2,29 +2,11 @@
 @use '../styles/tokens' as t;
 
 .backdrop {
-  position: fixed;
-  z-index: 20;
-  inset: 0;
-  display: grid;
-  padding: 1.5rem;
-  background: t.$color-overlay;
-  place-items: center;
+  @include m.modal-backdrop;
 }
 
 .dialog {
-  @include m.surface;
-
-  display: grid;
-  width: min(32rem, 100%);
-  padding: 1.5rem;
-  gap: 0.9rem;
-
-  h2 {
-    @include m.typography(heading);
-
-    margin: 0;
-    color: t.$color-text;
-  }
+  @include m.modal-dialog;
 
   p {
     @include m.typography(body);

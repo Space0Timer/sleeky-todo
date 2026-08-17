@@ -71,6 +71,10 @@ export type CreateTodoDraft = TodoDraft & {
 
 export type Todo = {
   id: string
+  /** The Space the TODO belongs to; every route that reaches it is nested under this. */
+  spaceId: string
+  /** Audit only: who created it. Authorization is decided by the Space, never by this. */
+  createdByUserId: string
   name: string
   description: string | null
   dueDate: string
@@ -90,6 +94,8 @@ export type Todo = {
 
 export type TodoListItem = {
   id: string
+  spaceId: string
+  createdByUserId: string
   name: string
   descriptionPreview: string | null
   dueDate: string
@@ -189,6 +195,11 @@ export type ProblemDetails = {
   errors?: Record<string, string[]>
 }
 
+/**
+ * `unauthorized` is a session that no longer exists; `forbidden` is a session
+ * that exists but may not do this in this Space. The two are kept apart because
+ * only the first has "sign in again" as its remedy.
+ */
 export type ApiErrorKind =
   | 'validation'
   | 'not-found'
@@ -197,4 +208,5 @@ export type ApiErrorKind =
   | 'network'
   | 'rate-limited'
   | 'unauthorized'
+  | 'forbidden'
   | 'unexpected'

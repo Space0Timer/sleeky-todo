@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import styles from './Toast.module.scss'
 
-export type ToastTone = 'error' | 'notice'
+export type ToastTone = 'error' | 'notice' | 'warning'
 
 type ToastProps = {
   children?: ReactNode
@@ -28,9 +28,11 @@ export function ToastRegion({ children }: { children: ReactNode }) {
  * something went wrong, which moved the controls out from under the cursor that
  * had just failed to use them.
  *
- * An error is a `section role="alert"` and a notice an `output`, which are the
- * elements the banners used, so both keep the roles assistive technology and
- * the end-to-end suite already resolve them by.
+ * An error is a `section role="alert"` and the other tones an `output`, which
+ * are the elements the banners used, so all keep the roles assistive technology
+ * and the end-to-end suite already resolve them by. A warning is not an alert:
+ * it reports a change of circumstance rather than a failed action, and is
+ * announced politely for the same reason a notice is.
  */
 export function Toast({ children, detail, meta, title, tone, onDismiss }: ToastProps) {
   const content = (
@@ -52,7 +54,7 @@ export function Toast({ children, detail, meta, title, tone, onDismiss }: ToastP
     </>
   )
 
-  const className = `${styles.toast} ${tone === 'error' ? styles.error : styles.notice}`
+  const className = `${styles.toast} ${styles[tone]}`
 
   return tone === 'error'
     ? <section className={className} role="alert">{content}</section>

@@ -1,0 +1,57 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.backdrop {
+  @include m.modal-backdrop;
+}
+
+.dialog {
+  @include m.modal-dialog;
+
+  p {
+    @include m.typography(body);
+
+    margin: 0;
+    color: t.$color-text-body;
+  }
+}
+
+.form {
+  fieldset {
+    display: grid;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    gap: 1rem;
+  }
+
+  label {
+    @include m.field-label;
+  }
+
+  input {
+    @include m.field(0.72rem 0.8rem);
+    @include m.typography(field-value);
+
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+}
+
+.failure {
+  @include m.tone(t.$color-danger-surface, t.$color-danger-text);
+  @include m.typography(detail);
+
+  padding: 0.55rem 0.75rem;
+  border-radius: t.$radius-md;
+}
+
+.dialog-actions {
+  @include m.action-row;
+
+  justify-content: flex-end;
+}

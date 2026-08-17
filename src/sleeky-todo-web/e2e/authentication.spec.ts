@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { expectSignedIn, signIn, signOut, testUsers } from './auth.ts'
-import { resetOwnedData } from './database.ts'
+import { expectSignedIn, signIn, signOut, spaceUrlPattern, testUsers } from './auth.ts'
+import { resetUserData } from './database.ts'
+import { expectActiveSpace } from './spaces.ts'
+import { currentSpaceId } from './todos.ts'
 
 async function createTodo(page: Page, name: string): Promise<void> {
   const form = page.getByRole('group', { name: 'Create a TODO' })
@@ -26,7 +28,9 @@ test('an unauthenticated visitor is sent to the login page', async ({ page }) =>
 test('signing in lands on the TODO list and survives a reload', async ({ page }) => {
   await signIn(page, 'alice')
 
-  await expect(page).toHaveURL(/127\.0\.0\.1:5173\/$/)
+  // The list always belongs to a Space, so the landing URL names one: `/`
+  // only resolves which and redirects.
+  await expect(page).toHaveURL(spaceUrlPattern)
   await expect(page.getByTestId('current-user')).toHaveText(
     testUsers.alice.displayName,
   )
@@ -66,11 +70,11 @@ test('signing out ends the provider session too', async ({ page }) => {
 
 test('a mutation carries an antiforgery header', async ({ page }) => {
   await signIn(page, 'alice')
-  await resetOwnedData(page)
+  await resetUserData(page)
 
   const createRequest = page.waitForRequest(
     request =>
-      request.method() === 'POST' && request.url().endsWith('/api/todos'),
+      request.method() === 'POST' && request.url().endsWith('/todos'),
   )
 
   await createTodo(page, 'Antiforgery protected TODO')
@@ -85,7 +89,7 @@ test('a mutation still succeeds after signing out and back in', async ({
   await signIn(page, 'alice')
   await signOut(page)
   await signIn(page, 'alice')
-  await resetOwnedData(page)
+  await resetUserData(page)
 
   // Antiforgery tokens are bound to the authenticated identity, so a token
   // kept from before the sign-out would be rejected. Creating a TODO only
@@ -111,7 +115,12 @@ test('an expired session sends the next mutation to the login page', async ({
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible()
 })
 
-test('two users see separate TODO lists', async ({ browser }) => {
+/**
+ * Two users, two personal Spaces, and no overlap between them. The Space is
+ * what the isolation now rests on: each user lands in the one the server
+ * ensures for them, and neither Space's TODOs appear in the other.
+ */
+test('two users have separate personal spaces', async ({ browser }) => {
   const aliceContext = await browser.newContext()
   const bobContext = await browser.newContext()
 
@@ -120,14 +129,21 @@ test('two users see separate TODO lists', async ({ browser }) => {
     const bobPage = await bobContext.newPage()
 
     await signIn(alicePage, 'alice')
-    await resetOwnedData(alicePage)
+    await resetUserData(alicePage)
+    await expectActiveSpace(alicePage, 'My Space')
+    const aliceSpaceId = await currentSpaceId(alicePage)
     await createTodo(alicePage, 'Alice private TODO')
 
     await signIn(bobPage, 'bob')
-    await resetOwnedData(bobPage)
+    await resetUserData(bobPage)
     await expect(bobPage.getByTestId('current-user')).toHaveText(
       testUsers.bob.displayName,
     )
+
+    await expectActiveSpace(bobPage, 'My Space')
+    // Same name, different Space: the personal Space's identifier is derived
+    // from the user, so Bob's is his own however alike they read.
+    expect(await currentSpaceId(bobPage)).not.toBe(aliceSpaceId)
 
     await expect(
       bobPage.getByRole('heading', { name: 'Alice private TODO', exact: true }),
@@ -146,6 +162,15 @@ test('two users see separate TODO lists', async ({ browser }) => {
         exact: true,
       }),
     ).toBeVisible()
+
+    // Alice's Space is not Bob's to visit, and the server does not confirm it
+    // exists: he is returned to a Space he does have.
+    await bobPage.goto(`/spaces/${aliceSpaceId}`)
+    await expectSignedIn(bobPage)
+    await expectActiveSpace(bobPage, 'My Space')
+    await expect(
+      bobPage.getByRole('heading', { name: 'Alice private TODO', exact: true }),
+    ).toHaveCount(0)
   } finally {
     await aliceContext.close()
     await bobContext.close()

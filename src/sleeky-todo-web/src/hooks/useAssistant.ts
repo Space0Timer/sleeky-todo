@@ -11,6 +11,12 @@ import {
 import { type TodoVersionReference } from '../types/todo.ts'
 
 type UseAssistantOptions = {
+  /**
+   * The Space every turn is bound to. Passed in rather than read from anywhere
+   * ambient, and fixed for the life of the hook: the panel is remounted when
+   * the Space changes, so one conversation only ever belongs to one Space.
+   */
+  spaceId: string
   onTodosChanged: () => void
 }
 
@@ -20,8 +26,12 @@ type UseAssistantOptions = {
  * The transcript is opaque here. The server keeps no history, so each turn
  * hands one back and the next turn echoes it; nothing in the client reads it,
  * which is why its type is `unknown` rather than a shape to keep in step.
+ *
+ * Everything starts empty and an in-flight turn is aborted on unmount, which is
+ * what a Space switch relies on: the keyed remount discards the transcript,
+ * the entries, a pending confirmation, and any error without a reset call.
  */
-export function useAssistant({ onTodosChanged }: UseAssistantOptions) {
+export function useAssistant({ spaceId, onTodosChanged }: UseAssistantOptions) {
   const [entries, setEntries] = useState<ChatEntry[]>([])
   const [pending, setPending] = useState(false)
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null)
@@ -106,6 +116,7 @@ export function useAssistant({ onTodosChanged }: UseAssistantOptions) {
 
     try {
       const stream = runAssistantTurn({
+        spaceId,
         message,
         transcript: before,
         confirmation: confirmed,
@@ -130,7 +141,7 @@ export function useAssistant({ onTodosChanged }: UseAssistantOptions) {
       if (running.current === controller) running.current = null
       setPending(false)
     }
-  }, [abort, consume, markLastUndelivered])
+  }, [abort, consume, markLastUndelivered, spaceId])
 
   const ask = useCallback(async (message: string) => {
     say({ kind: 'user', text: message, delivered: true })

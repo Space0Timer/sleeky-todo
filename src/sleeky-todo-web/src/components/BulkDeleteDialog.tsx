@@ -12,6 +12,7 @@ import { Button } from './common/index.ts'
 type BulkDeleteDialogProps = {
   busy: boolean
   selection: TodoVersionReference[]
+  spaceId: string
   onCancel: () => void
   onConfirm: (selection: TodoVersionReference[]) => void
 }
@@ -24,6 +25,7 @@ type BulkDeleteDialogProps = {
 export function BulkDeleteDialog({
   busy,
   selection,
+  spaceId,
   onCancel,
   onConfirm,
 }: BulkDeleteDialogProps) {
@@ -34,14 +36,14 @@ export function BulkDeleteDialog({
     let cancelled = false
     const ids = selection.map((reference) => reference.id)
 
-    void lookupTodoSelection(ids).then((result) => {
+    void lookupTodoSelection(spaceId, ids).then((result) => {
       if (!cancelled) setCurrent(result.items)
     }).catch(() => {
       if (!cancelled) setFailed(true)
     })
 
     return () => { cancelled = true }
-  }, [selection])
+  }, [selection, spaceId])
 
   const sentById = new Map(selection.map((reference) => [reference.id, reference.version]))
   const drifted = (current ?? []).filter(

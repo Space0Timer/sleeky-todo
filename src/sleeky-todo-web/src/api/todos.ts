@@ -56,7 +56,24 @@ const directionNames = {
 
 export { ApiError } from './http.ts'
 
-export function listTodos(options: TodoListOptions): Promise<CursorPage<TodoListItem>> {
+/**
+ * Every TODO route is nested under the Space it belongs to, and every function
+ * here takes that Space explicitly. There is no ambient "current Space" in this
+ * module on purpose: the page reads it from the URL and passes it down, so a
+ * request can never be sent against a Space the user is no longer looking at.
+ */
+function todosPath(spaceId: string, suffix = ''): string {
+  return `/api/spaces/${encodeURIComponent(spaceId)}/todos${suffix}`
+}
+
+function todoPath(spaceId: string, todoId: string, suffix = ''): string {
+  return todosPath(spaceId, `/${encodeURIComponent(todoId)}${suffix}`)
+}
+
+export function listTodos(
+  spaceId: string,
+  options: TodoListOptions,
+): Promise<CursorPage<TodoListItem>> {
   const query = new URLSearchParams({
     scope: scopeNames[options.scope],
     sortField: sortFieldNames[options.sortField],
@@ -74,44 +91,56 @@ export function listTodos(options: TodoListOptions): Promise<CursorPage<TodoList
   if (options.searchText) query.set('search', options.searchText)
   if (options.cursor) query.set('cursor', options.cursor)
 
-  return send<CursorPage<TodoListItem>>(`/api/todos?${query.toString()}`)
+  return send<CursorPage<TodoListItem>>(todosPath(spaceId, `?${query.toString()}`))
 }
 
-export function createTodo(draft: CreateTodoDraft): Promise<Todo> {
-  return send<Todo>('/api/todos', {
+export function createTodo(spaceId: string, draft: CreateTodoDraft): Promise<Todo> {
+  return send<Todo>(todosPath(spaceId), {
     method: 'POST',
     body: JSON.stringify(draft),
   })
 }
 
-export function getTodo(id: string): Promise<Todo> {
-  return send<Todo>(`/api/todos/${encodeURIComponent(id)}`)
+export function getTodo(spaceId: string, id: string): Promise<Todo> {
+  return send<Todo>(todoPath(spaceId, id))
 }
 
-export function updateTodo(todo: Todo, draft: TodoDraft): Promise<Todo> {
-  return send<Todo>(`/api/todos/${encodeURIComponent(todo.id)}`, {
+export function updateTodo(spaceId: string, todo: Todo, draft: TodoDraft): Promise<Todo> {
+  return send<Todo>(todoPath(spaceId, todo.id), {
     method: 'PUT',
     body: JSON.stringify({ ...draft, version: todo.version }),
   })
 }
 
-export function changeTodoStatus(todo: Todo, status: Todo['status']): Promise<Todo> {
-  return send<Todo>(`/api/todos/${encodeURIComponent(todo.id)}/status`, {
+export function changeTodoStatus(
+  spaceId: string,
+  todo: Todo,
+  status: Todo['status'],
+): Promise<Todo> {
+  return send<Todo>(todoPath(spaceId, todo.id, '/status'), {
     method: 'PUT',
     body: JSON.stringify({ status, version: todo.version }),
   })
 }
 
-export function addTodoDependency(todo: Todo, dependencyId: string): Promise<Todo> {
-  return send<Todo>(`/api/todos/${encodeURIComponent(todo.id)}/dependencies`, {
+export function addTodoDependency(
+  spaceId: string,
+  todo: Todo,
+  dependencyId: string,
+): Promise<Todo> {
+  return send<Todo>(todoPath(spaceId, todo.id, '/dependencies'), {
     method: 'POST',
     body: JSON.stringify({ dependencyId, version: todo.version }),
   })
 }
 
-export function removeTodoDependency(todo: Todo, dependencyId: string): Promise<Todo> {
+export function removeTodoDependency(
+  spaceId: string,
+  todo: Todo,
+  dependencyId: string,
+): Promise<Todo> {
   return send<Todo>(
-    `/api/todos/${encodeURIComponent(todo.id)}/dependencies/${encodeURIComponent(dependencyId)}`,
+    todoPath(spaceId, todo.id, `/dependencies/${encodeURIComponent(dependencyId)}`),
     {
       method: 'DELETE',
       body: JSON.stringify({ version: todo.version }),
@@ -119,34 +148,41 @@ export function removeTodoDependency(todo: Todo, dependencyId: string): Promise<
   )
 }
 
-export function deleteTodo(todo: TodoVersionReference): Promise<Todo> {
-  return send<Todo>(`/api/todos/${encodeURIComponent(todo.id)}`, {
+export function deleteTodo(spaceId: string, todo: TodoVersionReference): Promise<Todo> {
+  return send<Todo>(todoPath(spaceId, todo.id), {
     method: 'DELETE',
     body: JSON.stringify({ version: todo.version }),
   })
 }
 
 export function bulkChangeTodoStatus(
+  spaceId: string,
   status: TodoStatus,
   items: TodoVersionReference[],
 ): Promise<BulkTodoResult> {
   // Enum names belong in query strings; a JSON body carries the numeric value,
   // which is what the single-item status route already sends.
-  return send<BulkTodoResult>('/api/todos/status', {
+  return send<BulkTodoResult>(todosPath(spaceId, '/status'), {
     method: 'PUT',
     body: JSON.stringify({ status, items }),
   })
 }
 
-export function bulkDeleteTodos(items: TodoVersionReference[]): Promise<BulkTodoResult> {
-  return send<BulkTodoResult>('/api/todos', {
+export function bulkDeleteTodos(
+  spaceId: string,
+  items: TodoVersionReference[],
+): Promise<BulkTodoResult> {
+  return send<BulkTodoResult>(todosPath(spaceId), {
     method: 'DELETE',
     body: JSON.stringify({ items }),
   })
 }
 
-export function bulkRestoreTodos(items: TodoVersionReference[]): Promise<BulkTodoResult> {
-  return send<BulkTodoResult>('/api/todos/restore', {
+export function bulkRestoreTodos(
+  spaceId: string,
+  items: TodoVersionReference[],
+): Promise<BulkTodoResult> {
+  return send<BulkTodoResult>(todosPath(spaceId, '/restore'), {
     method: 'POST',
     body: JSON.stringify({ items }),
   })
@@ -157,15 +193,15 @@ export function bulkRestoreTodos(items: TodoVersionReference[]): Promise<BulkTod
  * so a conflict path can diff a stale selection against the server without
  * refreshing what the user is looking at.
  */
-export function lookupTodoSelection(ids: string[]): Promise<TodoSelection> {
+export function lookupTodoSelection(spaceId: string, ids: string[]): Promise<TodoSelection> {
   const query = new URLSearchParams()
   for (const id of ids) query.append('id', id)
 
-  return send<TodoSelection>(`/api/todos/selection?${query.toString()}`)
+  return send<TodoSelection>(todosPath(spaceId, `/selection?${query.toString()}`))
 }
 
-export function restoreTodo(todo: TodoVersionReference): Promise<Todo> {
-  return send<Todo>(`/api/todos/${encodeURIComponent(todo.id)}/restore`, {
+export function restoreTodo(spaceId: string, todo: TodoVersionReference): Promise<Todo> {
+  return send<Todo>(todoPath(spaceId, todo.id, '/restore'), {
     method: 'POST',
     body: JSON.stringify({ version: todo.version }),
   })

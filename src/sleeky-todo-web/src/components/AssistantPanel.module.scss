@@ -26,6 +26,15 @@
   }
 }
 
+// The Space the conversation is bound to, beside the heading rather than in it,
+// so it reads as a qualifier and not as part of the panel's name.
+.space-name {
+  @include m.typography(note);
+
+  margin-left: 0.6rem;
+  color: t.$color-text-muted;
+}
+
 .header-actions {
   @include m.action-row;
 }

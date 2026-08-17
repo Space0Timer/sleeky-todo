@@ -25,10 +25,17 @@ export function setAntiforgeryToken(next: AntiforgeryToken | null): void {
   antiforgeryToken = next
 }
 
-function classifyError(status: number, problem: ProblemDetails): ApiErrorKind {
+/**
+ * Exported for its tests. 401 and 403 are told apart on purpose: a 401 is a
+ * session the server no longer recognises and the only remedy is to sign in
+ * again, while a 403 is a live session acting above its permission in a Space,
+ * which the page reports and otherwise carries on from.
+ */
+export function classifyError(status: number, problem: ProblemDetails): ApiErrorKind {
   if (status === 0) return 'network'
   if (status === 400) return 'validation'
-  if (status === 401 || status === 403) return 'unauthorized'
+  if (status === 401) return 'unauthorized'
+  if (status === 403) return 'forbidden'
   if (status === 404) return 'not-found'
   if (status === 409 && problem.title === 'Concurrency conflict.') return 'concurrency'
   if (status === 409) return 'domain'

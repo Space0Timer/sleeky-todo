@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
+import { listSpaceAccess } from '../api/spaces.ts'
 import {
   ApiError,
   addTodoDependency,
@@ -18,11 +19,14 @@ import { AssistantPanel } from '../components/AssistantPanel.tsx'
 import { BulkDeleteDialog } from '../components/BulkDeleteDialog.tsx'
 import { BulkToolbar } from '../components/BulkToolbar.tsx'
 import { CreateTodoForm } from '../components/CreateTodoForm.tsx'
+import { SpaceSelector } from '../components/SpaceSelector.tsx'
 import { TodoCard } from '../components/TodoCard.tsx'
 import { UserMenu } from '../components/UserMenu.tsx'
 import { Button, EmptyState, Toast, ToastRegion } from '../components/common/index.ts'
 import { useBulkActions, type BulkOperation } from '../hooks/useBulkActions.ts'
 import { useDebouncedValue } from '../hooks/useDebouncedValue.ts'
+import { useSpaces } from '../spaces/SpaceContext.ts'
+import { canWrite, type SpaceSummary } from '../types/space.ts'
 import {
   dependencyStatus,
   sortDirection,
@@ -57,6 +61,15 @@ type UiError = {
   problem: ProblemDetails
 }
 
+type TodosPageProps = {
+  /**
+   * The Space the page shows. The route keys the page on its identifier, so
+   * every piece of state below belongs to exactly one Space and a switch
+   * starts from scratch rather than clearing anything.
+   */
+  space: SpaceSummary
+}
+
 const initialFilters: Omit<TodoListOptions, 'scope' | 'cursor'> = {
   status: null,
   priority: null,
@@ -75,13 +88,18 @@ const dependencySearchLimit = 50
 /** How long a success toast stays on screen before it clears itself. */
 const noticeDuration = 5000
 
+const forbiddenTitle = "You don't have permission to do that in this space."
+
 const tabs: { label: string; scope: TodoScope }[] = [
   { label: 'Active', scope: todoScope.active },
   { label: 'Archived', scope: todoScope.archived },
   { label: 'Trash', scope: todoScope.deleted },
 ]
 
-export function TodosPage() {
+export function TodosPage({ space }: TodosPageProps) {
+  const spaceId = space.id
+  const readOnly = !canWrite(space.permission)
+
   const [scope, setScope] = useState<TodoScope>(todoScope.active)
   const [filters, setFilters] = useState(initialFilters)
   const [items, setItems] = useState<TodoListItem[]>([])
@@ -93,6 +111,7 @@ export function TodosPage() {
   const [notice, setNotice] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [pendingDelete, setPendingDelete] = useState<TodoVersionReference[] | null>(null)
+  const [creators, setCreators] = useState<Map<string, string>>(new Map())
 
   // The box's own state. Only its debounced value reaches `filters`, so a
   // keystroke never invalidates a cursor the Load more button is still holding.
@@ -100,12 +119,17 @@ export function TodosPage() {
   const debouncedSearch = useDebouncedValue(searchInput)
   const navigate = useNavigate()
   const { endSession } = useAuth()
+  const {
+    dismissNotice: dismissSpaceNotice,
+    notice: spaceNotice,
+    refreshSpaces,
+  } = useSpaces()
 
   const reloadList = useCallback(() => {
     setRefreshKey((current) => current + 1)
   }, [])
 
-  const bulk = useBulkActions({ items, onRefresh: reloadList })
+  const bulk = useBulkActions({ spaceId, items, onRefresh: reloadList })
 
   const captureError = useCallback((caught: unknown, affectedTodoId?: string) => {
     const apiError = caught instanceof ApiError
@@ -125,21 +149,42 @@ export function TodosPage() {
       return
     }
 
+    // A refusal on permission means the permission the page was rendered for
+    // is no longer the one the server holds. The page stays where it is and
+    // says so; the refresh brings the controls into line with what is granted.
+    if (apiError.kind === 'forbidden') {
+      void refreshSpaces()
+    }
+
+    // A Space-scoped 404 is also how a revoked membership shows up: the Space
+    // stops answering. Re-reading the list is what tells that apart from a TODO
+    // that has merely gone — when the Space is missing from the fresh list,
+    // the route falls back to `/` and this page is unmounted before the toast
+    // it would otherwise show. Only a Space that is still there gets the
+    // ordinary report.
+    if (apiError.kind === 'not-found') {
+      void refreshSpaces().then((fresh) => {
+        if (fresh !== null && !fresh.some((candidate) => candidate.id === spaceId)) return
+        setError({ affectedTodoId, kind: apiError.kind, problem: apiError.problem })
+      })
+      return
+    }
+
     setError({
       affectedTodoId,
       kind: apiError.kind,
       problem: apiError.problem,
     })
-  }, [endSession, navigate])
+  }, [endSession, navigate, refreshSpaces, spaceId])
 
   const loadTodo = useCallback(async (id: string, quiet = false): Promise<Todo | null> => {
     try {
-      return await getTodo(id)
+      return await getTodo(spaceId, id)
     } catch (caught) {
       if (!quiet) captureError(caught, id)
       return null
     }
-  }, [captureError])
+  }, [captureError, spaceId])
 
   // Bails out when nothing changed rather than spreading unconditionally. A new
   // object here would be a new value for the load effect below, so mount and
@@ -179,7 +224,7 @@ export function TodosPage() {
     // send it alongside the new ones and be refused.
     setNextCursor(null)
 
-    void listTodos({ ...filters, scope }).then((page) => {
+    void listTodos(spaceId, { ...filters, scope }).then((page) => {
       if (cancelled) return
       setItems(page.items)
       setNextCursor(page.nextCursor)
@@ -190,7 +235,27 @@ export function TodosPage() {
     })
 
     return () => { cancelled = true }
-  }, [captureError, filters, refreshKey, scope])
+  }, [captureError, filters, refreshKey, scope, spaceId])
+
+  // Who is who in this Space, read once so a card can name its creator. A
+  // failure here costs only the names: the cards fall back to showing none,
+  // and nothing else on the page depends on the member list.
+  useEffect(() => {
+    let cancelled = false
+
+    void listSpaceAccess(spaceId).then((entries) => {
+      if (cancelled) return
+      const named = new Map<string, string>()
+      for (const entry of entries) {
+        if (entry.displayName !== null) named.set(entry.subjectId, entry.displayName)
+      }
+      setCreators(named)
+    }).catch(() => {
+      if (!cancelled) setCreators(new Map())
+    })
+
+    return () => { cancelled = true }
+  }, [spaceId])
 
   /**
    * Searches active TODOs for the dependency picker. The server does the
@@ -199,7 +264,7 @@ export function TodosPage() {
    * hundred candidates was not.
    */
   const searchCandidates = useCallback(async (search: string) => {
-    const page = await listTodos({
+    const page = await listTodos(spaceId, {
       ...initialFilters,
       scope: todoScope.active,
       sortField: todoSortField.name,
@@ -208,7 +273,7 @@ export function TodosPage() {
     })
 
     return page.items
-  }, [])
+  }, [spaceId])
 
   // Returning to the tab is when another tab's edits are most likely to have
   // landed. Refreshing then keeps versions fresh, but only while nothing is
@@ -243,7 +308,7 @@ export function TodosPage() {
     setLoadingMore(true)
     setError(null)
     try {
-      const page = await listTodos({ ...filters, scope, cursor: nextCursor })
+      const page = await listTodos(spaceId, { ...filters, scope, cursor: nextCursor })
       setItems((current) => mergeTodoPage(current, page.items))
       setNextCursor(page.nextCursor)
     } catch (caught) {
@@ -258,7 +323,7 @@ export function TodosPage() {
     setError(null)
     setNotice(null)
     try {
-      await createTodo(draft)
+      await createTodo(spaceId, draft)
       setScope(todoScope.active)
       setNotice('TODO created.')
       reloadList()
@@ -294,19 +359,19 @@ export function TodosPage() {
   }
 
   function handleUpdate(todo: Todo, draft: TodoDraft) {
-    return mutateTodo(todo, () => updateTodo(todo, draft))
+    return mutateTodo(todo, () => updateTodo(spaceId, todo, draft))
   }
 
   function handleStatus(todo: Todo, status: TodoStatus) {
-    return mutateTodo(todo, () => changeTodoStatus(todo, status))
+    return mutateTodo(todo, () => changeTodoStatus(spaceId, todo, status))
   }
 
   function handleAddDependency(todo: Todo, dependencyId: string) {
-    return mutateTodo(todo, () => addTodoDependency(todo, dependencyId))
+    return mutateTodo(todo, () => addTodoDependency(spaceId, todo, dependencyId))
   }
 
   function handleRemoveDependency(todo: Todo, dependencyId: string) {
-    return mutateTodo(todo, () => removeTodoDependency(todo, dependencyId))
+    return mutateTodo(todo, () => removeTodoDependency(spaceId, todo, dependencyId))
   }
 
   async function handleDelete(todo: TodoListItem): Promise<boolean> {
@@ -314,7 +379,7 @@ export function TodosPage() {
     setError(null)
     setNotice(null)
     try {
-      await deleteTodo(todo)
+      await deleteTodo(spaceId, todo)
       setNotice('TODO moved to Trash.')
       reloadList()
       return true
@@ -331,7 +396,7 @@ export function TodosPage() {
     setError(null)
     setNotice(null)
     try {
-      await restoreTodo(todo)
+      await restoreTodo(spaceId, todo)
       setNotice('TODO restored to Active.')
       reloadList()
       return true
@@ -388,7 +453,13 @@ export function TodosPage() {
 
   const errorTitle = error?.kind === 'concurrency'
     ? 'This TODO was changed by another user.'
-    : error?.problem.title ?? 'Something went wrong.'
+    : error?.kind === 'forbidden'
+      ? forbiddenTitle
+      : error?.problem.title ?? 'Something went wrong.'
+
+  // A permission refusal's detail names the Space by identifier and the level
+  // it wanted, which the title has already said in plain words.
+  const errorDetail = error?.kind === 'forbidden' ? undefined : error?.problem.detail
 
   return (
     <main className={styles.appShell}>
@@ -399,8 +470,7 @@ export function TodosPage() {
           <p>Plan dependencies, repeat the work that matters, and recover safely.</p>
         </div>
         <div className={styles.sessionNote}>
-          <strong>Persisted workspace</strong>
-          <span>Cursor pages stay current with MongoDB and optimistic versions.</span>
+          <SpaceSelector space={space} />
           <UserMenu />
         </div>
       </header>
@@ -419,7 +489,7 @@ export function TodosPage() {
         </section>
       )}
 
-      {scope === todoScope.active && (
+      {scope === todoScope.active && !readOnly && (
         <section className={styles.createPanel}>
           <CreateTodoForm
             busy={busyId === 'create'}
@@ -433,7 +503,7 @@ export function TodosPage() {
         The assistant refreshes the list through the same callback the bulk
         toolbar uses, because its writes are the same writes.
       */}
-      <AssistantPanel onTodosChanged={reloadList} />
+      <AssistantPanel spaceId={spaceId} spaceName={space.name} onTodosChanged={reloadList} />
 
       <div className={styles.scopeTabs} aria-label="TODO scopes" role="tablist">
         {tabs.map((tab) => (
@@ -586,18 +656,20 @@ export function TodosPage() {
           <h2>{tabs.find((tab) => tab.scope === scope)?.label}</h2>
           <span>{items.length}</span>
         </div>
-        <BulkToolbar
-          busy={bulk.bulkBusy || busyId !== null}
-          loadedCount={items.length}
-          overLimit={bulk.overLimit}
-          scope={scope}
-          selectedCount={bulk.selectedCount}
-          selectedStatuses={bulk.selectedStatuses}
-          onDelete={requestBulkDelete}
-          onRestore={() => void runBulk({ kind: 'restore' })}
-          onSelectLoaded={bulk.selectLoaded}
-          onStatus={(status) => void runBulk({ kind: 'status', status })}
-        />
+        {!readOnly && (
+          <BulkToolbar
+            busy={bulk.bulkBusy || busyId !== null}
+            loadedCount={items.length}
+            overLimit={bulk.overLimit}
+            scope={scope}
+            selectedCount={bulk.selectedCount}
+            selectedStatuses={bulk.selectedStatuses}
+            onDelete={requestBulkDelete}
+            onRestore={() => void runBulk({ kind: 'restore' })}
+            onSelectLoaded={bulk.selectLoaded}
+            onStatus={(status) => void runBulk({ kind: 'status', status })}
+          />
+        )}
 
         {loading ? (
           <EmptyState>Loading TODOs…</EmptyState>
@@ -613,9 +685,11 @@ export function TodosPage() {
               <TodoCard
                 key={`${item.id}:${item.version}`}
                 busy={busyId === item.id || bulk.bulkBusy}
+                creatorName={creators.get(item.createdByUserId)}
                 drifted={bulk.repair?.driftedIds.includes(item.id) ?? false}
                 errors={error?.affectedTodoId === item.id ? error.problem.errors : undefined}
                 item={item}
+                readOnly={readOnly}
                 scope={scope}
                 selectable
                 selected={bulk.selectedIds.has(item.id)}
@@ -655,6 +729,7 @@ export function TodosPage() {
         <BulkDeleteDialog
           busy={bulk.bulkBusy}
           selection={pendingDelete}
+          spaceId={spaceId}
           onCancel={() => setPendingDelete(null)}
           onConfirm={(selection) => void confirmBulkDelete(selection)}
         />
@@ -666,12 +741,15 @@ export function TodosPage() {
         the user may still be reading exactly where they found it.
       */}
       <ToastRegion>
+        {spaceNotice && (
+          <Toast title={spaceNotice} tone="warning" onDismiss={dismissSpaceNotice} />
+        )}
         {notice && (
           <Toast title={notice} tone="notice" onDismiss={() => setNotice(null)} />
         )}
         {error && !error.dismissed && (
           <Toast
-            detail={error.problem.detail}
+            detail={errorDetail}
             meta={error.problem.traceId ? `Trace: ${error.problem.traceId}` : undefined}
             title={errorTitle}
             tone="error"

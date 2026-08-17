@@ -1,10 +1,10 @@
 @use '../../styles/mixins' as m;
 @use '../../styles/tokens' as t;
 
-// Sits above the modal backdrop's z-index in BulkDeleteDialog.module.scss: a
-// failure raised by a batch is reported as the dialog that started it closes,
-// and it has to survive that overlap rather than be drawn behind it. Neither
-// value is a token, because two numbers do not make a scale.
+// Sits above the z-index of the `modal-backdrop` mixin: a failure raised by a
+// batch is reported as the dialog that started it closes, and it has to survive
+// that overlap rather than be drawn behind it. Neither value is a token,
+// because two numbers do not make a scale.
 .toast-region {
   position: fixed;
   z-index: 30;
@@ -83,6 +83,15 @@
   border-color: t.$color-notice-border;
   background: t.$color-notice-surface;
   color: t.$color-notice-text;
+}
+
+// Something the user should know but did not do wrong: a Space that has gone
+// from under them. Neither the green of a success nor the red of a failure.
+.warning {
+  @include m.tone(t.$color-warning-surface, t.$color-warning-text);
+  @include m.typography(emphasis);
+
+  border-color: t.$color-warning-text;
 }
 
 @keyframes toast-enter {

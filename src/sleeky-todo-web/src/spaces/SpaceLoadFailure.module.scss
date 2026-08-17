@@ -1,0 +1,17 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.space-load-failure {
+  @include m.standalone-panel;
+
+  p {
+    @include m.typography(body);
+
+    margin: 0;
+    color: t.$color-text-body;
+  }
+
+  strong {
+    color: t.$color-text-strong;
+  }
+}

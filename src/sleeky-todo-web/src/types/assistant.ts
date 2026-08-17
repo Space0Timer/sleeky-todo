@@ -63,7 +63,13 @@ export type ConfirmedAction = {
   items: TodoVersionReference[]
 }
 
+/**
+ * `spaceId` is trusted UI context: the Space the panel is open in, and the only
+ * Space the turn's tools can reach. The model never sees it and cannot choose
+ * another.
+ */
 export type AssistantTurnRequest = {
+  spaceId: string
   message?: string | null
   transcript?: unknown
   confirmation?: ConfirmedAction | null
