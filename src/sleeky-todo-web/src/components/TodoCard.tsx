@@ -20,9 +20,17 @@ import { Badge, Button, type BadgeTone } from './common/index.ts'
 
 type TodoCardProps = {
   busy: boolean
+  /** Who created the TODO, when the Space's member list can name them. */
+  creatorName?: string
   drifted?: boolean
   errors?: Record<string, string[]>
   item: TodoListItem
+  /**
+   * The viewer may look but not touch: no selection, no actions, no manage
+   * panel. What the Space grants a Read member, and nothing the server would
+   * not refuse anyway — this only keeps the refusals off the screen.
+   */
+  readOnly?: boolean
   scope: TodoScope
   selectable?: boolean
   selected?: boolean
@@ -61,9 +69,11 @@ function formatDateTime(value: string | null): string {
 
 export function TodoCard({
   busy,
+  creatorName,
   drifted = false,
   errors,
   item,
+  readOnly = false,
   scope,
   selectable = false,
   selected = false,
@@ -245,7 +255,7 @@ export function TodoCard({
       <div className={styles.todoCardHeading}>
         <div>
           <div className={styles.badgeRow}>
-            {selectable && (
+            {selectable && !readOnly && (
               <label className={styles.selectBox}>
                 <input
                   checked={selected}
@@ -281,6 +291,14 @@ export function TodoCard({
       )}
       <dl>
         <div><dt>Due</dt><dd>{item.dueDate}</dd></div>
+        {/*
+          Absent rather than blank when the creator cannot be named: they may
+          have left the Space, or the member list may not have loaded yet, and
+          neither is worth a row that says nothing.
+        */}
+        {creatorName && (
+          <div><dt>By</dt><dd data-testid="created-by">{creatorName}</dd></div>
+        )}
         {scope === todoScope.deleted && (
           <>
             <div><dt>Deleted</dt><dd>{formatDateTime(item.deletedAt)}</dd></div>
@@ -297,36 +315,38 @@ export function TodoCard({
         </div>
       </dl>
 
-      <div className={styles.cardActions}>
-        {scope === todoScope.deleted ? (
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() => void onRestore(item)}
-          >
-            Restore
-          </Button>
-        ) : (
-          <>
+      {!readOnly && (
+        <div className={styles.cardActions}>
+          {scope === todoScope.deleted ? (
             <Button
-              variant="secondary"
+              variant="primary"
               disabled={busy}
-              onClick={() => void openManager()}
+              onClick={() => void onRestore(item)}
             >
-              {managing ? 'Refresh details' : 'Manage'}
+              Restore
             </Button>
-            <Button
-              variant="danger"
-              disabled={busy}
-              onClick={() => void onDelete(item)}
-            >
-              Delete
-            </Button>
-          </>
-        )}
-      </div>
+          ) : (
+            <>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => void openManager()}
+              >
+                {managing ? 'Refresh details' : 'Manage'}
+              </Button>
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={() => void onDelete(item)}
+              >
+                Delete
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
-      {managing && details && (
+      {managing && details && !readOnly && (
         <section className={styles.managePanel} aria-label={`Manage ${item.name}`}>
           <label>
             Status

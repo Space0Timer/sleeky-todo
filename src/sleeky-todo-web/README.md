@@ -2,6 +2,13 @@
 
 React and TypeScript frontend for Sleeky To-Do.
 
+Every list belongs to a space, and the open space lives in the URL
+(`/spaces/{spaceId}`). `/` resolves one — the space last visited, otherwise the
+personal space the server ensures — and redirects. Switching spaces remounts
+the page, so filters, paging, selection, and the assistant's conversation all
+start again in the space now on screen. A member with read access sees the list
+without the controls that would change it.
+
 The application uses the persisted list API for Active, Archived, and Trash
 views. It supports cursor-based loading, status/priority/due-date/dependency
 filters, deterministic sorting, create and edit flows, status transitions,

@@ -15,6 +15,8 @@ function todoOf(
 ): TodoListItem {
   return {
     id,
+    spaceId: 'space',
+    createdByUserId: 'user',
     name: id,
     descriptionPreview: null,
     dueDate: '2026-08-15',

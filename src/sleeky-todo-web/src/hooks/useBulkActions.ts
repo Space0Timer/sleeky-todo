@@ -38,6 +38,8 @@ type BulkOutcome =
   | { kind: 'failed'; error: unknown }
 
 type UseBulkActionsOptions = {
+  /** The Space every batch is sent to. One Space per call is the server's rule too. */
+  spaceId: string
   items: TodoListItem[]
   onRefresh: () => void
 }
@@ -48,7 +50,7 @@ type UseBulkActionsOptions = {
  * action runs. That keeps "the version sent" equal to "the version the user
  * last saw", which the conflict paths below rely on.
  */
-export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
+export function useBulkActions({ spaceId, items, onRefresh }: UseBulkActionsOptions) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const [repair, setRepair] = useState<BulkRepair | null>(null)
@@ -112,10 +114,10 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
     operation: BulkOperation,
     selection: TodoVersionReference[],
   ): Promise<BulkTodoResult> => {
-    if (operation.kind === 'delete') return bulkDeleteTodos(selection)
-    if (operation.kind === 'restore') return bulkRestoreTodos(selection)
-    return bulkChangeTodoStatus(operation.status, selection)
-  }, [])
+    if (operation.kind === 'delete') return bulkDeleteTodos(spaceId, selection)
+    if (operation.kind === 'restore') return bulkRestoreTodos(spaceId, selection)
+    return bulkChangeTodoStatus(spaceId, operation.status, selection)
+  }, [spaceId])
 
   /**
    * Reads the selection's current state without touching the list, so the
@@ -123,12 +125,12 @@ export function useBulkActions({ items, onRefresh }: UseBulkActionsOptions) {
    */
   const hydrate = useCallback(async (ids: string[]): Promise<Todo[] | null> => {
     try {
-      const selection = await lookupTodoSelection(ids)
+      const selection = await lookupTodoSelection(spaceId, ids)
       return selection.items
     } catch {
       return null
     }
-  }, [])
+  }, [spaceId])
 
   const describeRepair = useCallback((
     ids: string[],
