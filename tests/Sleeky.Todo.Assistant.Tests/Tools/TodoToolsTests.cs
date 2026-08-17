@@ -44,7 +44,7 @@ public sealed class TodoToolsTests
 
         outcome.Should().BeOfType<ToolFailure>();
         harness.Halted.Should().BeTrue();
-        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default, default!, default);
 
         ConfirmationRequest? request =
             harness.Events.Single<ConfirmationRequest>(TurnEventType.ConfirmationRequired);
@@ -64,7 +64,7 @@ public sealed class TodoToolsTests
     {
         Harness harness = new Harness();
         harness.Policy
-            .DeleteAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .DeleteAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(Applied(First, 6, TodoStatus.Open, deleted: true));
 
         await harness.Tools.ExecuteConfirmedDeletionAsync(
@@ -74,6 +74,7 @@ public sealed class TodoToolsTests
             CancellationToken.None);
 
         await harness.Policy.Received(1).DeleteAsync(
+            TestTodo.SpaceId,
             Arg.Is<IReadOnlyCollection<BulkTodoItemRequest>>(items =>
                 items.Single().Id == First && items.Single().Version == 5),
             Arg.Any<CancellationToken>());
@@ -88,7 +89,7 @@ public sealed class TodoToolsTests
     {
         Harness harness = new Harness();
         harness.Policy
-            .DeleteAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .DeleteAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(
                 _ => Task.FromResult(Applied(First, 6, TodoStatus.Open, deleted: true)),
                 _ => throw new BulkConcurrencyConflictException("TODO", new[] { First }));
@@ -115,7 +116,7 @@ public sealed class TodoToolsTests
 
         outcome.Should().BeOfType<ToolFailure>()
             .Which.Error.Should().Contain("Read them first");
-        await harness.Policy.DidNotReceiveWithAnyArgs().ChangeStatusAsync(default, default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().ChangeStatusAsync(default, default, default!, default);
     }
 
     [TestMethod]
@@ -125,7 +126,7 @@ public sealed class TodoToolsTests
         harness.Ledger.Record(First, 5);
         harness.Ledger.Record(Second, 9);
         harness.Policy
-            .ChangeStatusAsync(Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .ChangeStatusAsync(TestTodo.SpaceId, Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(Applied(First, 6, TodoStatus.Completed, deleted: false));
 
         await harness.Tools.ChangeTodoStatusAsync(
@@ -134,6 +135,7 @@ public sealed class TodoToolsTests
             CancellationToken.None);
 
         await harness.Policy.Received(1).ChangeStatusAsync(
+            TestTodo.SpaceId,
             TodoStatus.Completed,
             Arg.Is<IReadOnlyCollection<BulkTodoItemRequest>>(items =>
                 items.Count == 2
@@ -164,7 +166,7 @@ public sealed class TodoToolsTests
             .Which.Error.Should()
             .Contain(BulkTodoLimits.MaximumSelectionSize.ToString())
             .And.Contain("Narrow the selection");
-        await harness.Policy.DidNotReceiveWithAnyArgs().ChangeStatusAsync(default, default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().ChangeStatusAsync(default, default, default!, default);
     }
 
     [TestMethod]
@@ -192,7 +194,7 @@ public sealed class TodoToolsTests
         harness.Ledger.Record(First, 5);
         harness.Ledger.Record(Second, 9);
         harness.Policy
-            .ChangeStatusAsync(Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .ChangeStatusAsync(TestTodo.SpaceId, Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(new BulkTodoResult(new[]
             {
                 new BulkTodoResultItem(First, 6, TodoStatus.Completed, null, null),
@@ -234,7 +236,7 @@ public sealed class TodoToolsTests
 
         empty.Should().BeOfType<ToolFailure>();
         duplicated.Should().BeOfType<ToolFailure>();
-        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default, default!, default);
     }
 
     [TestMethod]
@@ -251,7 +253,7 @@ public sealed class TodoToolsTests
             CancellationToken.None);
 
         outcome.Should().BeOfType<ToolFailure>();
-        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().DeleteAsync(default, default!, default);
     }
 
     [TestMethod]
@@ -430,7 +432,7 @@ public sealed class TodoToolsTests
         Harness harness = new Harness();
         harness.Ledger.Record(First, 4);
         harness.Policy
-            .RestoreAsync(Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .RestoreAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(Applied(First, 5, TodoStatus.Open, deleted: false));
 
         object outcome = await harness.Tools.RestoreTodosAsync(
@@ -439,6 +441,7 @@ public sealed class TodoToolsTests
 
         outcome.Should().BeOfType<TodoWriteOutcome>();
         await harness.Policy.Received(1).RestoreAsync(
+            TestTodo.SpaceId,
             Arg.Is<IReadOnlyCollection<BulkTodoItemRequest>>(items =>
                 items.Single().Id == First && items.Single().Version == 4),
             Arg.Any<CancellationToken>());
@@ -456,7 +459,7 @@ public sealed class TodoToolsTests
 
         outcome.Should().BeOfType<ToolFailure>()
             .Which.Error.Should().Contain("Read them first");
-        await harness.Policy.DidNotReceiveWithAnyArgs().RestoreAsync(default!, default);
+        await harness.Policy.DidNotReceiveWithAnyArgs().RestoreAsync(default, default!, default);
     }
 
     /// <summary>
@@ -470,7 +473,7 @@ public sealed class TodoToolsTests
         Harness harness = new Harness();
         harness.Ledger.Record(First, 5);
         harness.Policy
-            .ChangeStatusAsync(Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .ChangeStatusAsync(TestTodo.SpaceId, Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
             .Returns(new BulkTodoResult(new[]
             {
                 new BulkTodoResultItem(First, 6, TodoStatus.Completed, null, occurrence),
@@ -499,6 +502,98 @@ public sealed class TodoToolsTests
             .Which.Error.Should().Contain("not a TODO identifier");
     }
 
+    /// <summary>
+    /// The Space is fixed when the tools are built and stamped onto every
+    /// dispatch. No parameter the model controls can move a call elsewhere:
+    /// the tool schemas carry no Space at all.
+    /// </summary>
+    [TestMethod]
+    public async Task EveryReadAndWriteCarriesTheSpaceTheToolsWereBuiltFor()
+    {
+        Harness harness = new Harness();
+        harness.StageList();
+        harness.StageCreate(TestTodo.At(First, 1, "Renew passport"));
+        harness.StageSelection(TestTodo.At(Second, 3));
+        harness.Ledger.Record(First, 1);
+        harness.Ledger.Record(Second, 3);
+        harness.Policy
+            .ChangeStatusAsync(TestTodo.SpaceId, Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Applied(First, 2, TodoStatus.Completed, deleted: false));
+        harness.Policy
+            .RestoreAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Applied(Second, 4, TodoStatus.Open, deleted: false));
+        harness.Policy
+            .DeleteAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns(Applied(First, 3, TodoStatus.Completed, deleted: true));
+
+        _ = await harness.Tools.GetTodosAsync();
+        _ = await harness.Tools.GetTodoSelectionAsync(new[] { Second.ToString() });
+        _ = await harness.Tools.CreateTodoAsync("Renew passport", "2026-09-30", "High");
+        _ = await harness.Tools.ChangeTodoStatusAsync("Completed", new[] { First.ToString() });
+        _ = await harness.Tools.RestoreTodosAsync(new[] { Second.ToString() });
+        _ = await harness.Tools.ExecuteConfirmedDeletionAsync(
+            new ConfirmedAction(TodoToolNames.DeleteTodos, new[] { new TodoVersionReference(First, 2) }),
+            CancellationToken.None);
+
+        harness.Listed!.SpaceId.Should().Be(TestTodo.SpaceId);
+        harness.Created!.SpaceId.Should().Be(TestTodo.SpaceId);
+        await harness.Sender.Received(1).Send(
+            Arg.Is<IRequest<TodoSelection>>(request =>
+                ((GetTodoSelectionQuery)request).SpaceId == TestTodo.SpaceId),
+            Arg.Any<CancellationToken>());
+        await harness.Policy.Received(1).ChangeStatusAsync(
+            TestTodo.SpaceId,
+            TodoStatus.Completed,
+            Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(),
+            Arg.Any<CancellationToken>());
+        await harness.Policy.Received(1).RestoreAsync(
+            TestTodo.SpaceId,
+            Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(),
+            Arg.Any<CancellationToken>());
+        await harness.Policy.Received(1).DeleteAsync(
+            TestTodo.SpaceId,
+            Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A Read member's write is refused by the pipeline, exactly as it would
+    /// be over HTTP. The tool hands that back as a failure the model can
+    /// relay, rather than as a thrown exception the loop would report as a
+    /// nameless error and the model would retry.
+    /// </summary>
+    [TestMethod]
+    public async Task WritesRefusedOnPermissionComeBackAsAToolFailure()
+    {
+        Harness harness = new Harness();
+        harness.Ledger.Record(First, 5);
+        harness.Sender
+            .Send(Arg.Any<IRequest<TodoDto>>(), Arg.Any<CancellationToken>())
+            .Returns<Task<TodoDto>>(_ => throw Forbidden());
+        harness.Policy
+            .ChangeStatusAsync(TestTodo.SpaceId, Arg.Any<TodoStatus>(), Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns<Task<BulkTodoResult>>(_ => throw Forbidden());
+        harness.Policy
+            .RestoreAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns<Task<BulkTodoResult>>(_ => throw Forbidden());
+        harness.Policy
+            .DeleteAsync(TestTodo.SpaceId, Arg.Any<IReadOnlyCollection<BulkTodoItemRequest>>(), Arg.Any<CancellationToken>())
+            .Returns<Task<BulkTodoResult>>(_ => throw Forbidden());
+
+        object created = await harness.Tools.CreateTodoAsync("Renew passport", "2026-09-30", "High");
+        object changed = await harness.Tools.ChangeTodoStatusAsync("Completed", new[] { First.ToString() });
+        object restored = await harness.Tools.RestoreTodosAsync(new[] { First.ToString() });
+        object deleted = await harness.Tools.ExecuteConfirmedDeletionAsync(
+            new ConfirmedAction(TodoToolNames.DeleteTodos, new[] { new TodoVersionReference(First, 5) }),
+            CancellationToken.None);
+
+        created.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("read-only");
+        changed.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("read-only");
+        restored.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("read-only");
+        deleted.Should().BeOfType<ToolFailure>().Which.Error.Should().Contain("read-only");
+        harness.Events.Types().Should().NotContain(TurnEventType.TodosChanged);
+    }
+
     [TestMethod]
     public async Task AnUnknownStatusNamesTheOnesThatWork()
     {
@@ -511,6 +606,11 @@ public sealed class TodoToolsTests
 
         outcome.Should().BeOfType<ToolFailure>()
             .Which.Error.Should().Contain("Completed");
+    }
+
+    private static ForbiddenException Forbidden()
+    {
+        return new ForbiddenException("Space", TestTodo.SpaceId, nameof(SpacePermission.Write));
     }
 
     private static BulkTodoResult Applied(
@@ -539,6 +639,7 @@ public sealed class TodoToolsTests
             this.Ledger = new TodoVersionLedger();
             this.Events = new RecordingTurnEvents();
             this.Tools = new TodoTools(
+                TestTodo.SpaceId,
                 this.Sender,
                 this.Policy,
                 this.Ledger,

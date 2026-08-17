@@ -33,6 +33,7 @@ public sealed class UpdateTodoCommandHandlerTests
             .UpdateAsync(todoItem, Arg.Any<CancellationToken>())
             .Returns(_ => TestTodoFactory.WithVersion(todoItem, 2));
         UpdateTodoCommand command = new UpdateTodoCommand(
+            TestTodoFactory.SpaceId,
             todoItem.Id,
             "Review report",
             "Revised report",
@@ -136,6 +137,7 @@ public sealed class UpdateTodoCommandHandlerTests
     private static UpdateTodoCommand CreateCommand(Guid id, long version)
     {
         return new UpdateTodoCommand(
+            TestTodoFactory.SpaceId,
             id,
             "Review report",
             null,

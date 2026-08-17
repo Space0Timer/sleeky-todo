@@ -16,7 +16,8 @@ public sealed class TodoItemTests
     private static readonly Guid DependencyId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid OtherDependencyId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     private static readonly Guid SeriesId = Guid.Parse("44444444-4444-4444-4444-444444444444");
-    private static readonly Guid OwnerId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private static readonly Guid SpaceId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    private static readonly Guid CreatedByUserId = Guid.Parse("66666666-6666-6666-6666-666666666666");
 
     [TestMethod]
     public void CreateSetsDefaultsAndNormalizesValues()
@@ -27,6 +28,8 @@ public sealed class TodoItemTests
             description: "  Monthly report  ");
 
         item.Id.Should().Be(TodoId);
+        item.SpaceId.Should().Be(SpaceId);
+        item.CreatedByUserId.Should().Be(CreatedByUserId);
         item.Name.Should().Be("Submit Report");
         item.NameNormalized.Should().Be("submit report");
         item.Description.Should().Be("Monthly report");
@@ -73,10 +76,29 @@ public sealed class TodoItemTests
     }
 
     [TestMethod]
-    public void CreateRejectsEmptyOwner()
+    public void CreateRejectsEmptySpace()
     {
         Func<TodoItem> act = () => TodoItem.Create(
             TodoId,
+            Guid.Empty,
+            CreatedByUserId,
+            "Submit Report",
+            null,
+            InitialDueDate,
+            TodoPriority.High,
+            InitialTimestamp);
+
+        act.Should()
+            .Throw<DomainException>()
+            .WithMessage("A TODO Space identifier is required.");
+    }
+
+    [TestMethod]
+    public void CreateRejectsEmptyCreator()
+    {
+        Func<TodoItem> act = () => TodoItem.Create(
+            TodoId,
+            SpaceId,
             Guid.Empty,
             "Submit Report",
             null,
@@ -86,7 +108,7 @@ public sealed class TodoItemTests
 
         act.Should()
             .Throw<DomainException>()
-            .WithMessage("A TODO owner identifier is required.");
+            .WithMessage("A TODO creator identifier is required.");
     }
 
     [TestMethod]
@@ -94,7 +116,8 @@ public sealed class TodoItemTests
     {
         Func<TodoItem> act = () => TodoItem.Create(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit Report",
             null,
             InitialDueDate,
@@ -336,7 +359,8 @@ public sealed class TodoItemTests
 
         TodoItem item = TodoItem.Rehydrate(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit Report",
             "Monthly report",
             InitialDueDate,
@@ -353,6 +377,8 @@ public sealed class TodoItemTests
             purgeAt);
 
         item.Id.Should().Be(TodoId);
+        item.SpaceId.Should().Be(SpaceId);
+        item.CreatedByUserId.Should().Be(CreatedByUserId);
         item.NameNormalized.Should().Be("submit report");
         item.Status.Should().Be(TodoStatus.Archived);
         item.Priority.Should().Be(TodoPriority.Medium);
@@ -372,7 +398,8 @@ public sealed class TodoItemTests
     {
         Func<TodoItem> act = () => TodoItem.Rehydrate(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit Report",
             null,
             InitialDueDate,
@@ -425,7 +452,8 @@ public sealed class TodoItemTests
     {
         return TodoItem.Create(
             id ?? TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             name,
             description,
             InitialDueDate,
@@ -439,7 +467,8 @@ public sealed class TodoItemTests
     {
         return TodoItem.Rehydrate(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit Report",
             null,
             InitialDueDate,

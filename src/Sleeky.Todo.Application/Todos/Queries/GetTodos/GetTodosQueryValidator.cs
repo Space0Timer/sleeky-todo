@@ -8,6 +8,9 @@ public sealed class GetTodosQueryValidator : AbstractValidator<GetTodosQuery>
 {
     public GetTodosQueryValidator()
     {
+        RuleFor(query => query.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(query => query.Status)
             .Must(status => status is null || Enum.IsDefined(status.Value))
             .WithMessage("A valid TODO status is required.");

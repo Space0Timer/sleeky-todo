@@ -23,6 +23,7 @@ public sealed class CreateTodoCommandHandlerTests
         IClock clock = Substitute.For<IClock>();
         clock.UtcNow.Returns(TestTodoFactory.Timestamp);
         CreateTodoCommand command = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "  Submit report  ",
             "  Monthly report  ",
             TestTodoFactory.DueDate,
@@ -30,20 +31,23 @@ public sealed class CreateTodoCommandHandlerTests
         CreateTodoCommandHandler handler = new CreateTodoCommandHandler(
             repository,
             clock,
-            new TestCurrentUser(TestTodoFactory.OwnerId),
+            new TestCurrentUser(TestTodoFactory.CreatedByUserId),
             NullLogger<CreateTodoCommandHandler>.Instance);
         CancellationToken cancellationToken = new CancellationTokenSource().Token;
 
         TodoDto result = await handler.Handle(command, cancellationToken);
 
         result.Id.Should().NotBe(Guid.Empty);
+        result.SpaceId.Should().Be(TestTodoFactory.SpaceId);
+        result.CreatedByUserId.Should().Be(TestTodoFactory.CreatedByUserId);
         result.Name.Should().Be("Submit report");
         result.Description.Should().Be("Monthly report");
         result.Version.Should().Be(1);
         result.CreatedAt.Should().Be(TestTodoFactory.Timestamp);
         await repository.Received(1).AddAsync(
             Arg.Is<TodoItem>(todoItem => todoItem.Id == result.Id
-                && todoItem.OwnerId == TestTodoFactory.OwnerId),
+                && todoItem.SpaceId == TestTodoFactory.SpaceId
+                && todoItem.CreatedByUserId == TestTodoFactory.CreatedByUserId),
             cancellationToken);
     }
 
@@ -54,6 +58,7 @@ public sealed class CreateTodoCommandHandlerTests
         IClock clock = Substitute.For<IClock>();
         clock.UtcNow.Returns(TestTodoFactory.Timestamp);
         CreateTodoCommand command = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
             "Submit report",
             "Monthly report",
             TestTodoFactory.DueDate,
@@ -63,7 +68,7 @@ public sealed class CreateTodoCommandHandlerTests
         CreateTodoCommandHandler handler = new CreateTodoCommandHandler(
             repository,
             clock,
-            new TestCurrentUser(TestTodoFactory.OwnerId),
+            new TestCurrentUser(TestTodoFactory.CreatedByUserId),
             NullLogger<CreateTodoCommandHandler>.Instance);
 
         TodoDto result = await handler.Handle(command, CancellationToken.None);

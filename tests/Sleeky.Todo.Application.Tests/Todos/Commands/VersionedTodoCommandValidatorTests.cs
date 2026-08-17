@@ -13,7 +13,7 @@ public sealed class VersionedTodoCommandValidatorTests
     [TestMethod]
     public void DeleteValidatorRejectsInvalidIdentifierAndVersion()
     {
-        DeleteTodoCommand command = new DeleteTodoCommand(Guid.Empty, 0);
+        DeleteTodoCommand command = new DeleteTodoCommand(TestTodoFactory.SpaceId, Guid.Empty, 0);
         DeleteTodoCommandValidator validator = new DeleteTodoCommandValidator();
 
         ValidationResult result = validator.Validate(command);
@@ -29,7 +29,7 @@ public sealed class VersionedTodoCommandValidatorTests
     [TestMethod]
     public void RestoreValidatorRejectsInvalidIdentifierAndVersion()
     {
-        RestoreTodoCommand command = new RestoreTodoCommand(Guid.Empty, -1);
+        RestoreTodoCommand command = new RestoreTodoCommand(TestTodoFactory.SpaceId, Guid.Empty, -1);
         RestoreTodoCommandValidator validator = new RestoreTodoCommandValidator();
 
         ValidationResult result = validator.Validate(command);
@@ -46,9 +46,9 @@ public sealed class VersionedTodoCommandValidatorTests
     public void DeleteAndRestoreValidatorsAcceptValidCommands()
     {
         ValidationResult deleteResult = new DeleteTodoCommandValidator()
-            .Validate(new DeleteTodoCommand(TestTodoFactory.CreateId("todo-1"), 1));
+            .Validate(new DeleteTodoCommand(TestTodoFactory.SpaceId, TestTodoFactory.CreateId("todo-1"), 1));
         ValidationResult restoreResult = new RestoreTodoCommandValidator()
-            .Validate(new RestoreTodoCommand(TestTodoFactory.CreateId("todo-1"), 1));
+            .Validate(new RestoreTodoCommand(TestTodoFactory.SpaceId, TestTodoFactory.CreateId("todo-1"), 1));
 
         deleteResult.IsValid.Should().BeTrue();
         restoreResult.IsValid.Should().BeTrue();

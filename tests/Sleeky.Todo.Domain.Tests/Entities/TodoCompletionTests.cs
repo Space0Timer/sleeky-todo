@@ -12,7 +12,8 @@ public sealed class TodoCompletionTests
     private static readonly DateOnly DueDate = new DateOnly(2026, 8, 31);
     private static readonly Guid TodoId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid SeriesId = Guid.Parse("22222222-2222-2222-2222-222222222222");
-    private static readonly Guid OwnerId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private static readonly Guid SpaceId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private static readonly Guid CreatedByUserId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     private static readonly DateTimeOffset Timestamp = new DateTimeOffset(
         2026,
         8,
@@ -32,7 +33,8 @@ public sealed class TodoCompletionTests
             DueDate);
         TodoItem todo = TodoItem.Create(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit report",
             "Monthly report",
             DueDate,
@@ -48,6 +50,8 @@ public sealed class TodoCompletionTests
         TodoCompletion completion = todo.Completion.Should().NotBeNull().And.Subject
             .Should().BeOfType<TodoCompletion>().Subject;
         completion.TodoId.Should().Be(todo.Id);
+        completion.SpaceId.Should().Be(SpaceId);
+        completion.CreatedByUserId.Should().Be(CreatedByUserId);
         completion.SeriesId.Should().Be(SeriesId);
         completion.OccurrenceNumber.Should().Be(1);
         completion.NextOccurrenceId.Should().NotBeNull().And.NotBe(Guid.Empty);
@@ -60,7 +64,8 @@ public sealed class TodoCompletionTests
     {
         TodoItem todo = TodoItem.Create(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit report",
             null,
             DueDate,
@@ -92,7 +97,8 @@ public sealed class TodoCompletionTests
             DueDate);
         TodoItem todo = TodoItem.Create(
             TodoId,
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit report",
             null,
             DueDate,

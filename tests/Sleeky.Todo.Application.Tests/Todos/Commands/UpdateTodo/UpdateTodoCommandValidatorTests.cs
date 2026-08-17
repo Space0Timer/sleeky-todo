@@ -27,6 +27,7 @@ public sealed class UpdateTodoCommandValidatorTests
     public void ValidateRejectsEveryInvalidField()
     {
         UpdateTodoCommand command = new UpdateTodoCommand(
+            TestTodoFactory.SpaceId,
             Guid.Empty,
             "   ",
             new string('d', TodoValidationLimits.DescriptionMaximumLength + 1),
@@ -64,6 +65,7 @@ public sealed class UpdateTodoCommandValidatorTests
         long version = 1)
     {
         return new UpdateTodoCommand(
+            TestTodoFactory.SpaceId,
             id ?? TestTodoFactory.CreateId("todo-1"),
             "Submit report",
             "Monthly report",

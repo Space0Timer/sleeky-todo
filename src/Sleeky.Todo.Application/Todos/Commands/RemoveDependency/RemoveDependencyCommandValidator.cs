@@ -8,6 +8,9 @@ public sealed class RemoveDependencyCommandValidator : AbstractValidator<RemoveD
 {
     public RemoveDependencyCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id)
             .ValidTodoIdentifier();
 

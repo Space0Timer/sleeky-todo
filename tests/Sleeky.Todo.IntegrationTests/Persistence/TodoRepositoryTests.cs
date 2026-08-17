@@ -9,6 +9,7 @@ using MongoDB.Driver;
 using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.Exceptions;
+using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Domain.Entities;
 using Sleeky.Todo.Domain.Enums;
 using Sleeky.Todo.Domain.ValueObjects;
@@ -31,8 +32,9 @@ public sealed class TodoRepositoryTests
         0,
         TimeSpan.Zero);
 
-    private static readonly Guid OwnerId = Id("owner-1");
-    private static readonly Guid OtherOwnerId = Id("owner-2");
+    private static readonly Guid SpaceId = Id("space-1");
+    private static readonly Guid OtherSpaceId = Id("space-2");
+    private static readonly Guid CreatedByUserId = Id("user-1");
 
     private static MongoDbContainer? mongoDbContainer;
 
@@ -40,7 +42,7 @@ public sealed class TodoRepositoryTests
 
     private IMongoDatabase database = null!;
     private ITodoRepository repository = null!;
-    private ITodoRepository otherOwnerRepository = null!;
+    private ITodoRepository otherSpaceRepository = null!;
     private MongoDbSettings settings = null!;
 
     [ClassInitialize]
@@ -84,8 +86,8 @@ public sealed class TodoRepositoryTests
             DatabaseName = databaseName,
             TodoItemsCollectionName = "todoItems",
         };
-        repository = CreateRepository(OwnerId);
-        otherOwnerRepository = CreateRepository(OtherOwnerId);
+        repository = CreateRepository(SpaceId);
+        otherSpaceRepository = CreateRepository(OtherSpaceId);
     }
 
     [TestCleanup]
@@ -130,7 +132,8 @@ public sealed class TodoRepositoryTests
             new DateOnly(2026, 8, 31));
         TodoItem todoItem = TodoItem.Create(
             Id("recurring"),
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
@@ -165,7 +168,8 @@ public sealed class TodoRepositoryTests
     {
         TodoItem todoItem = TodoItem.Create(
             Id("round-trip"),
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit Quarterly Report",
             "Include the VAT summary",
             new DateOnly(2026, 8, 31),
@@ -200,7 +204,8 @@ public sealed class TodoRepositoryTests
     {
         TodoItem todoItem = TodoItem.Create(
             Id("batch-round-trip"),
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Renew Passport",
             null,
             new DateOnly(2026, 8, 31),
@@ -228,7 +233,8 @@ public sealed class TodoRepositoryTests
     {
         TodoItem todoItem = TodoItem.Create(
             Id("searchable"),
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit Quarterly Report",
             "Include the VAT summary",
             new DateOnly(2026, 8, 31),
@@ -279,7 +285,8 @@ public sealed class TodoRepositoryTests
         BsonDocument raw = await ReadRawDocumentAsync(todoItem.Id);
 
         AssertStandardUuid(raw["_id"], todoItem.Id);
-        AssertStandardUuid(raw["ownerId"], OwnerId);
+        AssertStandardUuid(raw["spaceId"], SpaceId);
+        AssertStandardUuid(raw["createdByUserId"], CreatedByUserId);
         AssertStandardUuid(raw["dependencyIds"].AsBsonArray[0], dependency.Id);
         AssertStandardUuid(raw["seriesId"], Id("series-1"));
     }
@@ -387,7 +394,7 @@ public sealed class TodoRepositoryTests
         await repository.AddAsync(mine);
 
         IReadOnlyCollection<TodoDependencyNode> theirs =
-            await otherOwnerRepository.GetDependencyNodesAsync(new[] { mine.Id });
+            await otherSpaceRepository.GetDependencyNodesAsync(new[] { mine.Id });
 
         theirs.Should().BeEmpty();
     }
@@ -446,13 +453,13 @@ public sealed class TodoRepositoryTests
     }
 
     [TestMethod]
-    public async Task ActiveDependentIdsExcludeAnotherOwnersTodo()
+    public async Task ActiveDependentIdsExcludeAnotherSpaceTodo()
     {
         TodoItem prerequisite = CreateTodo("prerequisite");
-        TodoItem otherOwnersDependent = CreateTodo("dependent-other", OtherOwnerId);
-        otherOwnersDependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
+        TodoItem otherSpaceDependent = CreateTodo("dependent-other", OtherSpaceId);
+        otherSpaceDependent.AddDependency(prerequisite.Id, Timestamp.AddHours(1));
         await repository.AddAsync(prerequisite);
-        await otherOwnerRepository.AddAsync(otherOwnersDependent);
+        await otherSpaceRepository.AddAsync(otherSpaceDependent);
 
         IReadOnlyCollection<Guid> blocking = await repository.GetActiveDependentIdsAsync(
             [prerequisite.Id],
@@ -489,17 +496,17 @@ public sealed class TodoRepositoryTests
     }
 
     [TestMethod]
-    public async Task SaveBatchRejectsAnotherOwnersTodo()
+    public async Task SaveBatchRejectsAnotherSpaceTodo()
     {
-        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
-        await otherOwnerRepository.AddAsync(otherOwnersTodo);
+        TodoItem otherSpaceTodo = CreateTodo("todo-other", OtherSpaceId);
+        await otherSpaceRepository.AddAsync(otherSpaceTodo);
 
         Func<Task> act = async () => await repository.SaveBatchAsync(
-            [otherOwnersTodo],
+            [otherSpaceTodo],
             []);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("A TODO can only be persisted by its owner.");
+            .WithMessage("A TODO can only be persisted inside the authorized Space.");
     }
 
     [TestMethod]
@@ -704,7 +711,8 @@ public sealed class TodoRepositoryTests
         await repository.AddAsync(todoItem);
         TodoItem persistedVersionTwo = TodoItem.Rehydrate(
             todoItem.Id,
-            todoItem.OwnerId,
+            todoItem.SpaceId,
+            todoItem.CreatedByUserId,
             todoItem.Name,
             todoItem.Description,
             todoItem.DueDate,
@@ -728,15 +736,15 @@ public sealed class TodoRepositoryTests
     }
 
     [TestMethod]
-    public async Task ReadsExcludeAnotherOwnersTodo()
+    public async Task ReadsExcludeAnotherSpaceTodo()
     {
-        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
-        await otherOwnerRepository.AddAsync(otherOwnersTodo);
+        TodoItem otherSpaceTodo = CreateTodo("todo-other", OtherSpaceId);
+        await otherSpaceRepository.AddAsync(otherSpaceTodo);
 
-        TodoItem? read = await repository.GetByIdAsync(otherOwnersTodo.Id);
-        bool exists = await repository.ExistsAsync(otherOwnersTodo.Id);
+        TodoItem? read = await repository.GetByIdAsync(otherSpaceTodo.Id);
+        bool exists = await repository.ExistsAsync(otherSpaceTodo.Id);
         IReadOnlyCollection<TodoItem> batch = await repository.GetByIdsAsync(
-            [otherOwnersTodo.Id]);
+            [otherSpaceTodo.Id]);
 
         read.Should().BeNull();
         exists.Should().BeFalse();
@@ -744,53 +752,60 @@ public sealed class TodoRepositoryTests
     }
 
     [TestMethod]
-    public async Task MutationsCannotReachAnotherOwnersTodo()
+    public async Task MutationsCannotReachAnotherSpaceTodo()
     {
-        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
-        await otherOwnerRepository.AddAsync(otherOwnersTodo);
-        otherOwnersTodo.UpdateDetails(
+        TodoItem otherSpaceTodo = CreateTodo("todo-other", OtherSpaceId);
+        await otherSpaceRepository.AddAsync(otherSpaceTodo);
+        otherSpaceTodo.UpdateDetails(
             "Renamed by attacker",
             null,
-            otherOwnersTodo.DueDate,
+            otherSpaceTodo.DueDate,
             TodoPriority.Low,
             Timestamp.AddHours(1));
 
-        Func<Task> act = async () => await repository.UpdateAsync(otherOwnersTodo);
+        Func<Task> act = async () => await repository.UpdateAsync(otherSpaceTodo);
 
         await act.Should().ThrowAsync<ConcurrencyConflictException>();
-        TodoItem? stored = await otherOwnerRepository.GetByIdAsync(
-            otherOwnersTodo.Id);
+        TodoItem? stored = await otherSpaceRepository.GetByIdAsync(
+            otherSpaceTodo.Id);
         stored.Should().NotBeNull();
         stored!.Name.Should().Be("Submit report");
         stored.Version.Should().Be(1);
     }
 
     [TestMethod]
-    public async Task AddRejectsTodoOwnedByAnotherUser()
+    public async Task AddRejectsTodoFromAnotherSpace()
     {
-        TodoItem otherOwnersTodo = CreateTodo("todo-other", OtherOwnerId);
+        TodoItem otherSpaceTodo = CreateTodo("todo-other", OtherSpaceId);
 
-        Func<Task> act = () => repository.AddAsync(otherOwnersTodo);
+        Func<Task> act = () => repository.AddAsync(otherSpaceTodo);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("A TODO can only be persisted by its owner.");
+            .WithMessage("A TODO can only be persisted inside the authorized Space.");
     }
 
+    /// <summary>
+    /// Fail closed: a request that never passed an access check has no Space
+    /// bound, and reading the scope throws rather than producing a filter that
+    /// would match every Space's TODOs.
+    /// </summary>
     [TestMethod]
-    public async Task RepositoryRefusesUnauthenticatedReads()
+    public async Task RepositoryRefusesReadsWithNoAuthorizedSpace()
     {
-        ITodoRepository anonymous = CreateRepository(Guid.Empty);
+        ITodoRepository unscoped = CreateRepositoryWithUnboundScope();
 
-        Func<Task> act = () => anonymous.GetByIdAsync(Id("todo-1"));
+        Func<Task> act = () => unscoped.GetByIdAsync(Id("todo-1"));
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("No Space has been authorized for the current request.");
     }
 
-    private static TodoItem CreateTodo(string id = "todo-1", Guid? ownerId = null)
+    private static TodoItem CreateTodo(string id = "todo-1", Guid? spaceId = null)
     {
         return TodoItem.Create(
             Id(id),
-            ownerId ?? OwnerId,
+            spaceId ?? SpaceId,
+            CreatedByUserId,
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
@@ -808,7 +823,8 @@ public sealed class TodoRepositoryTests
 
         return TodoItem.Create(
             Id(id),
-            OwnerId,
+            SpaceId,
+            CreatedByUserId,
             "Submit report",
             "Monthly report",
             new DateOnly(2026, 8, 31),
@@ -859,12 +875,31 @@ public sealed class TodoRepositoryTests
         return new Guid(bytes);
     }
 
+    private ITodoRepository CreateRepository(Guid spaceId)
+    {
+        return CreateRepository(new TestSpaceScope(spaceId));
+    }
+
+    /// <summary>
+    /// The production holder with nothing bound, which is what a request that
+    /// skipped the access check would resolve.
+    /// </summary>
+    private ITodoRepository CreateRepositoryWithUnboundScope()
+    {
+        return CreateRepository(new SpaceScope());
+    }
+
     /// <summary>
     /// The Mongo implementations are internal to the infrastructure assembly, so
     /// the suite resolves the repository contract from the real registration
     /// rather than constructing the concrete type.
     /// </summary>
-    private ITodoRepository CreateRepository(Guid ownerId)
+    /// <remarks>
+    /// <c>AddInfrastructure</c> registers no scope — the Application layer
+    /// does, together with the behavior that binds it — so this suite supplies
+    /// its own, standing in for a check that has already passed.
+    /// </remarks>
+    private ITodoRepository CreateRepository(ISpaceScope scope)
     {
         Dictionary<string, string?> values = new Dictionary<string, string?>
         {
@@ -874,7 +909,7 @@ public sealed class TodoRepositoryTests
                 settings.TodoItemsCollectionName,
         };
         ServiceCollection services = new ServiceCollection();
-        services.AddSingleton<ICurrentUser>(new TestCurrentUser(ownerId));
+        services.AddSingleton(scope);
         services.AddInfrastructure(new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build());

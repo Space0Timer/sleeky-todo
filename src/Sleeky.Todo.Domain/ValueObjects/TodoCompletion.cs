@@ -7,6 +7,13 @@ namespace Sleeky.Todo.Domain.ValueObjects;
 /// aggregate records it on itself so the application handler can act on it,
 /// which is why it is a completion rather than a domain event.
 /// </summary>
+/// <param name="SpaceId">
+/// The Space the completed occurrence lives in, which its successor inherits.
+/// </param>
+/// <param name="CreatedByUserId">
+/// The creator of the completed occurrence, which its successor inherits: the
+/// series stays attributed to whoever started it, whoever completes a step.
+/// </param>
 /// <param name="ScheduledDueDate">
 /// The due date the completed occurrence was scheduled for, not when it was
 /// completed, so a late completion does not drift the series.
@@ -18,7 +25,8 @@ namespace Sleeky.Todo.Domain.ValueObjects;
 /// </param>
 public sealed record TodoCompletion(
     Guid TodoId,
-    Guid OwnerId,
+    Guid SpaceId,
+    Guid CreatedByUserId,
     string Name,
     string? Description,
     DateOnly ScheduledDueDate,

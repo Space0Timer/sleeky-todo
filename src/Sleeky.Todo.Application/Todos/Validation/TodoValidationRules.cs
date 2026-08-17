@@ -43,6 +43,20 @@ internal static class TodoValidationRules
             .WithMessage("Expected version must be greater than zero.");
     }
 
+    /// <summary>
+    /// The Space every TODO request acts in. Checked by validation, ahead of
+    /// the access check, so a request that names no Space is a 400 rather
+    /// than a lookup of the empty identifier.
+    /// </summary>
+    public static IRuleBuilderOptions<T, Guid> ValidSpaceIdentifier<T>(
+        this IRuleBuilderInitial<T, Guid> ruleBuilder)
+    {
+        return ruleBuilder
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty()
+            .WithMessage("A Space identifier is required.");
+    }
+
     public static IRuleBuilderOptions<T, Guid> ValidTodoIdentifier<T>(
         this IRuleBuilderInitial<T, Guid> ruleBuilder)
     {

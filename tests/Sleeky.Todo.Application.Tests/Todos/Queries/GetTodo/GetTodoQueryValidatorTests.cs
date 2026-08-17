@@ -15,7 +15,7 @@ public sealed class GetTodoQueryValidatorTests
     [TestMethod]
     public void ValidateRejectsEmptyIdentifier()
     {
-        ValidationResult result = validator.Validate(new GetTodoQuery(Guid.Empty));
+        ValidationResult result = validator.Validate(new GetTodoQuery(TestTodoFactory.SpaceId, Guid.Empty));
 
         result.Errors.Should().ContainSingle(
             failure => failure.PropertyName == nameof(GetTodoQuery.Id));
@@ -25,7 +25,7 @@ public sealed class GetTodoQueryValidatorTests
     public void ValidateAcceptsValidIdentifier()
     {
         ValidationResult result = validator.Validate(
-            new GetTodoQuery(TestTodoFactory.CreateId("todo-1")));
+            new GetTodoQuery(TestTodoFactory.SpaceId, TestTodoFactory.CreateId("todo-1")));
 
         result.IsValid.Should().BeTrue();
     }

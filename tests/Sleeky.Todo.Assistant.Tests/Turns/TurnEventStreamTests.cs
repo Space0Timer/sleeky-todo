@@ -14,7 +14,7 @@ public sealed class TurnEventStreamTests
     private static readonly TimeSpan Immediate = TimeSpan.FromMilliseconds(20);
 
     private static readonly AssistantTurn AnyTurn =
-        new AssistantTurn("Complete everything due today.", null, null);
+        new AssistantTurn(TestTodo.SpaceId, "Complete everything due today.", null, null);
 
     [TestMethod]
     public async Task RunForwardsTurnEventsInOrderAndEndsWithTheTurn()

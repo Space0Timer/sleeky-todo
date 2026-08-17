@@ -8,6 +8,9 @@ public sealed class RestoreTodoCommandValidator : AbstractValidator<RestoreTodoC
 {
     public RestoreTodoCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id)
             .ValidTodoIdentifier();
 

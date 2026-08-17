@@ -20,7 +20,7 @@ public sealed class ApiExceptionHandlerTests
         ApiExceptionHandler handler = new ApiExceptionHandler(logger);
         DefaultHttpContext context = CreateHttpContext();
         context.Request.Method = HttpMethods.Post;
-        context.Request.Path = "/api/todos/todo-1/status";
+        context.Request.Path = "/api/spaces/space-1/todos/todo-1/status";
         context.TraceIdentifier = "trace-123";
         InvalidOperationException exception = new InvalidOperationException("failure");
 
@@ -36,7 +36,7 @@ public sealed class ApiExceptionHandlerTests
         entry.EventId.Should().Be(3001);
         entry.Exception.Should().BeSameAs(exception);
         entry.Properties["RequestMethod"].Should().Be(HttpMethods.Post);
-        entry.Properties["RequestPath"].Should().Be("/api/todos/todo-1/status");
+        entry.Properties["RequestPath"].Should().Be("/api/spaces/space-1/todos/todo-1/status");
         entry.Properties["TraceId"].Should().Be("trace-123");
     }
 

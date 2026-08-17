@@ -166,6 +166,7 @@ public sealed class TodoToolsetTests
     private static TodoTools BuildTools()
     {
         return new TodoTools(
+            TestTodo.SpaceId,
             Substitute.For<ISender>(),
             Substitute.For<IBulkConflictPolicy>(),
             new TodoVersionLedger(),

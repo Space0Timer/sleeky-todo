@@ -17,9 +17,11 @@ internal sealed class MongoDbIndexInitializer : IHostedService
     private const int NamespaceNotFoundErrorCode = 26;
 
     /// <summary>
-    /// Index names replaced by their owner-scoped equivalents. Index creation
-    /// never removes a previous definition, so an existing deployment would
-    /// otherwise keep paying write cost for indexes no query can use.
+    /// Index names replaced by their Space-scoped equivalents: first the
+    /// unscoped originals, then the owner-scoped generation that followed
+    /// them. Index creation never removes a previous definition, so an
+    /// existing deployment would otherwise keep paying write cost for indexes
+    /// no query can use.
     /// </summary>
     private static readonly string[] SupersededTodoIndexNames =
     [
@@ -29,6 +31,13 @@ internal sealed class MongoDbIndexInitializer : IHostedService
         "active_name_normalized_id",
         "active_dependency_ids",
         "unique_series_occurrence",
+        "owner_active_due_date_id",
+        "owner_active_priority_id",
+        "owner_active_status_id",
+        "owner_active_name_normalized_id",
+        "owner_active_dependency_ids",
+        "owner_active_search_tokens",
+        "owner_unique_series_occurrence",
     ];
 
     private readonly ILogger<MongoDbIndexInitializer> logger;
@@ -83,64 +92,64 @@ internal sealed class MongoDbIndexInitializer : IHostedService
         return
         [
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.DueDate)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "owner_active_due_date_id",
+                    Name = "space_active_due_date_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.Priority)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "owner_active_priority_id",
+                    Name = "space_active_priority_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.Status)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "owner_active_status_id",
+                    Name = "space_active_status_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.NameNormalized)
                     .Ascending(todo => todo.Id),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "owner_active_name_normalized_id",
+                    Name = "space_active_name_normalized_id",
                 }),
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.DependencyIds)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.Status),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "owner_active_dependency_ids",
+                    Name = "space_active_dependency_ids",
                 }),
 
             // The array key comes last here, unlike the dependency index above.
-            // A search matches an owner and a scope exactly and then scans a
+            // A search matches a Space and a scope exactly and then scans a
             // range of tokens, so equality has to precede the range for the
             // bounds to be tight. The dependency lookup matches an exact
             // identifier in the array instead, where the position does not
             // carry the same cost.
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.DeletedAt)
                     .Ascending(todo => todo.SearchTokens),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = MongoTodoIndexNames.OwnerActiveSearchTokens,
+                    Name = MongoTodoIndexNames.SpaceActiveSearchTokens,
                 }),
             new CreateIndexModel<TodoDocument>(
                 keys.Ascending(todo => todo.PurgeAt),
@@ -152,12 +161,12 @@ internal sealed class MongoDbIndexInitializer : IHostedService
                         BsonType.DateTime),
                 }),
             new CreateIndexModel<TodoDocument>(
-                keys.Ascending(todo => todo.OwnerId)
+                keys.Ascending(todo => todo.SpaceId)
                     .Ascending(todo => todo.SeriesId)
                     .Ascending(todo => todo.OccurrenceNumber),
                 new CreateIndexOptions<TodoDocument>
                 {
-                    Name = "owner_unique_series_occurrence",
+                    Name = "space_unique_series_occurrence",
                     Unique = true,
                     PartialFilterExpression = Builders<TodoDocument>.Filter.Type(
                         todo => todo.SeriesId,

@@ -131,6 +131,7 @@ public sealed class TodoItemArchivedRuleTests
         return TodoItem.Create(
             Guid.NewGuid(),
             Guid.NewGuid(),
+            Guid.NewGuid(),
             "Submit report",
             "Monthly report",
             DueDate,

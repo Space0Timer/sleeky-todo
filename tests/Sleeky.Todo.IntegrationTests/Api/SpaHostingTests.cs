@@ -159,7 +159,7 @@ public sealed class SpaHostingTests
     {
         using HttpClient client = CreateClient();
 
-        HttpResponseMessage response = await client.GetAsync("/api/todos");
+        HttpResponseMessage response = await client.GetAsync($"/api/spaces/{Guid.NewGuid()}/todos");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -219,7 +219,7 @@ public sealed class SpaHostingTests
     {
         using HttpClient client = CreateClient();
 
-        HttpResponseMessage response = await client.GetAsync("/api/todos");
+        HttpResponseMessage response = await client.GetAsync($"/api/spaces/{Guid.NewGuid()}/todos");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.GetValues("X-Content-Type-Options")

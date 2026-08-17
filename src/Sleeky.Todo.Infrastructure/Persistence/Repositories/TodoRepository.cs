@@ -46,31 +46,37 @@ internal sealed class TodoRepository : ITodoRepository
             .Include(document => document.DeletedAt)
             .Include(document => document.DependencyIds);
 
-    private readonly ICurrentUser currentUser;
+    private readonly ISpaceScope spaceScope;
     private readonly SessionAwareCollection<TodoDocument> todoItems;
 
+    /// <summary>
+    /// The Space every read and write is confined to comes from the ambient
+    /// scope the access check bound, never from a caller. Reading it while
+    /// nothing is bound throws, so a request that skipped the check cannot
+    /// reach any Space's data.
+    /// </summary>
     public TodoRepository(
         IMongoCollection<TodoDocument> todoItems,
-        ICurrentUser currentUser,
+        ISpaceScope spaceScope,
         MongoTransactionContext? transactionContext = null)
     {
         ArgumentNullException.ThrowIfNull(todoItems);
-        ArgumentNullException.ThrowIfNull(currentUser);
+        ArgumentNullException.ThrowIfNull(spaceScope);
 
         this.todoItems = new SessionAwareCollection<TodoDocument>(
             todoItems,
             transactionContext ?? new MongoTransactionContext());
-        this.currentUser = currentUser;
+        this.spaceScope = spaceScope;
     }
 
-    private Guid OwnerId => currentUser.UserId;
+    private Guid SpaceId => spaceScope.SpaceId;
 
     public async Task AddAsync(
         TodoItem todoItem,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(todoItem);
-        EnsureOwned(todoItem);
+        EnsureInScope(todoItem);
 
         TodoDocument document = TodoDocumentMapper.FromDomain(todoItem);
         await todoItems.InsertOneAsync(document, cancellationToken);
@@ -156,7 +162,7 @@ internal sealed class TodoRepository : ITodoRepository
         Guid dependencyId,
         CancellationToken cancellationToken = default)
     {
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+        FilterDefinition<TodoDocument> filter = BuildSpaceFilter()
             & Builders<TodoDocument>.Filter.AnyEq(
                 document => document.DependencyIds,
                 dependencyId)
@@ -185,7 +191,7 @@ internal sealed class TodoRepository : ITodoRepository
             return Array.Empty<Guid>();
         }
 
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+        FilterDefinition<TodoDocument> filter = BuildSpaceFilter()
             & Builders<TodoDocument>.Filter.AnyIn(
                 document => document.DependencyIds,
                 dependencyIds)
@@ -255,7 +261,7 @@ internal sealed class TodoRepository : ITodoRepository
                 "A TODO must be restored before it can be persisted as active.");
         }
 
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+        FilterDefinition<TodoDocument> filter = BuildSpaceFilter()
             & Builders<TodoDocument>.Filter.Eq(document => document.Id, todoItem.Id)
             & Builders<TodoDocument>.Filter.Eq(document => document.Version, todoItem.Version)
             & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);
@@ -289,7 +295,7 @@ internal sealed class TodoRepository : ITodoRepository
 
         foreach (TodoItem todoItem in updates)
         {
-            EnsureOwned(todoItem);
+            EnsureInScope(todoItem);
             writes.Add(new ReplaceOneModel<TodoDocument>(
                 BuildBatchMutationFilter(todoItem.Id, todoItem.Version, expectDeleted),
                 TodoDocumentMapper.FromDomain(
@@ -300,7 +306,7 @@ internal sealed class TodoRepository : ITodoRepository
 
         foreach (TodoItem todoItem in inserts)
         {
-            EnsureOwned(todoItem);
+            EnsureInScope(todoItem);
             writes.Add(new InsertOneModel<TodoDocument>(
                 TodoDocumentMapper.FromDomain(todoItem)));
             writtenIds.Add(todoItem.Id);
@@ -343,25 +349,30 @@ internal sealed class TodoRepository : ITodoRepository
             .ToArray();
     }
 
-    private void EnsureOwned(TodoItem todoItem)
+    /// <summary>
+    /// A write may only land in the Space the request was authorized for. The
+    /// entity carries its own Space, so an aggregate built for another Space
+    /// — however it got here — is refused before it reaches the collection.
+    /// </summary>
+    private void EnsureInScope(TodoItem todoItem)
     {
-        if (todoItem.OwnerId != OwnerId)
+        if (todoItem.SpaceId != SpaceId)
         {
             throw new InvalidOperationException(
-                "A TODO can only be persisted by its owner.");
+                "A TODO can only be persisted inside the authorized Space.");
         }
     }
 
-    private FilterDefinition<TodoDocument> BuildOwnerFilter()
+    private FilterDefinition<TodoDocument> BuildSpaceFilter()
     {
-        return Builders<TodoDocument>.Filter.Eq(document => document.OwnerId, OwnerId);
+        return Builders<TodoDocument>.Filter.Eq(document => document.SpaceId, SpaceId);
     }
 
     private FilterDefinition<TodoDocument> BuildIdFilter(
         Guid id,
         bool includeDeleted)
     {
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+        FilterDefinition<TodoDocument> filter = BuildSpaceFilter()
             & Builders<TodoDocument>.Filter.Eq(document => document.Id, id);
 
         if (!includeDeleted)
@@ -378,8 +389,8 @@ internal sealed class TodoRepository : ITodoRepository
     /// </summary>
     /// <remarks>
     /// Null rather than an empty filter, because an empty filter would match the
-    /// owner's whole collection — the caller has to short-circuit, and making
-    /// that the only way to read the result is what stops the mistake. Owner
+    /// Space's whole collection — the caller has to short-circuit, and making
+    /// that the only way to read the result is what stops the mistake. Space
     /// scoping and soft-delete handling live here so a change to either reaches
     /// every batch read at once.
     /// </remarks>
@@ -393,7 +404,7 @@ internal sealed class TodoRepository : ITodoRepository
             return null;
         }
 
-        FilterDefinition<TodoDocument> filter = BuildOwnerFilter()
+        FilterDefinition<TodoDocument> filter = BuildSpaceFilter()
             & Builders<TodoDocument>.Filter.In(document => document.Id, distinctIds);
         if (!includeDeleted)
         {
@@ -427,7 +438,7 @@ internal sealed class TodoRepository : ITodoRepository
             return BuildMutationFilter(id, expectedVersion, includeDeleted: false);
         }
 
-        return BuildOwnerFilter()
+        return BuildSpaceFilter()
             & Builders<TodoDocument>.Filter.Eq(document => document.Id, id)
             & Builders<TodoDocument>.Filter.Eq(document => document.Version, expectedVersion)
             & Builders<TodoDocument>.Filter.Ne(document => document.DeletedAt, null);

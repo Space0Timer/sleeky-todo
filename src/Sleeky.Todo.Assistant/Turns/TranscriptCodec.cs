@@ -20,10 +20,11 @@ public static class TranscriptCodec
     /// </summary>
     /// <remarks>
     /// Unreadable content starts a fresh conversation rather than failing the
-    /// turn. There is nothing to protect here — the assistant runs with exactly
-    /// the caller's rights and dispatches commands the caller can already send
-    /// over HTTP — so a mangled transcript is a usability problem, not a
-    /// security one.
+    /// turn. There is nothing to protect here — the turn has already been
+    /// checked against the Space it names, and the assistant then runs with
+    /// exactly the caller's rights in that Space and dispatches commands the
+    /// caller can already send over HTTP — so a mangled transcript is a
+    /// usability problem, not a security one.
     /// </remarks>
     public static List<ChatMessage> Read(JsonElement? transcript)
     {

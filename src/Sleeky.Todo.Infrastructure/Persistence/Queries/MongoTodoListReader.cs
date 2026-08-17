@@ -22,18 +22,23 @@ internal sealed class MongoTodoListReader : ITodoListReader
     private const int DescriptionPreviewLength = 120;
 
     private readonly string collectionName;
-    private readonly ICurrentUser currentUser;
+    private readonly ISpaceScope spaceScope;
     private readonly IMongoCollection<TodoDocument> todoItems;
 
+    /// <summary>
+    /// The Space a list is read from comes from the ambient scope the access
+    /// check bound, exactly as the repository's does; the query never names
+    /// it. Reading it while nothing is bound throws.
+    /// </summary>
     public MongoTodoListReader(
         IMongoCollection<TodoDocument> todoItems,
-        ICurrentUser currentUser)
+        ISpaceScope spaceScope)
     {
         ArgumentNullException.ThrowIfNull(todoItems);
-        ArgumentNullException.ThrowIfNull(currentUser);
+        ArgumentNullException.ThrowIfNull(spaceScope);
 
         this.collectionName = todoItems.CollectionNamespace.CollectionName;
-        this.currentUser = currentUser;
+        this.spaceScope = spaceScope;
         this.todoItems = todoItems;
     }
 
@@ -43,22 +48,22 @@ internal sealed class MongoTodoListReader : ITodoListReader
     {
         ArgumentNullException.ThrowIfNull(criteria);
 
-        Guid ownerId = currentUser.UserId;
+        Guid spaceId = spaceScope.SpaceId;
         IAggregateFluent<TodoDocument> filteredTodos = BuildFilteredPipeline(
             this.todoItems,
             criteria,
-            ownerId);
+            spaceId);
         IAggregateFluent<MongoTodoListRow> query = criteria.DependencyStatus.HasValue
             ? BuildDependencyFilteredQuery(
                 filteredTodos,
                 criteria,
                 this.collectionName,
-                ownerId)
+                spaceId)
             : BuildPageFirstQuery(
                 filteredTodos,
                 criteria,
                 this.collectionName,
-                ownerId);
+                spaceId);
         List<MongoTodoListRow> rows = await query.ToListAsync(cancellationToken);
 
         return rows.ConvertAll(ToDto);
@@ -70,7 +75,7 @@ internal sealed class MongoTodoListReader : ITodoListReader
     /// </summary>
     /// <remarks>
     /// Left to itself the planner can pick one of the sort-supporting indexes
-    /// and then scan the owner's whole range applying the token regexes to
+    /// and then scan the Space's whole range applying the token regexes to
     /// every document — the exact cost this feature exists to avoid. Hinting
     /// costs the sort its index, but no index can serve both a range on the
     /// tokens and the sort order, so a bounded top-K sort over the matches is
@@ -88,18 +93,18 @@ internal sealed class MongoTodoListReader : ITodoListReader
 
         return new AggregateOptions
         {
-            Hint = MongoTodoIndexNames.OwnerActiveSearchTokens,
+            Hint = MongoTodoIndexNames.SpaceActiveSearchTokens,
         };
     }
 
     private static IAggregateFluent<TodoDocument> BuildFilteredPipeline(
         IMongoCollection<TodoDocument> todoItems,
         TodoListCriteria criteria,
-        Guid ownerId)
+        Guid spaceId)
     {
         IAggregateFluent<TodoDocument> pipeline = todoItems
             .Aggregate(BuildAggregateOptions(criteria))
-            .Match(BuildFilter(criteria, ownerId));
+            .Match(BuildFilter(criteria, spaceId));
 
         if (criteria.LastSortValue is null || criteria.LastTodoId is null)
         {
@@ -113,13 +118,13 @@ internal sealed class MongoTodoListReader : ITodoListReader
         IAggregateFluent<TodoDocument> pipeline,
         TodoListCriteria criteria,
         string collectionName,
-        Guid ownerId)
+        Guid spaceId)
     {
         IAggregateFluent<TodoDocument> page = ApplySortAndLimit(pipeline, criteria);
         IAggregateFluent<BsonDocument> withDependencyState = AddDependencyState(
             page,
             collectionName,
-            ownerId);
+            spaceId);
 
         return ProjectRows(withDependencyState);
     }
@@ -128,12 +133,12 @@ internal sealed class MongoTodoListReader : ITodoListReader
         IAggregateFluent<TodoDocument> pipeline,
         TodoListCriteria criteria,
         string collectionName,
-        Guid ownerId)
+        Guid spaceId)
     {
         IAggregateFluent<BsonDocument> withDependencyState = AddDependencyState(
             pipeline,
             collectionName,
-            ownerId)
+            spaceId)
             .Match(BuildDependencyStatusFilter(criteria.DependencyStatus!.Value));
         IAggregateFluent<TodoDocument> filteredDocuments =
             withDependencyState.As<TodoDocument>();
@@ -147,11 +152,11 @@ internal sealed class MongoTodoListReader : ITodoListReader
     private static IAggregateFluent<BsonDocument> AddDependencyState(
         IAggregateFluent<TodoDocument> pipeline,
         string collectionName,
-        Guid ownerId)
+        Guid spaceId)
     {
         return pipeline
             .AppendStage(CreateStage<TodoDocument, BsonDocument>(
-                BuildCompletedDependencyLookupStage(collectionName, ownerId)))
+                BuildCompletedDependencyLookupStage(collectionName, spaceId)))
             .AppendStage(CreateStage<BsonDocument, BsonDocument>(
                 BuildIncompleteDependencyCountStage()));
     }
@@ -174,11 +179,11 @@ internal sealed class MongoTodoListReader : ITodoListReader
 
     private static FilterDefinition<TodoDocument> BuildFilter(
         TodoListCriteria criteria,
-        Guid ownerId)
+        Guid spaceId)
     {
         FilterDefinitionBuilder<TodoDocument> filters = Builders<TodoDocument>.Filter;
         FilterDefinition<TodoDocument> filter =
-            filters.Eq(todo => todo.OwnerId, ownerId)
+            filters.Eq(todo => todo.SpaceId, spaceId)
             & BuildScopeFilter(criteria.Scope);
 
         if (criteria.Status.HasValue)
@@ -365,7 +370,7 @@ internal sealed class MongoTodoListReader : ITodoListReader
 
     private static BsonDocument BuildCompletedDependencyLookupStage(
         string collectionName,
-        Guid ownerId)
+        Guid spaceId)
     {
         return new BsonDocument(
             "$lookup",
@@ -383,9 +388,9 @@ internal sealed class MongoTodoListReader : ITodoListReader
                             new BsonDocument
                             {
                                 {
-                                    MongoTodoFields.OwnerId,
+                                    MongoTodoFields.SpaceId,
                                     new BsonBinaryData(
-                                        ownerId,
+                                        spaceId,
                                         GuidRepresentation.Standard)
                                 },
                                 { MongoTodoFields.DeletedAt, BsonNull.Value },
@@ -506,6 +511,8 @@ internal sealed class MongoTodoListReader : ITodoListReader
             new BsonDocument
             {
                 { MongoTodoFields.Id, 1 },
+                { MongoTodoFields.SpaceId, 1 },
+                { MongoTodoFields.CreatedByUserId, 1 },
                 { MongoTodoFields.Name, 1 },
                 { MongoTodoFields.Description, BuildDescriptionPreviewExpression() },
                 { MongoTodoFields.DueDate, 1 },
@@ -559,6 +566,8 @@ internal sealed class MongoTodoListReader : ITodoListReader
     {
         return new TodoListItemDto(
             row.Id,
+            row.SpaceId,
+            row.CreatedByUserId,
             row.Name,
             CreateDescriptionPreview(row.Description),
             row.DueDate,

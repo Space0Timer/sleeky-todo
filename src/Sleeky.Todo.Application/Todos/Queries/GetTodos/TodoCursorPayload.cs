@@ -44,8 +44,9 @@ public sealed record TodoCursorPayload
     public Guid LastTodoId { get; init; }
 
     /// <summary>
-    /// A hash of the filters, scope, and search terms the page was produced
-    /// under, so a cursor cannot continue a different question.
+    /// A hash of the Space, filters, scope, and search terms the page was
+    /// produced under, so a cursor cannot continue a different question or
+    /// cross into another Space.
     /// </summary>
     public string FilterSignature { get; init; } = string.Empty;
 }

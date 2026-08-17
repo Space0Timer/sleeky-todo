@@ -8,6 +8,8 @@ public sealed record TodoDto
 {
     private TodoDto(
         Guid id,
+        Guid spaceId,
+        Guid createdByUserId,
         string name,
         string? description,
         DateOnly dueDate,
@@ -25,6 +27,8 @@ public sealed record TodoDto
         Guid? nextOccurrenceId)
     {
         Id = id;
+        SpaceId = spaceId;
+        CreatedByUserId = createdByUserId;
         Name = name;
         Description = description;
         DueDate = dueDate;
@@ -43,6 +47,10 @@ public sealed record TodoDto
     }
 
     public Guid Id { get; }
+
+    public Guid SpaceId { get; }
+
+    public Guid CreatedByUserId { get; }
 
     public string Name { get; }
 
@@ -82,6 +90,8 @@ public sealed record TodoDto
 
         return new TodoDto(
             todoItem.Id,
+            todoItem.SpaceId,
+            todoItem.CreatedByUserId,
             todoItem.Name,
             todoItem.Description,
             todoItem.DueDate,

@@ -4,7 +4,7 @@ namespace Sleeky.Todo.Application.Todos.Dependencies;
 
 /// <summary>
 /// Answers whether adding one dependency edge would close a cycle in the
-/// owner's dependency graph.
+/// Space's dependency graph.
 /// </summary>
 /// <remarks>
 /// A cycle would leave every TODO on it permanently blocked, since each waits

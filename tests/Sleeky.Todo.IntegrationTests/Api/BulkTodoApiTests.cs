@@ -23,8 +23,14 @@ public sealed class BulkTodoApiTests
     private static MongoDbContainer? mongoDbContainer;
 
     private HttpClient client = null!;
+    private Guid spaceId;
     private string databaseName = null!;
     private TodoApiFactory factory = null!;
+
+    /// <summary>
+    /// Every TODO route hangs off the Space the suite seeded.
+    /// </summary>
+    private string Todos => $"/api/spaces/{spaceId}/todos";
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext testContext)
@@ -63,6 +69,7 @@ public sealed class BulkTodoApiTests
             mongoDbContainer.GetConnectionString(),
             databaseName);
         client = await factory.CreateAuthenticatedClientAsync(UserId);
+        spaceId = await factory.CreateSpaceAsync(UserId);
     }
 
     [TestCleanup]
@@ -246,7 +253,7 @@ public sealed class BulkTodoApiTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         body.GetProperty("items").EnumerateArray().Should().OnlyContain(item =>
             item.GetProperty("deletedAt").ValueKind != JsonValueKind.Null);
-        (await client.GetAsync($"/api/todos/{GetId(first)}")).StatusCode
+        (await client.GetAsync($"{Todos}/{GetId(first)}")).StatusCode
             .Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -277,7 +284,7 @@ public sealed class BulkTodoApiTests
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         problem.GetProperty("detail").GetString().Should()
             .Be("A TODO with active dependents cannot be deleted.");
-        (await client.GetAsync($"/api/todos/{GetId(prerequisite)}")).StatusCode
+        (await client.GetAsync($"{Todos}/{GetId(prerequisite)}")).StatusCode
             .Should().Be(HttpStatusCode.OK);
     }
 
@@ -430,7 +437,7 @@ public sealed class BulkTodoApiTests
             .Should().Be(HttpStatusCode.OK);
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos/restore",
+            $"{Todos}/restore",
             new BulkRestoreTodosRequest
             {
                 Items =
@@ -518,7 +525,7 @@ public sealed class BulkTodoApiTests
     private async Task<JsonElement> CreateTodoAsync(RecurrenceRequest? recurrence = null)
     {
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos",
+            $"{Todos}",
             new CreateTodoRequest
             {
                 Name = "Submit report",
@@ -534,7 +541,7 @@ public sealed class BulkTodoApiTests
 
     private async Task<JsonElement> GetTodoAsync(string id)
     {
-        HttpResponseMessage response = await client.GetAsync($"/api/todos/{id}");
+        HttpResponseMessage response = await client.GetAsync($"{Todos}/{id}");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         return await ReadJsonAsync(response);
@@ -544,7 +551,7 @@ public sealed class BulkTodoApiTests
     {
         string query = string.Join('&', ids.Select(id => $"id={id}"));
 
-        return client.GetAsync($"/api/todos/selection?{query}");
+        return client.GetAsync($"{Todos}/selection?{query}");
     }
 
     private async Task<JsonElement> AddDependencyAsync(
@@ -552,7 +559,7 @@ public sealed class BulkTodoApiTests
         JsonElement dependency)
     {
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            $"/api/todos/{GetId(todo)}/dependencies",
+            $"{Todos}/{GetId(todo)}/dependencies",
             new AddDependencyRequest
             {
                 DependencyId = Guid.Parse(GetId(dependency)),
@@ -566,7 +573,7 @@ public sealed class BulkTodoApiTests
     private async Task ReopenAsync(string id, long version)
     {
         HttpResponseMessage response = await client.PutAsJsonAsync(
-            $"/api/todos/{id}/status",
+            $"{Todos}/{id}/status",
             new ChangeTodoStatusRequest
             {
                 Status = TodoStatus.Open,
@@ -581,7 +588,7 @@ public sealed class BulkTodoApiTests
         params BulkTodoSelectionItem[] extra)
     {
         return client.PutAsJsonAsync(
-            "/api/todos/status",
+            $"{Todos}/status",
             new BulkChangeTodoStatusRequest
             {
                 Status = status,
@@ -595,7 +602,7 @@ public sealed class BulkTodoApiTests
     {
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Delete,
-            "/api/todos")
+            $"{Todos}")
         {
             Content = JsonContent.Create(new BulkDeleteTodosRequest
             {

@@ -9,16 +9,25 @@ using Microsoft.Extensions.Options;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
 using Sleeky.Todo.Application.Abstractions.Time;
+using Sleeky.Todo.Application.Spaces.Access;
 using Sleeky.Todo.Assistant.Conflicts;
 using Sleeky.Todo.Assistant.Providers;
 using Sleeky.Todo.Assistant.Tools;
+using Sleeky.Todo.Domain.Enums;
 
 namespace Sleeky.Todo.Assistant.Turns;
 
 /// <summary>
-/// Runs one turn: resolve a provider, replay the conversation, let the model
-/// work, and hand the conversation back.
+/// Runs one turn: check the Space, resolve a provider, replay the
+/// conversation, let the model work, and hand the conversation back.
 /// </summary>
+/// <remarks>
+/// The Space check is the first thing a turn does, before a confirmation is
+/// applied and before a client is built. A turn a user may not run in the
+/// Space it names therefore never commits a write and never reaches a model;
+/// it fails the way any scoped request does, and the same check binds the
+/// ambient scope every tool's command then runs under.
+/// </remarks>
 public sealed class AssistantTurnRunner : IAssistantTurnRunner
 {
     private const string NotConfigured =
@@ -41,6 +50,8 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
 
     private readonly ICurrentUser currentUser;
 
+    private readonly ISpaceAccessService spaceAccess;
+
     private readonly IClock clock;
 
     private readonly ILogger<TodoTools> toolLogger;
@@ -55,6 +66,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         ISender sender,
         IBulkConflictPolicy policy,
         ICurrentUser currentUser,
+        ISpaceAccessService spaceAccess,
         IClock clock,
         ILogger<TodoTools> toolLogger,
         ILogger<AssistantTurnRunner> logger,
@@ -65,6 +77,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         ArgumentNullException.ThrowIfNull(sender);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(currentUser);
+        ArgumentNullException.ThrowIfNull(spaceAccess);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(toolLogger);
         ArgumentNullException.ThrowIfNull(logger);
@@ -75,6 +88,7 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         this.sender = sender;
         this.policy = policy;
         this.currentUser = currentUser;
+        this.spaceAccess = spaceAccess;
         this.clock = clock;
         this.toolLogger = toolLogger;
         this.logger = logger;
@@ -89,6 +103,13 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         ArgumentNullException.ThrowIfNull(turn);
         ArgumentNullException.ThrowIfNull(events);
 
+        // Before anything else — a confirmation below commits a delete ahead
+        // of any model call, and the tools dispatch under the scope this binds.
+        SpaceAccessContext context = await this.spaceAccess.RequireAsync(
+            turn.SpaceId,
+            SpacePermission.Read,
+            cancellationToken);
+
         await events.PublishAsync(TurnEvent.TurnStarted(), cancellationToken);
 
         AssistantConnection? connection = await this.settings.ResolveAsync(cancellationToken);
@@ -102,9 +123,9 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
         List<ChatMessage> messages = TranscriptCodec.Read(turn.Transcript);
         bool trimmed = TranscriptWindow.Apply(messages, this.options.TranscriptMaxMessages);
         TodoVersionLedger ledger = SeedLedgerFromWindow(turn.Transcript, messages, trimmed);
-        TodoTools tools = this.CreateTools(ledger, events);
+        TodoTools tools = this.CreateTools(context.SpaceId, ledger, events);
 
-        await this.AppendTurnInputAsync(messages, turn, tools, cancellationToken);
+        await this.AppendTurnInputAsync(messages, turn, context, tools, cancellationToken);
 
         ChatResponse response = await this.AskModelAsync(connection, messages, tools, cancellationToken);
         messages.AddRange(response.Messages);
@@ -179,9 +200,13 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
             cancellationToken);
     }
 
-    private TodoTools CreateTools(TodoVersionLedger ledger, ITurnEventWriter events)
+    private TodoTools CreateTools(
+        Guid spaceId,
+        TodoVersionLedger ledger,
+        ITurnEventWriter events)
     {
         return new TodoTools(
+            spaceId,
             this.sender,
             this.policy,
             ledger,
@@ -198,12 +223,13 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
     private async Task AppendTurnInputAsync(
         List<ChatMessage> messages,
         AssistantTurn turn,
+        SpaceAccessContext context,
         TodoTools tools,
         CancellationToken cancellationToken)
     {
         if (messages.Count == 0)
         {
-            messages.Add(new ChatMessage(ChatRole.User, this.DescribeContext()));
+            messages.Add(new ChatMessage(ChatRole.User, this.DescribeContext(context)));
         }
 
         if (turn.Confirmation is not null)
@@ -315,11 +341,18 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
     }
 
     /// <summary>
-    /// The conversation's opening context. It is a user message rather than
-    /// part of the system prompt so the cacheable prefix stays still, and it is
-    /// written once so it stays identical for the life of the conversation.
+    /// The conversation's opening context: the date, who is asking, and which
+    /// Space they are in. It is a user message rather than part of the system
+    /// prompt so the cacheable prefix stays still, and it is written once so
+    /// it stays identical for the life of the conversation — a conversation
+    /// belongs to one Space, and the client starts a new one on switching.
     /// </summary>
-    private string DescribeContext()
+    /// <remarks>
+    /// A Read member is told so up front. The toolset is the same for every
+    /// permission, so without this sentence the model would discover the
+    /// limit only by having a write refused.
+    /// </remarks>
+    private string DescribeContext(SpaceAccessContext context)
     {
         string today = DateOnly.FromDateTime(this.clock.UtcNow.UtcDateTime)
             .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -327,6 +360,15 @@ public sealed class AssistantTurnRunner : IAssistantTurnRunner
             ? "the user"
             : this.currentUser.DisplayName;
 
-        return $"Today is {today}. You are helping {name} with their TODO list.";
+        string description = $"Today is {today}. You are helping {name} in the "
+            + $"\"{context.SpaceName}\" space. Every TODO tool acts only inside this space.";
+
+        if (context.Permission == SpacePermission.Read)
+        {
+            description += " You have read-only access to this space: you can list "
+                + "and look up TODOs but cannot create, change, or delete them.";
+        }
+
+        return description;
     }
 }

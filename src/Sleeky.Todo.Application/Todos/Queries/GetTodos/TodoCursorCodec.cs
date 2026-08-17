@@ -84,14 +84,19 @@ public static class TodoCursorCodec
     }
 
     /// <summary>
-    /// Binds a cursor to the filters that produced it, so a page cannot be
-    /// continued under a different question.
+    /// Binds a cursor to the Space and filters that produced it, so a page
+    /// cannot be continued under a different question — or in a different
+    /// Space.
     /// </summary>
     /// <remarks>
-    /// The search component is appended only when terms exist, which keeps the
-    /// canonical form of every unsearched query byte-identical to what earlier
-    /// versions produced: cursors already in flight survive a deployment.
-    /// Terms are letters and digits only, so joining them with the same
+    /// The Space leads the canonical form. A cursor minted while listing one
+    /// Space and replayed against another therefore fails the signature check
+    /// and is refused as invalid, rather than resuming a page of the second
+    /// Space from a position the first one produced.
+    ///
+    /// The search component is appended only when terms exist, so an
+    /// unsearched query's canonical form does not vary with the search code
+    /// path. Terms are letters and digits only, so joining them with the same
     /// separator cannot be read two ways.
     ///
     /// Two orderings of the same words hash differently despite selecting the
@@ -164,8 +169,9 @@ public static class TodoCursorCodec
     }
 
     /// <summary>
-    /// The filter fields in a fixed order and format, so two equal queries
-    /// always hash the same. Absent filters contribute an empty segment.
+    /// The Space and the filter fields in a fixed order and format, so two
+    /// equal queries always hash the same. Absent filters contribute an empty
+    /// segment.
     /// </summary>
     private static string BuildCanonicalFilterForm(
         GetTodosQuery query,
@@ -173,6 +179,7 @@ public static class TodoCursorCodec
     {
         string canonical = string.Join(
             '|',
+            query.SpaceId.ToString("D", CultureInfo.InvariantCulture),
             query.Status?.ToString() ?? string.Empty,
             query.Priority?.ToString() ?? string.Empty,
             query.DueFrom?.ToString(DateFormat, CultureInfo.InvariantCulture) ?? string.Empty,

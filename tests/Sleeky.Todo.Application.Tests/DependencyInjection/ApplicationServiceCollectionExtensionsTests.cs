@@ -24,18 +24,25 @@ namespace Sleeky.Todo.Application.Tests.DependencyInjection;
 [TestClass]
 public sealed class ApplicationServiceCollectionExtensionsTests
 {
+    /// <summary>
+    /// A missing Space is one of the validation failures, and it is reported
+    /// with the others rather than reaching the access check: the Space
+    /// repository is never asked about the empty identifier.
+    /// </summary>
     [TestMethod]
     public async Task AddApplicationPreventsInvalidRequestFromReachingHandler()
     {
         ITodoRepository repository = Substitute.For<ITodoRepository>();
+        ISpaceRepository spaces = Substitute.For<ISpaceRepository>();
         IClock clock = Substitute.For<IClock>();
-        ServiceCollection services = CreateServicesWithSpaceAccessDoubles();
+        ServiceCollection services = CreateServicesWithSpaceAccessDoubles(spaces);
         services.AddSingleton(repository);
         services.AddSingleton(clock);
         services.AddApplication();
         using ServiceProvider serviceProvider = services.BuildServiceProvider();
         ISender sender = serviceProvider.GetRequiredService<ISender>();
         CreateTodoCommand invalidCommand = new CreateTodoCommand(
+            Guid.Empty,
             "   ",
             null,
             default,
@@ -47,7 +54,10 @@ public sealed class ApplicationServiceCollectionExtensionsTests
         ValidationException exception = (await act.Should()
             .ThrowAsync<ValidationException>())
             .Which;
-        exception.Errors.Should().HaveCount(3);
+        exception.Errors.Should().HaveCount(4);
+        exception.Errors.Should().Contain(failure =>
+            failure.PropertyName == nameof(CreateTodoCommand.SpaceId));
+        await spaces.DidNotReceiveWithAnyArgs().GetByIdAsync(default, default);
         await repository.DidNotReceiveWithAnyArgs().AddAsync(
             default!,
             default);
@@ -142,10 +152,11 @@ public sealed class ApplicationServiceCollectionExtensionsTests
     /// access service is built from — Infrastructure supplies both in the
     /// host, and these doubles stand in for it here.
     /// </summary>
-    private static ServiceCollection CreateServicesWithSpaceAccessDoubles()
+    private static ServiceCollection CreateServicesWithSpaceAccessDoubles(
+        ISpaceRepository? spaces = null)
     {
         ServiceCollection services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<ISpaceRepository>());
+        services.AddSingleton(spaces ?? Substitute.For<ISpaceRepository>());
         services.AddSingleton<ICurrentUser>(new TestCurrentUser(Guid.NewGuid()));
 
         return services;

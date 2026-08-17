@@ -24,11 +24,12 @@ public interface IRecurringOccurrenceFactory
     /// <remarks>
     /// The successor takes the identifier the completion already fixed as
     /// <see cref="TodoCompletion.NextOccurrenceId"/>, so a caller can report it
-    /// without asking the factory. It copies name, description, priority,
-    /// schedule, and series, advances the occurrence number by one, and is due
-    /// one schedule step after the <em>scheduled</em> date rather than after the
-    /// completion instant. Its creation timestamp is the completion instant.
-    /// Dependencies are not copied: the next occurrence starts unblocked.
+    /// without asking the factory. It copies Space, creator, name, description,
+    /// priority, schedule, and series, advances the occurrence number by one,
+    /// and is due one schedule step after the <em>scheduled</em> date rather
+    /// than after the completion instant. Its creation timestamp is the
+    /// completion instant. Dependencies are not copied: the next occurrence
+    /// starts unblocked.
     /// </remarks>
     /// <exception cref="DomainException">
     /// The completion carries no schedule, or is missing the series, occurrence

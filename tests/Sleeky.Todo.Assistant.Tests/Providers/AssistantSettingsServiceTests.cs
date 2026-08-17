@@ -100,7 +100,7 @@ public sealed class AssistantSettingsServiceTests
     {
         Harness harness = new Harness(applicationKey: ApplicationKey);
         await harness.Repository.SaveAsync(new AssistantSettingsRecord(
-            TestTodo.OwnerId,
+            TestTodo.CreatedByUserId,
             AssistantProvider.OpenAiCompatible.ToString(),
             "https://openrouter.ai/api/v1",
             "some/local-model",
@@ -134,7 +134,7 @@ public sealed class AssistantSettingsServiceTests
     {
         Harness harness = new Harness();
         await harness.Repository.SaveAsync(new AssistantSettingsRecord(
-            TestTodo.OwnerId,
+            TestTodo.CreatedByUserId,
             AssistantProvider.Anthropic.ToString(),
             BaseUrl: null,
             "claude-sonnet-5",
@@ -158,7 +158,7 @@ public sealed class AssistantSettingsServiceTests
     {
         Harness harness = new Harness();
         await harness.Repository.SaveAsync(new AssistantSettingsRecord(
-            TestTodo.OwnerId,
+            TestTodo.CreatedByUserId,
             AssistantProvider.OpenAiCompatible.ToString(),
             "localhost:11434/v1",
             "llama-3",
@@ -193,7 +193,7 @@ public sealed class AssistantSettingsServiceTests
     {
         Harness harness = new Harness(applicationKey: ApplicationKey);
         await harness.Repository.SaveAsync(new AssistantSettingsRecord(
-            TestTodo.OwnerId,
+            TestTodo.CreatedByUserId,
             AssistantProvider.OpenAiCompatible.ToString(),
             BaseUrl: null,
             "llama-3",

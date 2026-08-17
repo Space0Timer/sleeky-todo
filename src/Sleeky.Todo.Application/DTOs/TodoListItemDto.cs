@@ -4,6 +4,8 @@ namespace Sleeky.Todo.Application.DTOs;
 
 public sealed record TodoListItemDto(
     Guid Id,
+    Guid SpaceId,
+    Guid CreatedByUserId,
     string Name,
     string? DescriptionPreview,
     DateOnly DueDate,

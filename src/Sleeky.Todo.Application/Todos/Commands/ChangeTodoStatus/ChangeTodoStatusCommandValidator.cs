@@ -9,6 +9,9 @@ public sealed class ChangeTodoStatusCommandValidator
 {
     public ChangeTodoStatusCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id)
             .ValidTodoIdentifier();
 

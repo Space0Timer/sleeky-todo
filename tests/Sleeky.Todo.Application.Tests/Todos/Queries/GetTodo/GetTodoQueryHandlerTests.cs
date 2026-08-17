@@ -22,7 +22,7 @@ public sealed class GetTodoQueryHandlerTests
             .GetByIdAsync(todoItem.Id, false, Arg.Any<CancellationToken>())
             .Returns(todoItem);
         GetTodoQueryHandler handler = new GetTodoQueryHandler(repository);
-        GetTodoQuery query = new GetTodoQuery(todoItem.Id);
+        GetTodoQuery query = new GetTodoQuery(TestTodoFactory.SpaceId, todoItem.Id);
 
         TodoDto result = await handler.Handle(query, CancellationToken.None);
 
@@ -42,7 +42,7 @@ public sealed class GetTodoQueryHandlerTests
         GetTodoQueryHandler handler = new GetTodoQueryHandler(repository);
 
         Func<Task> act = async () =>
-            await handler.Handle(new GetTodoQuery(todoId), CancellationToken.None);
+            await handler.Handle(new GetTodoQuery(TestTodoFactory.SpaceId, todoId), CancellationToken.None);
 
         NotFoundException exception = (await act.Should()
             .ThrowAsync<NotFoundException>())
@@ -62,7 +62,7 @@ public sealed class GetTodoQueryHandlerTests
 
         Func<Task> act = async () =>
             await handler.Handle(
-                new GetTodoQuery(deletedTodo.Id),
+                new GetTodoQuery(TestTodoFactory.SpaceId, deletedTodo.Id),
                 CancellationToken.None);
 
         await act.Should().ThrowAsync<NotFoundException>();

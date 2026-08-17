@@ -15,8 +15,9 @@ public sealed class GetTodosQueryValidatorTests
     [TestMethod]
     public void DefaultAndMaximumPageSizesAreValid()
     {
-        GetTodosQuery defaultQuery = new GetTodosQuery();
+        GetTodosQuery defaultQuery = new GetTodosQuery(TestTodoFactory.SpaceId);
         GetTodosQuery maximumQuery = new GetTodosQuery(
+            TestTodoFactory.SpaceId,
             limit: GetTodosQuery.MaximumPageSize);
 
         ValidationResult defaultResult = validator.Validate(defaultQuery);
@@ -32,7 +33,7 @@ public sealed class GetTodosQueryValidatorTests
     [DataRow(101)]
     public void PageSizeOutsideContractIsInvalid(int limit)
     {
-        GetTodosQuery query = new GetTodosQuery(limit: limit);
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId, limit: limit);
 
         ValidationResult result = validator.Validate(query);
 
@@ -44,6 +45,7 @@ public sealed class GetTodosQueryValidatorTests
     public void SearchTextAtTheLimitIsValid()
     {
         GetTodosQuery query = new GetTodosQuery(
+            TestTodoFactory.SpaceId,
             searchText: new string('a', TodoValidationLimits.SearchTextMaximumLength));
 
         validator.Validate(query).IsValid.Should().BeTrue();
@@ -53,6 +55,7 @@ public sealed class GetTodosQueryValidatorTests
     public void SearchTextBeyondTheLimitIsInvalid()
     {
         GetTodosQuery query = new GetTodosQuery(
+            TestTodoFactory.SpaceId,
             searchText: new string('a', TodoValidationLimits.SearchTextMaximumLength + 1));
 
         ValidationResult result = validator.Validate(query);
@@ -71,7 +74,7 @@ public sealed class GetTodosQueryValidatorTests
         string padded = new string(' ', 50)
             + new string('a', TodoValidationLimits.SearchTextMaximumLength)
             + new string(' ', 50);
-        GetTodosQuery query = new GetTodosQuery(searchText: padded);
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId, searchText: padded);
 
         query.SearchText.Should().HaveLength(TodoValidationLimits.SearchTextMaximumLength);
         validator.Validate(query).IsValid.Should().BeTrue();
@@ -83,7 +86,7 @@ public sealed class GetTodosQueryValidatorTests
     [DataRow("   ")]
     public void BlankSearchTextBecomesNoSearch(string? searchText)
     {
-        GetTodosQuery query = new GetTodosQuery(searchText: searchText);
+        GetTodosQuery query = new GetTodosQuery(TestTodoFactory.SpaceId, searchText: searchText);
 
         query.SearchText.Should().BeNull();
         validator.Validate(query).IsValid.Should().BeTrue();
@@ -93,6 +96,7 @@ public sealed class GetTodosQueryValidatorTests
     public void InvertedDueDateRangeIsInvalid()
     {
         GetTodosQuery query = new GetTodosQuery(
+            TestTodoFactory.SpaceId,
             dueFrom: new DateOnly(2026, 8, 31),
             dueTo: new DateOnly(2026, 8, 1));
 

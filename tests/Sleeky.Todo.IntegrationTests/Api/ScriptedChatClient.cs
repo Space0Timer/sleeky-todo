@@ -11,6 +11,13 @@ internal sealed class ScriptedChatClient : IChatClient
 {
     private readonly Queue<ChatResponse> replies = new Queue<ChatResponse>();
 
+    /// <summary>
+    /// How many times the turn asked the model anything. Zero is what proves a
+    /// refusal happened before the model was reached rather than at its first
+    /// tool call.
+    /// </summary>
+    public int CallCount { get; private set; }
+
     public static ChatResponse Says(string text)
     {
         return new ChatResponse(new ChatMessage(ChatRole.Assistant, text));
@@ -41,6 +48,8 @@ internal sealed class ScriptedChatClient : IChatClient
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
+        this.CallCount++;
+
         return Task.FromResult(this.replies.Count > 0
             ? this.replies.Dequeue()
             : Says("Anything else?"));

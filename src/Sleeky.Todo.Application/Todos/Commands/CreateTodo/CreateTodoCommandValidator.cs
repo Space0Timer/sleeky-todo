@@ -9,6 +9,9 @@ public sealed class CreateTodoCommandValidator : AbstractValidator<CreateTodoCom
 {
     public CreateTodoCommandValidator()
     {
+        RuleFor(command => command.SpaceId)
+            .ValidSpaceIdentifier();
+
         RuleFor(command => command.Id!.Value)
             .ValidTodoIdentifier()
             .When(command => command.Id.HasValue);

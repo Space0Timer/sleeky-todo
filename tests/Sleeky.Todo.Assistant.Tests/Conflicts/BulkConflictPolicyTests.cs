@@ -38,6 +38,7 @@ public sealed class BulkConflictPolicyTests
         StageSelection(sender, TestTodo.At(First, 7), TestTodo.At(Second, 4));
 
         BulkTodoResult result = await Policy(sender).ChangeStatusAsync(
+            TestTodo.SpaceId,
             TodoStatus.Completed,
             Selection((First, 5), (Second, 3)),
             CancellationToken.None);
@@ -45,6 +46,11 @@ public sealed class BulkConflictPolicyTests
         attempts.Should().HaveCount(2);
         attempts[0].Items.Select(item => item.Version).Should().Equal(5L, 3L);
         attempts[1].Items.Select(item => item.Version).Should().Equal(7L, 4L);
+        attempts.Should().OnlyContain(attempt => attempt.SpaceId == TestTodo.SpaceId);
+        await sender.Received(1).Send(
+            Arg.Is<IRequest<TodoSelection>>(request =>
+                ((GetTodoSelectionQuery)request).SpaceId == TestTodo.SpaceId),
+            Arg.Any<CancellationToken>());
         result.Items.Should().HaveCount(2);
     }
 
@@ -61,6 +67,7 @@ public sealed class BulkConflictPolicyTests
         StageSelection(sender, TestTodo.At(First, 7));
 
         Func<Task> act = async () => await Policy(sender).ChangeStatusAsync(
+            TestTodo.SpaceId,
             TodoStatus.Completed,
             Selection((First, 5), (Second, 3)),
             CancellationToken.None);
@@ -78,6 +85,7 @@ public sealed class BulkConflictPolicyTests
         StageSelection(sender, TestTodo.At(First, 7));
 
         Func<Task> act = async () => await Policy(sender).ChangeStatusAsync(
+            TestTodo.SpaceId,
             TodoStatus.Completed,
             Selection((First, 5)),
             CancellationToken.None);
@@ -114,6 +122,7 @@ public sealed class BulkConflictPolicyTests
         StageSelection(sender, TestTodo.At(First, 7));
 
         BulkTodoResult result = await Policy(sender).ChangeStatusAsync(
+            TestTodo.SpaceId,
             TodoStatus.Completed,
             Selection((First, 5)),
             CancellationToken.None);
@@ -140,6 +149,7 @@ public sealed class BulkConflictPolicyTests
             });
 
         Func<Task> act = async () => await Policy(sender).DeleteAsync(
+            TestTodo.SpaceId,
             Selection((First, 5)),
             CancellationToken.None);
 
@@ -168,6 +178,7 @@ public sealed class BulkConflictPolicyTests
             });
 
         Func<Task> act = async () => await Policy(sender).RestoreAsync(
+            TestTodo.SpaceId,
             Selection((First, 5)),
             CancellationToken.None);
 
@@ -193,6 +204,7 @@ public sealed class BulkConflictPolicyTests
             });
 
         Func<Task> act = async () => await Policy(sender).ChangeStatusAsync(
+            TestTodo.SpaceId,
             TodoStatus.Completed,
             Selection((First, 5)),
             CancellationToken.None);
@@ -215,10 +227,11 @@ public sealed class BulkConflictPolicyTests
                 return Task.FromResult(Applied(First, 6));
             });
 
-        await Policy(sender).DeleteAsync(Selection((First, 5)), CancellationToken.None);
+        await Policy(sender).DeleteAsync(TestTodo.SpaceId, Selection((First, 5)), CancellationToken.None);
 
         dispatched.Should().NotBeNull();
-        dispatched!.Items.Single().Version.Should().Be(5);
+        dispatched!.SpaceId.Should().Be(TestTodo.SpaceId);
+        dispatched.Items.Single().Version.Should().Be(5);
     }
 
     [TestMethod]
@@ -233,10 +246,11 @@ public sealed class BulkConflictPolicyTests
                 return Task.FromResult(Applied(First, 6));
             });
 
-        await Policy(sender).RestoreAsync(Selection((First, 5)), CancellationToken.None);
+        await Policy(sender).RestoreAsync(TestTodo.SpaceId, Selection((First, 5)), CancellationToken.None);
 
         dispatched.Should().NotBeNull();
-        dispatched!.Items.Single().Id.Should().Be(First);
+        dispatched!.SpaceId.Should().Be(TestTodo.SpaceId);
+        dispatched.Items.Single().Id.Should().Be(First);
     }
 
     private static BulkConflictPolicy Policy(ISender sender)

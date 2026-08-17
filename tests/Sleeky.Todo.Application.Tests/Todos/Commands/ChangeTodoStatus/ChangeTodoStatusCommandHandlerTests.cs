@@ -46,7 +46,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         Func<Task> act = async () => await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, status, 1),
+            new ChangeTodoStatusCommand(TestTodoFactory.SpaceId, todo.Id, status, 1),
             CancellationToken.None);
 
         await act.Should()
@@ -83,7 +83,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         TodoDto result = await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, TodoStatus.Completed, 1),
+            new ChangeTodoStatusCommand(TestTodoFactory.SpaceId, todo.Id, TodoStatus.Completed, 1),
             CancellationToken.None);
 
         result.Status.Should().Be(TodoStatus.Completed);
@@ -109,10 +109,10 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             Substitute.For<ILogger<ChangeTodoStatusCommandHandler>>());
 
         TodoDto unchanged = await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, TodoStatus.Open, 1),
+            new ChangeTodoStatusCommand(TestTodoFactory.SpaceId, todo.Id, TodoStatus.Open, 1),
             CancellationToken.None);
         Func<Task> stale = async () => await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, TodoStatus.Open, 2),
+            new ChangeTodoStatusCommand(TestTodoFactory.SpaceId, todo.Id, TodoStatus.Open, 2),
             CancellationToken.None);
 
         unchanged.Version.Should().Be(1);
@@ -132,7 +132,8 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             TestTodoFactory.DueDate);
         TodoItem todo = TodoItem.Create(
             TestTodoFactory.CreateId("todo-1"),
-            TestTodoFactory.OwnerId,
+            TestTodoFactory.SpaceId,
+            TestTodoFactory.CreatedByUserId,
             "Submit report",
             null,
             TestTodoFactory.DueDate,
@@ -164,7 +165,7 @@ public sealed class ChangeTodoStatusCommandHandlerTests
             logger);
 
         TodoDto result = await handler.Handle(
-            new ChangeTodoStatusCommand(todo.Id, TodoStatus.Completed, 1),
+            new ChangeTodoStatusCommand(TestTodoFactory.SpaceId, todo.Id, TodoStatus.Completed, 1),
             CancellationToken.None);
 
         transactionExecutor.Completed.Should().BeTrue();

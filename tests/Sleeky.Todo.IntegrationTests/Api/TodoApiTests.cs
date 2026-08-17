@@ -21,6 +21,12 @@ namespace Sleeky.Todo.IntegrationTests.Api;
 [TestClass]
 public sealed class TodoApiTests
 {
+    /// <summary>
+    /// The route template Swagger publishes, which names the Space segment
+    /// rather than substituting one.
+    /// </summary>
+    private const string TodosPathTemplate = "/api/spaces/{spaceId}/todos";
+
     private static readonly Guid UserId =
         Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
@@ -32,6 +38,13 @@ public sealed class TodoApiTests
     private HttpClient client = null!;
     private string databaseName = null!;
     private TodoApiFactory factory = null!;
+    private Guid spaceId;
+
+    /// <summary>
+    /// Every TODO route hangs off the Space the suite seeded, so the tests
+    /// exercise the nested routes a client actually calls.
+    /// </summary>
+    private string Todos => $"/api/spaces/{spaceId}/todos";
 
     [ClassInitialize]
     public static async Task ClassInitialize(TestContext testContext)
@@ -70,6 +83,7 @@ public sealed class TodoApiTests
             mongoDbContainer.GetConnectionString(),
             databaseName);
         client = await factory.CreateAuthenticatedClientAsync(UserId);
+        spaceId = await factory.CreateSpaceAsync(UserId);
     }
 
     [TestCleanup]
@@ -93,12 +107,12 @@ public sealed class TodoApiTests
             await CreateTodoAsync();
         string id = GetTodoId(createdTodo);
 
-        HttpResponseMessage getResponse = await client.GetAsync($"/api/todos/{id}");
+        HttpResponseMessage getResponse = await client.GetAsync($"{Todos}/{id}");
         JsonElement retrievedTodo = await ReadJsonAsync(getResponse);
 
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         createResponse.Headers.Location.Should().NotBeNull();
-        createResponse.Headers.Location!.ToString().Should().EndWith($"/api/todos/{id}");
+        createResponse.Headers.Location!.ToString().Should().EndWith($"{Todos}/{id}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         retrievedTodo.GetProperty("id").GetString().Should().Be(id);
         retrievedTodo.GetProperty("name").GetString().Should().Be("Submit report");
@@ -120,7 +134,7 @@ public sealed class TodoApiTests
         };
 
         HttpResponseMessage response = await client.PutAsJsonAsync(
-            $"/api/todos/{id}",
+            $"{Todos}/{id}",
             request);
         JsonElement updatedTodo = await ReadJsonAsync(response);
 
@@ -138,8 +152,8 @@ public sealed class TodoApiTests
         UpdateTodoRequest secondRequest = CreateUpdateRequest("Second writer");
 
         HttpResponseMessage[] responses = await Task.WhenAll(
-            client.PutAsJsonAsync($"/api/todos/{id}", firstRequest),
-            client.PutAsJsonAsync($"/api/todos/{id}", secondRequest));
+            client.PutAsJsonAsync($"{Todos}/{id}", firstRequest),
+            client.PutAsJsonAsync($"{Todos}/{id}", secondRequest));
 
         responses.Count(response => response.StatusCode == HttpStatusCode.OK)
             .Should().Be(1);
@@ -158,7 +172,7 @@ public sealed class TodoApiTests
         string id = GetTodoId(createdTodo);
 
         HttpResponseMessage deleteResponse = await DeleteTodoAsync(id, version: 1);
-        HttpResponseMessage getResponse = await client.GetAsync($"/api/todos/{id}");
+        HttpResponseMessage getResponse = await client.GetAsync($"{Todos}/{id}");
         JsonElement problem = await ReadJsonAsync(getResponse);
 
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -177,10 +191,10 @@ public sealed class TodoApiTests
         _ = await DeleteTodoAsync(id, version: 1);
 
         HttpResponseMessage restoreResponse = await client.PostAsJsonAsync(
-            $"/api/todos/{id}/restore",
+            $"{Todos}/{id}/restore",
             new RestoreTodoRequest { Version = 2 });
         JsonElement restoredTodo = await ReadJsonAsync(restoreResponse);
-        HttpResponseMessage getResponse = await client.GetAsync($"/api/todos/{id}");
+        HttpResponseMessage getResponse = await client.GetAsync($"{Todos}/{id}");
 
         restoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         restoredTodo.GetProperty("version").GetInt64().Should().Be(3);
@@ -293,7 +307,7 @@ public sealed class TodoApiTests
         _ = await AddDependencyAsync(dependentId, prerequisiteId, version: 1);
 
         HttpResponseMessage blockedListResponse = await client.GetAsync(
-            "/api/todos?dependencyStatus=Blocked");
+            $"{Todos}?dependencyStatus=Blocked");
         JsonElement blockedList = await ReadJsonAsync(blockedListResponse);
 
         HttpResponseMessage blockedInProgress = await ChangeStatusAsync(
@@ -314,7 +328,7 @@ public sealed class TodoApiTests
             version: 2);
         JsonElement unblockedTodo = await ReadJsonAsync(unblocked);
         HttpResponseMessage unblockedListResponse = await client.GetAsync(
-            "/api/todos?dependencyStatus=Unblocked");
+            $"{Todos}?dependencyStatus=Unblocked");
         JsonElement unblockedList = await ReadJsonAsync(unblockedListResponse);
 
         blockedListResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -401,7 +415,7 @@ public sealed class TodoApiTests
             ?? throw new InvalidOperationException(
                 "A recurring completion requires a next occurrence ID.");
         HttpResponseMessage nextResponse = await client.GetAsync(
-            $"/api/todos/{nextOccurrenceId}");
+            $"{Todos}/{nextOccurrenceId}");
         JsonElement next = await ReadJsonAsync(nextResponse);
         HttpResponseMessage repeatedCompletion = await ChangeStatusAsync(
             recurringId,
@@ -446,7 +460,7 @@ public sealed class TodoApiTests
             TodoStatus.Completed,
             version: 1);
         HttpResponseMessage currentResponse = await client.GetAsync(
-            $"/api/todos/{recurringId}");
+            $"{Todos}/{recurringId}");
         JsonElement current = await ReadJsonAsync(currentResponse);
         long seriesCount = await collection.CountDocumentsAsync(
             new BsonDocument("seriesId", StandardUuid(seriesId)));
@@ -500,7 +514,7 @@ public sealed class TodoApiTests
         };
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos",
+            $"{Todos}",
             request);
         JsonElement problem = await ReadJsonAsync(response);
         JsonElement errors = problem.GetProperty("errors");
@@ -532,7 +546,7 @@ public sealed class TodoApiTests
         };
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos",
+            $"{Todos}",
             request);
         JsonElement problem = await ReadJsonAsync(response);
 
@@ -557,7 +571,7 @@ public sealed class TodoApiTests
             Encoding.UTF8,
             "application/json");
 
-        HttpResponseMessage response = await client.PostAsync("/api/todos", content);
+        HttpResponseMessage response = await client.PostAsync($"{Todos}", content);
         JsonElement problem = await ReadJsonAsync(response);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -573,7 +587,7 @@ public sealed class TodoApiTests
         string id = GetTodoId(createdTodo);
 
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            $"/api/todos/{id}/restore",
+            $"{Todos}/{id}/restore",
             new RestoreTodoRequest { Version = 1 });
         JsonElement problem = await ReadJsonAsync(response);
 
@@ -589,10 +603,10 @@ public sealed class TodoApiTests
     public async Task ListRejectsMalformedCursorAndPageSizeAboveMaximum()
     {
         HttpResponseMessage cursorResponse = await client.GetAsync(
-            "/api/todos?cursor=not%2Ba%2Bbase64url%2Bcursor");
+            $"{Todos}?cursor=not%2Ba%2Bbase64url%2Bcursor");
         JsonElement cursorProblem = await ReadJsonAsync(cursorResponse);
         HttpResponseMessage limitResponse = await client.GetAsync(
-            "/api/todos?limit=101");
+            $"{Todos}?limit=101");
         JsonElement limitProblem = await ReadJsonAsync(limitResponse);
 
         cursorResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -607,13 +621,13 @@ public sealed class TodoApiTests
         _ = await CreateTodoAsync();
         _ = await CreateTodoAsync();
         HttpResponseMessage firstResponse = await client.GetAsync(
-            "/api/todos?priority=High&limit=1");
+            $"{Todos}?priority=High&limit=1");
         JsonElement firstPage = await ReadJsonAsync(firstResponse);
         string cursor = firstPage.GetProperty("nextCursor").GetString()
             ?? throw new InvalidOperationException("The first page should provide a cursor.");
 
         HttpResponseMessage response = await client.GetAsync(
-            $"/api/todos?priority=Low&limit=1&cursor={Uri.EscapeDataString(cursor)}");
+            $"{Todos}?priority=Low&limit=1&cursor={Uri.EscapeDataString(cursor)}");
         JsonElement problem = await ReadJsonAsync(response);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -627,7 +641,7 @@ public sealed class TodoApiTests
         _ = await CreateTodoAsync(name: "Submit quarterly report");
         _ = await CreateTodoAsync(name: "Book a haircut");
 
-        HttpResponseMessage response = await client.GetAsync("/api/todos?search=quart");
+        HttpResponseMessage response = await client.GetAsync($"{Todos}?search=quart");
         JsonElement page = await ReadJsonAsync(response);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -640,7 +654,7 @@ public sealed class TodoApiTests
     public async Task ListRejectsSearchTextBeyondTheMaximumLength()
     {
         HttpResponseMessage response = await client.GetAsync(
-            $"/api/todos?search={new string('a', TodoValidationLimits.SearchTextMaximumLength + 1)}");
+            $"{Todos}?search={new string('a', TodoValidationLimits.SearchTextMaximumLength + 1)}");
         JsonElement problem = await ReadJsonAsync(response);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -660,13 +674,13 @@ public sealed class TodoApiTests
         _ = await CreateTodoAsync(name: "Submit quarterly report");
         _ = await CreateTodoAsync(name: "Submit annual report");
         HttpResponseMessage firstResponse = await client.GetAsync(
-            "/api/todos?search=submit&limit=1");
+            $"{Todos}?search=submit&limit=1");
         JsonElement firstPage = await ReadJsonAsync(firstResponse);
         string cursor = firstPage.GetProperty("nextCursor").GetString()
             ?? throw new InvalidOperationException("The first page should provide a cursor.");
 
         HttpResponseMessage response = await client.GetAsync(
-            $"/api/todos?search=report&limit=1&cursor={Uri.EscapeDataString(cursor)}");
+            $"{Todos}?search=report&limit=1&cursor={Uri.EscapeDataString(cursor)}");
         JsonElement problem = await ReadJsonAsync(response);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -697,36 +711,47 @@ public sealed class TodoApiTests
         JsonElement paths = swagger.GetProperty("paths");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        AssertResponses(paths, "/api/todos", "get", "200", "400");
-        AssertResponses(paths, "/api/todos", "post", "201", "400", "409");
-        AssertResponses(paths, "/api/todos/{id}", "get", "200", "400", "404");
-        AssertResponses(paths, "/api/todos/{id}", "put", "200", "400", "404", "409");
-        AssertResponses(paths, "/api/todos/{id}", "delete", "200", "400", "404", "409");
+        AssertResponses(paths, TodosPathTemplate, "get", "200", "400", "404");
+        AssertResponses(paths, TodosPathTemplate, "post", "201", "400", "403", "404", "409");
+        AssertResponses(paths, $"{TodosPathTemplate}/{{id}}", "get", "200", "400", "404");
+        AssertResponses(paths, $"{TodosPathTemplate}/{{id}}", "put", "200", "400", "403", "404", "409");
+        AssertResponses(paths, $"{TodosPathTemplate}/{{id}}", "delete", "200", "400", "403", "404", "409");
         AssertResponses(
             paths,
-            "/api/todos/{id}/dependencies",
+            $"{TodosPathTemplate}/{{id}}/dependencies",
             "post",
             "200",
             "400",
+            "403",
             "404",
             "409");
         AssertResponses(
             paths,
-            "/api/todos/{id}/dependencies/{dependencyId}",
+            $"{TodosPathTemplate}/{{id}}/dependencies/{{dependencyId}}",
             "delete",
             "200",
             "400",
+            "403",
             "404",
             "409");
         AssertResponses(
             paths,
-            "/api/todos/{id}/status",
+            $"{TodosPathTemplate}/{{id}}/status",
             "put",
             "200",
             "400",
+            "403",
             "404",
             "409");
-        AssertResponses(paths, "/api/todos/{id}/restore", "post", "200", "400", "404", "409");
+        AssertResponses(
+            paths,
+            $"{TodosPathTemplate}/{{id}}/restore",
+            "post",
+            "200",
+            "400",
+            "403",
+            "404",
+            "409");
     }
 
     [TestMethod]
@@ -753,20 +778,26 @@ public sealed class TodoApiTests
             .Select(index => index["name"].AsString)
             .ToArray();
 
-        indexNames.Should().Contain("owner_active_due_date_id");
-        indexNames.Should().Contain("owner_active_priority_id");
-        indexNames.Should().Contain("owner_active_status_id");
-        indexNames.Should().Contain("owner_active_name_normalized_id");
-        indexNames.Should().Contain("owner_active_dependency_ids");
-        indexNames.Should().Contain("owner_active_search_tokens");
+        indexNames.Should().Contain("space_active_due_date_id");
+        indexNames.Should().Contain("space_active_priority_id");
+        indexNames.Should().Contain("space_active_status_id");
+        indexNames.Should().Contain("space_active_name_normalized_id");
+        indexNames.Should().Contain("space_active_dependency_ids");
+        indexNames.Should().Contain("space_active_search_tokens");
         indexNames.Should().Contain("purge_at");
-        indexNames.Should().Contain("owner_unique_series_occurrence");
+        indexNames.Should().Contain("space_unique_series_occurrence");
+
+        // Both superseded generations are dropped on start, so a deployment
+        // does not keep paying write cost for indexes no query can use.
         indexNames.Should().NotContain("active_due_date_id");
         indexNames.Should().NotContain("unique_series_occurrence");
+        indexNames.Should().NotContain("owner_active_due_date_id");
+        indexNames.Should().NotContain("owner_active_search_tokens");
+        indexNames.Should().NotContain("owner_unique_series_occurrence");
         BsonDocument recurrenceIndex = indexes.Single(
-            index => index["name"] == "owner_unique_series_occurrence");
+            index => index["name"] == "space_unique_series_occurrence");
         recurrenceIndex["unique"].AsBoolean.Should().BeTrue();
-        recurrenceIndex["key"].AsBsonDocument.Names.First().Should().Be("ownerId");
+        recurrenceIndex["key"].AsBsonDocument.Names.First().Should().Be("spaceId");
     }
 
     [TestMethod]
@@ -778,7 +809,7 @@ public sealed class TodoApiTests
                 BaseAddress = new Uri("https://localhost"),
             });
 
-        HttpResponseMessage response = await anonymous.GetAsync("/api/todos");
+        HttpResponseMessage response = await anonymous.GetAsync($"{Todos}");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -796,7 +827,7 @@ public sealed class TodoApiTests
             UserId.ToString());
 
         HttpResponseMessage response = await withoutToken.PostAsJsonAsync(
-            "/api/todos",
+            $"{Todos}",
             new
             {
                 name = "Submit report",
@@ -807,38 +838,44 @@ public sealed class TodoApiTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    /// <summary>
+    /// A non-member is answered 404 for the Space and everything under it,
+    /// including the list, so a probe cannot tell an unknown Space from one
+    /// someone else is working in.
+    /// </summary>
     [TestMethod]
-    public async Task AnotherUserCannotReadOrListThisUsersTodo()
+    public async Task ANonMemberCannotReadOrListASpacesTodos()
     {
         (_, JsonElement created) = await CreateTodoAsync();
         Guid todoId = created.GetProperty("id").GetGuid();
-        using HttpClient otherUser = await factory.CreateAuthenticatedClientAsync(
+        using HttpClient outsider = await factory.CreateAuthenticatedClientAsync(
             OtherUserId);
 
-        HttpResponseMessage detail = await otherUser.GetAsync($"/api/todos/{todoId}");
-        HttpResponseMessage list = await otherUser.GetAsync("/api/todos");
+        HttpResponseMessage detail = await outsider.GetAsync($"{Todos}/{todoId}");
+        HttpResponseMessage list = await outsider.GetAsync($"{Todos}");
 
         detail.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        list.StatusCode.Should().Be(HttpStatusCode.OK);
-        JsonDocument page = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
-        page.RootElement.GetProperty("items").GetArrayLength().Should().Be(0);
+        list.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [TestMethod]
-    public async Task AnotherUserCannotDeleteThisUsersTodo()
+    public async Task ANonMemberCannotDeleteASpacesTodo()
     {
         (_, JsonElement created) = await CreateTodoAsync();
         Guid todoId = created.GetProperty("id").GetGuid();
-        using HttpClient otherUser = await factory.CreateAuthenticatedClientAsync(
+        using HttpClient outsider = await factory.CreateAuthenticatedClientAsync(
             OtherUserId);
 
-        HttpResponseMessage response = await otherUser.SendAsync(
-            new HttpRequestMessage(HttpMethod.Delete, $"/api/todos/{todoId}")
+        HttpResponseMessage response = await outsider.SendAsync(
+            new HttpRequestMessage(HttpMethod.Delete, $"{Todos}/{todoId}")
             {
                 Content = JsonContent.Create(new { version = 1 }),
             });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        JsonElement unchanged = await ReadJsonAsync(
+            await client.GetAsync($"{Todos}/{todoId}"));
+        unchanged.GetProperty("deletedAt").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [TestMethod]
@@ -958,7 +995,7 @@ public sealed class TodoApiTests
             Recurrence = recurrence,
         };
         HttpResponseMessage response = await client.PostAsJsonAsync(
-            "/api/todos",
+            $"{Todos}",
             request);
         JsonElement todo = await ReadJsonAsync(response);
 
@@ -969,7 +1006,7 @@ public sealed class TodoApiTests
     {
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Delete,
-            $"/api/todos/{id}")
+            $"{Todos}/{id}")
         {
             Content = JsonContent.Create(new DeleteTodoRequest { Version = version }),
         };
@@ -983,7 +1020,7 @@ public sealed class TodoApiTests
         long version)
     {
         return await client.PostAsJsonAsync(
-            $"/api/todos/{id}/dependencies",
+            $"{Todos}/{id}/dependencies",
             new AddDependencyRequest
             {
                 DependencyId = Guid.Parse(dependencyId),
@@ -998,7 +1035,7 @@ public sealed class TodoApiTests
     {
         using HttpRequestMessage request = new HttpRequestMessage(
             HttpMethod.Delete,
-            $"/api/todos/{id}/dependencies/{dependencyId}")
+            $"{Todos}/{id}/dependencies/{dependencyId}")
         {
             Content = JsonContent.Create(new RemoveDependencyRequest { Version = version }),
         };
@@ -1012,7 +1049,7 @@ public sealed class TodoApiTests
         long version)
     {
         return await client.PutAsJsonAsync(
-            $"/api/todos/{id}/status",
+            $"{Todos}/{id}/status",
             new ChangeTodoStatusRequest
             {
                 Status = status,
