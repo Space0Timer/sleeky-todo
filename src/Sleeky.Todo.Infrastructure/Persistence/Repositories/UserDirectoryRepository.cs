@@ -11,6 +11,17 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
 {
     private const int DuplicateKeyErrorCode = 11000;
 
+    /// <summary>
+    /// The fields a <see cref="UserIdentity"/> is built from. An include
+    /// projection typed back to the document: <see cref="UserDocument"/>
+    /// ignores extra elements and every property carries a default, so the
+    /// fields left out deserialise harmlessly and are never read.
+    /// </summary>
+    private static readonly ProjectionDefinition<UserDocument, UserDocument> IdentityFields =
+        Builders<UserDocument>.Projection
+            .Include(user => user.Id)
+            .Include(user => user.DisplayName);
+
     private readonly IClock clock;
     private readonly IMongoCollection<UserDocument> users;
 
@@ -67,6 +78,28 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
         {
             return await ReadExistingAsync(filter, cancellationToken);
         }
+    }
+
+    public async Task<IReadOnlyCollection<UserIdentity>> FindByIdsAsync(
+        IReadOnlyCollection<Guid> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(userIds);
+
+        if (userIds.Count == 0)
+        {
+            return Array.Empty<UserIdentity>();
+        }
+
+        FilterDefinition<UserDocument> filter = Builders<UserDocument>.Filter.In(
+            user => user.Id,
+            userIds);
+        List<UserDocument> documents = await users
+            .Find(filter)
+            .Project(IdentityFields)
+            .ToListAsync(cancellationToken);
+
+        return documents.Select(ToIdentity).ToArray();
     }
 
     private static FilterDefinition<UserDocument> BuildIdentityFilter(
