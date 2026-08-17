@@ -24,13 +24,20 @@
   color: t.$color-text-label;
 }
 
-// The permission badge on the left, the create action on the right. The badge
-// slot is always rendered so the action keeps its place when there is nothing
-// to say.
+// The permission badge on the left, the Space actions on the right. The badge
+// slot is always rendered so the actions keep their place when there is
+// nothing to say.
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-height: 1.5rem;
   gap: 0.5rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
 }

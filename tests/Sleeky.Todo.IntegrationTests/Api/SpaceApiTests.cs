@@ -501,7 +501,8 @@ public sealed class SpaceApiTests
         UserIdentity identity = await users.ResolveAsync(
             Issuer,
             $"subject-{displayName.ToLowerInvariant()}",
-            displayName);
+            displayName,
+            $"{displayName.ToLowerInvariant()}@sleeky.test");
 
         return identity.UserId;
     }

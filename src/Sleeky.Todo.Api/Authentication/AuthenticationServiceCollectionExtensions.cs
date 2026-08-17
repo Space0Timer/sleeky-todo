@@ -134,6 +134,11 @@ public static class AuthenticationServiceCollectionExtensions
         options.Scope.Clear();
         options.Scope.Add(OpenIdConnectScope.OpenId);
         options.Scope.Add(OpenIdConnectScope.Profile);
+
+        // Asked for so the ID token carries an address the user directory can
+        // record. It is what makes someone findable by e-mail when a colleague
+        // shares a Space with them, and it never reaches the principal.
+        options.Scope.Add(OpenIdConnectScope.Email);
         options.Events = new OpenIdConnectEvents
         {
             OnTokenValidated = OidcAuthenticationEvents.OnTokenValidatedAsync,

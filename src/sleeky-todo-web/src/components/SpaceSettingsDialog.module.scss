@@ -1,0 +1,199 @@
+@use '../styles/mixins' as m;
+@use '../styles/tokens' as t;
+
+.backdrop {
+  @include m.modal-backdrop;
+}
+
+// Wider than the create dialog and capped in height: the member list grows
+// with the Space, and a dialog taller than the viewport would put its close
+// button somewhere the page cannot scroll to.
+.dialog {
+  @include m.modal-dialog;
+
+  width: min(38rem, 100%);
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+
+  h3 {
+    @include m.typography(strong);
+
+    margin: 0;
+    color: t.$color-text;
+  }
+}
+
+.status {
+  @include m.typography(detail);
+
+  margin: 0;
+  color: t.$color-text-muted;
+}
+
+.section {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.rename,
+.add {
+  fieldset {
+    display: grid;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    gap: 0.5rem;
+    justify-items: start;
+  }
+
+  label {
+    @include m.field-label;
+
+    width: 100%;
+  }
+
+  input {
+    @include m.field(0.6rem 0.75rem);
+    @include m.typography(field-value);
+
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+}
+
+.members {
+  display: grid;
+  padding: 0;
+  margin: 0;
+  gap: 0.4rem;
+  list-style: none;
+}
+
+.member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: t.$border-width solid t.$color-border-subtle;
+  border-radius: t.$radius-md;
+  background: t.$color-surface-subtle;
+  gap: 0.5rem;
+}
+
+.member-name {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: t.$color-text;
+  gap: 0.4rem;
+}
+
+.member-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  select {
+    @include m.field(0.35rem 0.45rem, t.$radius-sm);
+    @include m.typography(detail);
+
+    width: auto;
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+}
+
+.results {
+  display: grid;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  gap: 0.3rem;
+  list-style: none;
+}
+
+// A search hit reads as a row to pick rather than as a button, so it takes the
+// field's box instead of the shared button one.
+.result {
+  display: grid;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: t.$border-width solid t.$color-border-subtle;
+  border-radius: t.$radius-md;
+  background: t.$color-surface;
+  cursor: pointer;
+  color: t.$color-text;
+  font: inherit;
+  text-align: left;
+  gap: 0.15rem;
+
+  small {
+    @include m.typography(meta);
+
+    color: t.$color-text-muted;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: t.$color-border-control;
+    background: t.$color-surface-muted;
+  }
+
+  &:focus-visible {
+    @include m.focus-ring;
+  }
+
+  &:disabled {
+    @include m.control-disabled;
+
+    cursor: default;
+  }
+}
+
+.candidate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: t.$border-width solid t.$color-border-control;
+  border-radius: t.$radius-md;
+  background: t.$color-surface-subtle;
+  color: t.$color-text;
+  gap: 0.5rem;
+
+  select {
+    @include m.field(0.35rem 0.45rem, t.$radius-sm);
+    @include m.typography(detail);
+
+    width: auto;
+    color: t.$color-text;
+
+    &:focus {
+      @include m.focus-ring;
+    }
+  }
+}
+
+.failure {
+  @include m.tone(t.$color-danger-surface, t.$color-danger-text);
+  @include m.typography(detail);
+
+  padding: 0.55rem 0.75rem;
+  border-radius: t.$radius-md;
+}
+
+.dialog-actions {
+  @include m.action-row;
+
+  justify-content: flex-end;
+}

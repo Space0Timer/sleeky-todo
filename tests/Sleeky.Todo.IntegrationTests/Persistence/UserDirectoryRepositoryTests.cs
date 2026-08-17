@@ -102,21 +102,21 @@ public sealed class UserDirectoryRepositoryTests
     [TestMethod]
     public async Task ALoginWithoutANameClaimKeepsTheStoredName()
     {
-        UserIdentity first = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace");
+        UserIdentity first = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "ada@sleeky.test");
 
-        UserIdentity second = await repository.ResolveAsync(Issuer, Subject, null);
+        UserIdentity second = await repository.ResolveAsync(Issuer, Subject, null, null);
 
         second.UserId.Should().Be(first.UserId);
         second.DisplayName.Should().Be("Ada Lovelace");
-        (await ReadStoredNameAsync()).Should().Be("Ada Lovelace");
+        (await ReadStoredFieldAsync("displayName")).Should().Be("Ada Lovelace");
     }
 
     [TestMethod]
     public async Task ALoginWithABlankNameClaimKeepsTheStoredName()
     {
-        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace");
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "ada@sleeky.test");
 
-        UserIdentity resolved = await repository.ResolveAsync(Issuer, Subject, "   ");
+        UserIdentity resolved = await repository.ResolveAsync(Issuer, Subject, "   ", "   ");
 
         resolved.DisplayName.Should().Be("Ada Lovelace");
     }
@@ -128,19 +128,19 @@ public sealed class UserDirectoryRepositoryTests
     [TestMethod]
     public async Task ALoginWithANewNameUpdatesTheStoredName()
     {
-        UserIdentity first = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace");
+        UserIdentity first = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "ada@sleeky.test");
 
-        UserIdentity second = await repository.ResolveAsync(Issuer, Subject, "Ada King");
+        UserIdentity second = await repository.ResolveAsync(Issuer, Subject, "Ada King", null);
 
         second.UserId.Should().Be(first.UserId);
         second.DisplayName.Should().Be("Ada King");
-        (await ReadStoredNameAsync()).Should().Be("Ada King");
+        (await ReadStoredFieldAsync("displayName")).Should().Be("Ada King");
     }
 
     [TestMethod]
     public async Task AFirstLoginWithoutANameStoresNoName()
     {
-        UserIdentity resolved = await repository.ResolveAsync(Issuer, Subject, null);
+        UserIdentity resolved = await repository.ResolveAsync(Issuer, Subject, null, null);
 
         resolved.UserId.Should().NotBe(Guid.Empty);
         resolved.DisplayName.Should().BeNull();
@@ -161,7 +161,7 @@ public sealed class UserDirectoryRepositoryTests
     {
         Task<UserIdentity>[] racers = Enumerable.Range(0, 8)
             .Select(_ => Task.Run(() =>
-                repository.ResolveAsync(Issuer, Subject, "Ada Lovelace")))
+                repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "ada@sleeky.test")))
             .ToArray();
 
         UserIdentity[] resolved = await Task.WhenAll(racers);
@@ -178,10 +178,10 @@ public sealed class UserDirectoryRepositoryTests
     [TestMethod]
     public async Task FindByIdsAsyncReturnsOnlyTheIdentitiesTheDirectoryKnows()
     {
-        UserIdentity ada = await repository.ResolveAsync(Issuer, "subject-ada", "Ada Lovelace");
-        UserIdentity grace = await repository.ResolveAsync(Issuer, "subject-grace", "Grace Hopper");
-        UserIdentity nameless = await repository.ResolveAsync(Issuer, "subject-nameless", null);
-        _ = await repository.ResolveAsync(Issuer, "subject-other", "Someone Else");
+        UserIdentity ada = await repository.ResolveAsync(Issuer, "subject-ada", "Ada Lovelace", "ada@sleeky.test");
+        UserIdentity grace = await repository.ResolveAsync(Issuer, "subject-grace", "Grace Hopper", "grace@sleeky.test");
+        UserIdentity nameless = await repository.ResolveAsync(Issuer, "subject-nameless", null, null);
+        _ = await repository.ResolveAsync(Issuer, "subject-other", "Someone Else", null);
 
         IReadOnlyCollection<UserIdentity> found = await repository.FindByIdsAsync(
             [ada.UserId, grace.UserId, nameless.UserId, Guid.NewGuid()]);
@@ -197,11 +197,116 @@ public sealed class UserDirectoryRepositoryTests
     [TestMethod]
     public async Task FindByIdsAsyncWithNoIdentifiersReturnsNothing()
     {
-        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace");
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "ada@sleeky.test");
 
         IReadOnlyCollection<UserIdentity> found = await repository.FindByIdsAsync(Array.Empty<Guid>());
 
         found.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The address follows the same rule as the name: a token that omits it
+    /// leaves what is stored alone, so a user does not become unfindable
+    /// because one login carried a thinner set of claims.
+    /// </summary>
+    [TestMethod]
+    public async Task ALoginWithoutAnEmailClaimKeepsTheStoredEmail()
+    {
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "ada@sleeky.test");
+
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", null);
+
+        (await ReadStoredFieldAsync("email")).Should().Be("ada@sleeky.test");
+        (await ReadStoredFieldAsync("emailNormalized")).Should().Be("ada@sleeky.test");
+    }
+
+    /// <summary>
+    /// The searchable copies are written from the originals, lower-cased, and
+    /// are replaced whenever the original is.
+    /// </summary>
+    [TestMethod]
+    public async Task ResolveStoresLowerCasedCopiesOfTheNameAndAddress()
+    {
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada Lovelace", "Ada@Sleeky.TEST");
+
+        (await ReadStoredFieldAsync("displayNameNormalized")).Should().Be("ada lovelace");
+        (await ReadStoredFieldAsync("emailNormalized")).Should().Be("ada@sleeky.test");
+
+        _ = await repository.ResolveAsync(Issuer, Subject, "Ada King", "Ada.King@Sleeky.TEST");
+
+        (await ReadStoredFieldAsync("displayNameNormalized")).Should().Be("ada king");
+        (await ReadStoredFieldAsync("emailNormalized")).Should().Be("ada.king@sleeky.test");
+    }
+
+    [TestMethod]
+    public async Task SearchMatchesTheStartOfANameOrAnAddressWhateverTheCase()
+    {
+        UserIdentity ada = await repository.ResolveAsync(
+            Issuer,
+            "subject-ada",
+            "Ada Lovelace",
+            "ada@sleeky.test");
+        UserIdentity grace = await repository.ResolveAsync(
+            Issuer,
+            "subject-grace",
+            "Grace Hopper",
+            "grace@sleeky.test");
+
+        IReadOnlyCollection<UserSearchMatch> byName = await repository.SearchAsync("aDa", 10);
+        IReadOnlyCollection<UserSearchMatch> byAddress = await repository.SearchAsync("GRACE@", 10);
+        IReadOnlyCollection<UserSearchMatch> bySubstring = await repository.SearchAsync("ovelace", 10);
+
+        byName.Should().BeEquivalentTo(
+            [new UserSearchMatch(ada.UserId, "Ada Lovelace", "ada@sleeky.test")]);
+        byAddress.Should().BeEquivalentTo(
+            [new UserSearchMatch(grace.UserId, "Grace Hopper", "grace@sleeky.test")]);
+
+        // A prefix, not a contains: the anchored form is what an index can
+        // answer, and the whole point of storing the normalised copies.
+        bySubstring.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A user recorded before the searchable copies existed is not found.
+    /// </summary>
+    /// <remarks>
+    /// Accepted rather than migrated: their next sign-in writes both copies,
+    /// so the gap closes by itself and a backfill would buy only the window
+    /// between deploying and logging in.
+    /// </remarks>
+    [TestMethod]
+    public async Task SearchDoesNotFindADocumentWrittenBeforeTheNormalisedCopies()
+    {
+        await database.GetCollection<BsonDocument>("users").InsertOneAsync(new BsonDocument
+        {
+            ["_id"] = new BsonBinaryData(Guid.NewGuid(), GuidRepresentation.Standard),
+            ["issuer"] = Issuer,
+            ["subject"] = "subject-legacy",
+            ["displayName"] = "Legacy Larsson",
+            ["createdAt"] = DateTime.UtcNow,
+            ["lastLoginAt"] = DateTime.UtcNow,
+        });
+
+        IReadOnlyCollection<UserSearchMatch> found = await repository.SearchAsync("legacy", 10);
+
+        found.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public async Task SearchReturnsNoMoreThanTheLimit()
+    {
+        for (int index = 0; index < 5; index++)
+        {
+            _ = await repository.ResolveAsync(
+                Issuer,
+                $"subject-{index}",
+                $"Sample {index}",
+                $"sample{index}@sleeky.test");
+        }
+
+        IReadOnlyCollection<UserSearchMatch> found = await repository.SearchAsync("sample", 2);
+
+        found.Should().HaveCount(2);
     }
 
     private static bool ShouldRunMongoDbTests()
@@ -243,7 +348,7 @@ public sealed class UserDirectoryRepositoryTests
                 & Builders<BsonDocument>.Filter.Eq("subject", Subject));
     }
 
-    private async Task<string?> ReadStoredNameAsync()
+    private async Task<string?> ReadStoredFieldAsync(string field)
     {
         BsonDocument document = await database
             .GetCollection<BsonDocument>("users")
@@ -251,8 +356,8 @@ public sealed class UserDirectoryRepositoryTests
                 & Builders<BsonDocument>.Filter.Eq("subject", Subject))
             .SingleAsync();
 
-        return document.TryGetValue("displayName", out BsonValue? name) && !name.IsBsonNull
-            ? name.AsString
+        return document.TryGetValue(field, out BsonValue? value) && !value.IsBsonNull
+            ? value.AsString
             : null;
     }
 }

@@ -19,6 +19,7 @@ namespace Sleeky.Todo.Api.Authentication;
 internal static class OidcAuthenticationEvents
 {
     private const string DisplayNameClaim = "name";
+    private const string EmailClaim = "email";
     private const string IdTokenName = "id_token";
     private const string IssuerClaim = "iss";
     private const string PreferredUsernameClaim = "preferred_username";
@@ -43,12 +44,19 @@ internal static class OidcAuthenticationEvents
         string? displayName = principal.FindFirstValue(DisplayNameClaim)
             ?? principal.FindFirstValue(PreferredUsernameClaim);
 
+        // Recorded in the directory but deliberately left off the principal:
+        // nothing the application does with the signed-in user needs an
+        // address, while someone sharing a Space needs to be able to find a
+        // colleague by one.
+        string? email = principal.FindFirstValue(EmailClaim);
+
         IUserDirectoryRepository userDirectoryRepository = context.HttpContext.RequestServices
             .GetRequiredService<IUserDirectoryRepository>();
         UserIdentity identity = await userDirectoryRepository.ResolveAsync(
             issuer,
             subject,
             displayName,
+            email,
             context.HttpContext.RequestAborted);
 
         context.Principal = BuildApplicationPrincipal(identity, context.Scheme.Name);

@@ -178,18 +178,41 @@ internal sealed class MongoDbIndexInitializer : IHostedService
         ];
     }
 
+    /// <summary>
+    /// The identity mapping, and the two the user search walks.
+    /// </summary>
+    /// <remarks>
+    /// The search matches an anchored prefix against a lower-cased copy of the
+    /// name and of the address, which is a range over the index keys. Without
+    /// these two the same query reads the whole collection on every keystroke.
+    /// Neither is unique: two accounts may share a display name, and a
+    /// provider that reports no address leaves both fields absent.
+    /// </remarks>
     private static CreateIndexModel<UserDocument>[] BuildUserIndexes()
     {
+        IndexKeysDefinitionBuilder<UserDocument> keys = Builders<UserDocument>.IndexKeys;
+
         return
         [
             new CreateIndexModel<UserDocument>(
-                Builders<UserDocument>.IndexKeys
-                    .Ascending(user => user.Issuer)
+                keys.Ascending(user => user.Issuer)
                     .Ascending(user => user.Subject),
                 new CreateIndexOptions<UserDocument>
                 {
                     Name = "unique_user_issuer_subject",
                     Unique = true,
+                }),
+            new CreateIndexModel<UserDocument>(
+                keys.Ascending(user => user.DisplayNameNormalized),
+                new CreateIndexOptions<UserDocument>
+                {
+                    Name = "user_display_name_normalized",
+                }),
+            new CreateIndexModel<UserDocument>(
+                keys.Ascending(user => user.EmailNormalized),
+                new CreateIndexOptions<UserDocument>
+                {
+                    Name = "user_email_normalized",
                 }),
         ];
     }
