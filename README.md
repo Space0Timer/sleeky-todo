@@ -6,6 +6,25 @@ whose membership decides who may read them and who may write to them. The
 whole slice — domain rules, persistence, HTTP API, and UI — is implemented and
 tested end to end.
 
+## Sharing a list, end to end
+
+Alice owns a Space and fills it. She shares it with Bob as **Write**, and he
+reaches it from his own selector — nothing is pushed to him, so his list shows
+Alice's work the next time he asks for the page. When she narrows him to
+**Read**, the badge appears and every control that would change something is
+gone; the server refuses the write regardless of what the page offers.
+
+| | |
+|---|---|
+| ![Alice's Space, with two TODOs in it](docs/screenshots/01-a-space-of-her-own.png) | ![Space settings, with Bob added as a Write member](docs/screenshots/02-sharing-it-with-bob.png) |
+| Her list, in a Space she made. | Bob added, at the level she chose. |
+| ![Bob's window, showing the shared list and his own addition](docs/screenshots/03-bob-works-in-it.png) | ![Bob's window after the downgrade, marked read-only](docs/screenshots/04-read-only-for-bob.png) |
+| The same list from his side, with his TODO in it. | After the downgrade: read-only, and no way in. |
+
+These are captured from the running application by the same helpers the
+browser suite drives it with, so they show the product rather than a mock-up.
+`corepack yarn screenshots` regenerates them.
+
 ## Features
 
 - **Shared lists.** A Space is a named list with its own access list. Everyone
@@ -39,6 +58,13 @@ tested end to end.
   a read-only member's writes come back refused. Bring your own key —
   Anthropic or any OpenAI-compatible endpoint — or use one configured for the
   deployment.
+
+Three of those rules, caught in the act:
+
+| | | |
+|---|---|---|
+| ![An edit refused because the TODO moved to a newer version](docs/screenshots/05-a-stale-save.png) | ![A TODO marked blocked by an unfinished prerequisite](docs/screenshots/06-a-blocked-dependency.png) | ![The assistant proposing a deletion and waiting to be confirmed](docs/screenshots/07-the-assistant-asks-first.png) |
+| A save made against a version someone else had already moved past. The edit is kept; reloading is offered rather than chosen. | A prerequisite that is not finished, and a dependent that cannot start until it is. | The assistant proposes a deletion. Nothing is removed until it is confirmed. |
 
 Deliberately not built, with reasons in
 [docs/decision-log.md §3](docs/decision-log.md#3-what-i-chose-not-to-build-and-why):
@@ -199,6 +225,37 @@ stale version or domain-rule conflict. `GET /health` reports whether MongoDB
 answers a ping.
 
 ## Tests
+
+804 tests in three layers, each answering a different question.
+
+- **708 .NET tests.** Domain rules with nothing running (90), application
+  handlers against substitutes (241), the assistant's tool and turn layer
+  (154), and 223 integration tests against a real MongoDB — repository and
+  list-reader contracts, and the HTTP API end to end. The database is started
+  per test class by Testcontainers, as a replica set where a transaction is
+  under test.
+- **39 client unit tests** over the logic worth isolating: which Space a URL
+  resolves to, how a page of TODOs merges with the one before it, how a status
+  code becomes a message.
+- **57 browser tests** driving Chromium through a real Keycloak login against
+  the real API, two of them with two signed-in people at once.
+
+The claims that are easy to make and hard to hold are each pinned by a named
+test:
+
+| Behaviour | Where it is proven |
+|---|---|
+| A Write member gets the Space and everything in it | `SpaceSharingApiTests.AWriteGrantGivesTheNewMemberTheSpaceAndItsTodos` |
+| A downgrade to Read leaves the list visible and untouchable | `SpaceSharingApiTests.ADowngradeToReadLeavesTheSpaceVisibleAndTheTodosUntouchable` |
+| Removal takes the Space and everything under it | `SpaceSharingApiTests.ARemovedMemberLosesTheSpaceAndEverythingUnderIt` |
+| A non-member reaches none of a Space's TODOs | `TodoApiTests.ANonMemberCannotReadOrListASpacesTodos` |
+| Two writers at one version: one wins, one is told | `TodoApiTests.ConcurrentWritesWithSameVersionReturnOneSuccessAndOneConflict` |
+| A completed recurring TODO leaves exactly one successor | `TodoApiTests.CompletingRecurringTodoCreatesExactlyOneNextOccurrence` |
+| …and none at all if the successor cannot be written | `TodoApiTests.FailedNextOccurrenceInsertionRollsBackCompletion` |
+| A prerequisite still in use cannot be deleted | `TodoApiTests.ActivePrerequisiteCannotBeDeletedAndMutationsRejectStaleVersions` |
+| The assistant refuses a Space you cannot see, before the model | `AssistantTurnApiTests.ATurnInASpaceTheUserCannotSeeIsRefusedBeforeTheModel` |
+| Two people on one list, at the level the owner set | `e2e/sharing.spec.ts` |
+| A Space switch changes which TODOs exist, and survives reload | `e2e/spaces.spec.ts` |
 
 Domain and application suites need nothing running:
 

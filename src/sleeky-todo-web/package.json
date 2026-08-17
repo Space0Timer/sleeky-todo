@@ -15,6 +15,7 @@
     "lint:styles": "stylelint \"src/**/*.scss\"",
     "lint:styles:fix": "stylelint \"src/**/*.scss\" --fix",
     "test:unit": "vitest run",
+    "screenshots": "CAPTURE_SCREENSHOTS=1 playwright test e2e/screenshots.spec.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "preview": "vite preview"
