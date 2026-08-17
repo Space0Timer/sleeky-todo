@@ -9,6 +9,10 @@ import { AssistantSettingsForm } from './AssistantSettingsForm.tsx'
 import { Button } from './common/index.ts'
 
 type AssistantPanelProps = {
+  /** The Space the conversation is bound to; every turn carries it. */
+  spaceId: string
+  /** Shown in the heading, so the user can see which list the assistant is acting on. */
+  spaceName: string
   onTodosChanged: () => void
 }
 
@@ -16,13 +20,17 @@ type AssistantPanelProps = {
  * The assistant, alongside the list rather than in place of it. Every write it
  * makes is one the toolbar could have made, so the list stays the source of
  * truth and refreshes from `todos_changed` exactly as a bulk action does.
+ *
+ * Rendered inside the Space-keyed page, so a switch remounts it: the
+ * conversation, a pending confirmation, and the settings view all start over
+ * in the new Space, and nothing here has to know a switch happened.
  */
-export function AssistantPanel({ onTodosChanged }: AssistantPanelProps) {
+export function AssistantPanel({ spaceId, spaceName, onTodosChanged }: AssistantPanelProps) {
   const [settings, setSettings] = useState<AssistantSettings | null>(null)
   const [settingsFailed, setSettingsFailed] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [draft, setDraft] = useState('')
-  const assistant = useAssistant({ onTodosChanged })
+  const assistant = useAssistant({ spaceId, onTodosChanged })
 
   /**
    * A failure here is reported rather than swallowed. Both the settings form
@@ -54,7 +62,10 @@ export function AssistantPanel({ onTodosChanged }: AssistantPanelProps) {
   return (
     <section className={styles.panel} aria-label="Assistant">
       <header className={styles.header}>
-        <h2>Assistant</h2>
+        <h2>
+          Assistant
+          <span className={styles.spaceName} data-testid="assistant-space">in {spaceName}</span>
+        </h2>
         <div className={styles.headerActions}>
           {assistant.entries.length > 0 && (
             <Button variant="text" onClick={assistant.reset}>
