@@ -29,19 +29,42 @@ internal static class SpaceDtoMapper
         IUserDirectoryRepository users,
         CancellationToken cancellationToken)
     {
-        IReadOnlyDictionary<Guid, string?> displayNames = await LoadDisplayNamesAsync(
+        return await BuildDtoAsync(
             space,
+            RequirePermissionOf(space, currentUserId),
             users,
             cancellationToken);
+    }
 
-        return new SpaceDto(
-            space.Id,
-            space.Name,
-            space.Access.Select(entry => ToAccessDto(entry, displayNames)).ToArray(),
-            RequirePermissionOf(space, currentUserId),
-            space.Version,
-            space.CreatedAt,
-            space.UpdatedAt);
+    /// <summary>
+    /// The same view for a reader whose membership was established before this
+    /// Space was loaded and could have been withdrawn in between; the result is
+    /// <see langword="null"/> when they no longer hold any level.
+    /// </summary>
+    /// <remarks>
+    /// This is the one caller for which absence is an answer rather than a
+    /// broken invariant. A plain read checks access and then loads the Space
+    /// again, so a membership removed between the two leaves a reader holding a
+    /// Space they no longer belong to; the query reports that as not found,
+    /// which is what someone who never belonged is told as well. Every other
+    /// caller reaches the mapper with membership it established from the same
+    /// read, and uses <see cref="ToDtoAsync"/>.
+    /// </remarks>
+    public static async Task<SpaceDto?> ToDtoIfStillMemberAsync(
+        Space space,
+        Guid currentUserId,
+        IUserDirectoryRepository users,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(space);
+
+        SpacePermission? permission = space.PermissionFor(currentUserId, SubjectType.User);
+        if (permission is null)
+        {
+            return null;
+        }
+
+        return await BuildDtoAsync(space, permission.Value, users, cancellationToken);
     }
 
     public static SpaceSummaryDto ToSummaryDto(Space space, Guid currentUserId)
@@ -52,10 +75,33 @@ internal static class SpaceDtoMapper
             RequirePermissionOf(space, currentUserId));
     }
 
+    private static async Task<SpaceDto> BuildDtoAsync(
+        Space space,
+        SpacePermission permission,
+        IUserDirectoryRepository users,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<Guid, string?> displayNames = await LoadDisplayNamesAsync(
+            space,
+            users,
+            cancellationToken);
+
+        return new SpaceDto(
+            space.Id,
+            space.Name,
+            space.Access.Select(entry => ToAccessDto(entry, displayNames)).ToArray(),
+            permission,
+            space.Version,
+            space.CreatedAt,
+            space.UpdatedAt);
+    }
+
     /// <summary>
-    /// The reader's own level. Every caller reaches here as a member — the
-    /// access behavior, the creator's Owner grant, or a membership listing put
-    /// them there — so absence is a broken invariant, not an answer.
+    /// The reader's own level, where membership comes from the same read as the
+    /// Space itself — the creator's Owner grant, the write that just committed,
+    /// or the membership listing the Space arrived in. Absence there is a broken
+    /// invariant, not an answer, so it throws rather than returning a level
+    /// nobody holds.
     /// </summary>
     private static SpacePermission RequirePermissionOf(Space space, Guid userId)
     {
