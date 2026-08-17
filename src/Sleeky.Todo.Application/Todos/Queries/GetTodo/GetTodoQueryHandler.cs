@@ -2,7 +2,6 @@ using MediatR;
 
 using Sleeky.Todo.Application.Abstractions.Persistence;
 using Sleeky.Todo.Application.DTOs;
-using Sleeky.Todo.Application.Exceptions;
 using Sleeky.Todo.Domain.Entities;
 
 namespace Sleeky.Todo.Application.Todos.Queries.GetTodo;
@@ -22,10 +21,9 @@ public sealed class GetTodoQueryHandler : IRequestHandler<GetTodoQuery, TodoDto>
         GetTodoQuery request,
         CancellationToken cancellationToken)
     {
-        TodoItem todoItem = await todoRepository.GetByIdAsync(
+        TodoItem todoItem = await todoRepository.GetRequiredAsync(
             request.Id,
-            cancellationToken: cancellationToken)
-            ?? throw new NotFoundException("TODO", request.Id);
+            cancellationToken);
 
         return TodoDto.FromEntity(todoItem);
     }
