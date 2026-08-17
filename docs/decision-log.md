@@ -12,16 +12,19 @@ which records each decision as it was made; the mechanisms are described in
   the document stays, normal reads exclude it, and a Trash view restores it
   under the usual version check. Physical purge is a separate maintenance job,
   designed for but not yet built.
-- **"Multiple users accessing the same TODO list concurrently."** A correctness
-  requirement — two writers must not silently overwrite each other — rather
-  than a sharing feature. Every TODO carries a `version`; each mutation sends
-  the version it last read, MongoDB matches `_id` and `version` atomically, and
-  a miss is a `409` the client resolves by reloading. Once authentication was
-  added a list belongs to a user, so "the same list" is one user's list open in
-  several tabs, browsers, or the assistant; the guarantee is identical.
+- **"Multiple users accessing the same TODO list concurrently."** Two
+  requirements in one sentence, both built. *The same list* is a **Space**: a
+  named list with its own access list, so people work in one collection rather
+  than each in a private copy, and membership rather than ownership decides who
+  may read and who may write. *Concurrently* stays a per-TODO question: every
+  TODO carries a `version`, each mutation sends the version it last read,
+  MongoDB matches `_id` and `version` atomically, and a miss is a `409` the
+  client resolves by reloading. No Space-wide lock, deliberately — members
+  editing different TODOs never contend, and two on the same one are settled by
+  that one version, whether they are two people, two tabs, or the assistant.
 - **"10,000+ items without degrading."** Never load or count the collection on
   the request path: keyset pagination (opaque cursor, `limit + 1`, `_id`
-  tie-breaker) over indexes that lead with `ownerId`, projected cards, and
+  tie-breaker) over indexes that lead with `spaceId`, projected cards, and
   blocked state computed inside the aggregation rather than in memory.
 - **"Archived" as a status.** *Frozen*, not one status among equals: an
   archived TODO refuses edits, dependency changes, and completion, and reopens
@@ -45,9 +48,10 @@ which records each decision as it was made; the mechanisms are described in
 - **Layered monolith, dependencies pointing inward.** Domain has no outward
   references; Application owns use cases and the abstractions
   (`ITodoRepository`, `ITodoListReader`, `ITransactionExecutor`,
-  `ICurrentUser`); Infrastructure implements them; API owns HTTP. More ceremony
-  than one project, in exchange for handlers that test without a database or
-  host. No service split: nothing has an independent scaling or ownership need.
+  `ICurrentUser`, `ISpaceScope`); Infrastructure implements them; API owns
+  HTTP. More ceremony than one project, in exchange for handlers that test
+  without a database or host. No service split: nothing has an independent
+  scaling or ownership need.
 - **CQRS through MediatR over one data model.** Validation, domain-exception
   translation, and request logging are pipeline behaviours every request
   inherits. Separate read/write stores were rejected as unrepayable overhead.
@@ -59,10 +63,15 @@ which records each decision as it was made; the mechanisms are described in
   retrying, because a retry would guess at intent; the one exception — bulk
   status changes retry once with re-read versions — is idempotent by
   construction.
-- **Ownership enforced in the persistence boundary.** `ICurrentUser` is applied
-  inside the repository's and list reader's shared filters, so no handler can
-  forget it. Another user's TODO is `404`, not `403`, so the response does not
-  confirm the ID exists.
+- **Access enforced by the pipeline, the Space carried ambiently.** A
+  Space-scoped request names the Space it acts in and the level it needs; a
+  MediatR behaviour authorizes it before the handler runs and binds the outcome
+  to a request-scoped `ISpaceScope` that the repository and list reader read
+  exactly the way they read the current user. No handler supplies a Space
+  filter, so none can forget one, and the scope throws when read unbound, so an
+  unauthorized query fails instead of quietly reading every Space. A non-member
+  is answered `404`, not `403`, so the response does not confirm the identifier
+  exists; a member below the level a route needs is answered `403`.
 - **OIDC login, encrypted HttpOnly cookie session, no tokens in the browser.**
   Removes the XSS-token-theft class. Costs: CSRF returns, so an antiforgery
   header is a global filter; the cookie handler must be the default challenge
@@ -95,7 +104,9 @@ which records each decision as it was made; the mechanisms are described in
   partial success leaves a caller unable to tell what happened.
 - **The assistant acts *as* the user, inside the user's own request.** Tools
   send MediatR commands only, so they inherit every API guardrail; writes bind
-  to the version the model last *read*, never one it supplies. Keys are the
+  to the version the model last *read*, never one it supplies. A turn names the
+  Space it runs in and that Space is authorized before the model is reached, so
+  a turn the caller may not make costs nothing and reveals nothing. Keys are the
   user's own, encrypted at rest, write-only. Correctness never depends on the
   model: a weaker model degrades helpfulness, not data.
 - **One container serves SPA and API from one origin**, so the session cookie
@@ -113,9 +124,25 @@ which records each decision as it was made; the mechanisms are described in
 - **Registration.** Identity is delegated to the OIDC provider and the
   application stores no credentials, so registration is the provider's feature
   (Keycloak's `registrationAllowed`), not the application's.
-- **Real-time updates.** The version check already makes staleness *safe*,
-  which makes push a convenience, not a correctness need, at the price of a
-  second transport and connection management. §4 says how it would be built.
+- **Real-time updates.** The version check already makes staleness *safe*, so
+  push is a convenience rather than a correctness need, at the price of a second
+  transport and connection management. The cost is plain in a shared list: a
+  colleague's change appears on the next load, though it can never silently
+  overwrite anything in the meantime. §4 says how it would be built.
+- **Everything about a Space except sharing it.** Deleting a Space, leaving
+  one, moving a TODO between Spaces, invitations, and groups are all absent.
+  The first three need an answer for the TODOs inside — cascade, orphan, or
+  re-scope one by one — that the requirement does not imply; sharing adds
+  someone the user directory already knows, so nothing has to be invited; and
+  an access entry is already a subject, a subject *type*, and a permission with
+  `User` the only type defined, so a group is a second type plus a lookup
+  rather than a change of shape. What *is* enforced: a Space always has an
+  Owner, who while last can be neither removed nor demoted, and nobody removes
+  themselves.
+- **Migration of documents written before Spaces.** A TODO carries a `spaceId`
+  where it carried an `ownerId`, and nothing backfills the older form, for the
+  reason nothing converts legacy enum values: no deployment holds data that
+  outlives a schema change, so a local volume is recreated.
 - **Physical purge job.** Retention is enforced by `purgeAt` and the restore
   rule; removal belongs outside request handling and is the remaining slice.
 - **Provider-initiated logout.** Back-channel and front-channel logout end the
@@ -125,16 +152,25 @@ which records each decision as it was made; the mechanisms are described in
   one application in the realm there is nowhere else for a sign-out to start.
 - **Server-side assistant history.** The client echoes a windowed transcript;
   storing it is a history *feature* and would not fix the token cost.
+- **Closing two windows, rather than accepting them.** An access check and the
+  write it authorizes are not one atomic step, so a member removed in between
+  still lands that write; sealing it costs every writer a Space-wide lock to
+  correct a case the next request corrects anyway. And finding a colleague is a
+  bounded disclosure rather than none: signed-in callers, at least two
+  characters, at most ten answers, the caller excluded, and only people who
+  have signed in at least once — the directory cannot be walked, but a real
+  colleague is findable by name or address.
 - Also rejected, for reasons in §2: persisted blocked state, an `IUnitOfWork`,
   browser-held OIDC tokens, and partial-success batches.
 
 ## 4. What I would do differently with more time
 
 - **Real-time list updates over MongoDB change streams.** The replica set and
-  the versions are already there; a per-user change feed over SSE could drive
-  the existing refresh path with no new consistency rules.
-- **A scheduled retention purge**, whose owner-spanning repository path is
-  the one exception reserved in the "no user, no query" rule but not yet
+  the versions are already there; a per-Space change feed over SSE could drive
+  the existing refresh path with no new consistency rules, and would turn a
+  shared list from "correct on the next load" into "correct as you watch".
+- **A scheduled retention purge**, whose Space-spanning repository path is
+  the one exception reserved in the "no bound Space, no query" rule but not yet
   written.
 - **Observability beyond logs:** OpenTelemetry metrics and traces for request
   latency, Mongo command timing, and assistant token usage.

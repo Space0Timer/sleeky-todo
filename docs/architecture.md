@@ -12,33 +12,34 @@ flowchart TB
 
     subgraph api["Sleeky.Todo.Api — ASP.NET Core"]
         auth["Cookie session · OIDC login endpoint<br/>global antiforgery filter · per-user rate limits"]
-        controllers["Controllers<br/>Todos · Assistant · AssistantSettings · Auth"]
+        controllers["Controllers<br/>Spaces · Todos · Users · Assistant · AssistantSettings · Auth"]
         problems["Global exception handler → RFC Problem Details"]
         static["Static SPA hosting<br/>(container image only)"]
     end
 
     subgraph assistant["Sleeky.Todo.Assistant"]
-        turn["Turn loop over IChatClient<br/>tools · version ledger · confirmation gate"]
+        turn["Turn loop over IChatClient<br/>Space check · tools · version ledger · confirmation gate"]
     end
 
     subgraph application["Sleeky.Todo.Application"]
-        pipeline["MediatR pipeline behaviours<br/>validation · domain-exception translation · request logging"]
+        pipeline["MediatR pipeline behaviours<br/>validation · Space access · domain-exception translation · request logging"]
         handlers["Command and query handlers<br/>dependency evaluator · recurrence factory"]
-        abstractions["Abstractions<br/>ITodoRepository · ITodoListReader · ITransactionExecutor<br/>ICurrentUser · IClock · IAssistantSettingsRepository · IUserDirectoryRepository"]
+        abstractions["Abstractions<br/>ITodoRepository · ITodoListReader · ISpaceRepository · ITransactionExecutor<br/>ICurrentUser · ISpaceScope · IClock · IAssistantSettingsRepository · IUserDirectoryRepository"]
     end
 
     subgraph domain["Sleeky.Todo.Domain"]
         entity["TodoItem aggregate<br/>status and archive rules · dependency edges<br/>RecurrenceSchedule · TodoCompletion"]
+        space["Space aggregate<br/>access list · permission lattice"]
     end
 
     subgraph infrastructure["Sleeky.Todo.Infrastructure"]
-        repo["TodoRepository<br/>owner-scoped filters · version-matched replace"]
+        repo["TodoRepository · SpaceRepository<br/>Space-scoped filters · version-matched replace"]
         reader["MongoTodoListReader<br/>aggregation · blocked state · keyset cursor · search hint"]
         tx["MongoTransactionExecutor<br/>scoped session context"]
-        startup["Index initializer"]
+        startup["Index initializers<br/>TODO · Space"]
     end
 
-    mongo[("MongoDB 8 replica set<br/>todoItems · users · assistantSettings")]
+    mongo[("MongoDB 8 replica set<br/>todoItems · spaces · users · assistantSettings")]
     idp[("OIDC provider<br/>Keycloak locally")]
     llm[("LLM provider<br/>Anthropic · any OpenAI-compatible endpoint")]
 
@@ -50,7 +51,9 @@ flowchart TB
     turn -->|"commands and queries only"| pipeline
     turn <-->|"bring-your-own-key"| llm
     pipeline --> handlers
+    pipeline --> abstractions
     handlers --> entity
+    handlers --> space
     handlers --> abstractions
     abstractions -.-> repo
     abstractions -.-> reader
@@ -68,19 +71,37 @@ The Assistant is a fifth project sitting beside the API rather than beneath it. 
 
 ## React client and persisted workflow
 
-The React client uses a typed API module for its requests: list, detail,
-create, update, status, dependency, delete, and restore for a single TODO; the
-bulk status, delete, and restore batches and the selection lookup that repairs
-them; the session, login, logout, and antiforgery calls; and the assistant's
-turn stream and provider settings. It parses Problem Details in one place and
-distinguishes validation, domain-rule, concurrency, not-found, network, and
-unexpected failures. Serilog and backend implementation types do not cross the
-HTTP boundary.
+The React client uses a typed API module for its requests: the Space list,
+detail, creation, and access changes; list, detail, create, update, status,
+dependency, delete, and restore for a single TODO; the bulk status, delete, and
+restore batches and the selection lookup that repairs them; the user search that
+finds someone to share with; the session, login, logout, and antiforgery calls;
+and the assistant's turn stream and provider settings. It parses Problem Details
+in one place and distinguishes validation, permission, domain-rule, concurrency,
+not-found, network, and unexpected failures. `403` is kept apart from `401`:
+only the latter ends the session, because being refused one action is not being
+signed out. Serilog and backend implementation types do not cross the HTTP
+boundary.
 
-The main screen is backed by `GET /api/todos`; it does not keep a browser-only
-TODO collection. Active, Archived, and Trash tabs select the matching server
-scope. Changing scope, filters, sort field, or direction starts a new first-page
-request without a cursor and replaces the displayed items. Load More sends the
+The active Space lives in the URL, at `/spaces/:spaceId`, so a shared link opens
+the list it names and a reload keeps it; local storage only remembers where the
+user was last, for a visit to `/`. A pure `resolveActiveSpace` decides where a
+visit lands — the requested Space if it is reachable, then the remembered one,
+then the oldest, which is the personal Space the server ensures on every listing
+— and the client navigates only to what it returns, so an inaccessible
+identifier redirects instead of rendering an error. The page body is rendered
+keyed by the Space identifier, so switching remounts it and every piece of list
+state — filters, cursor, items, selection, open editors — is gone by
+construction rather than by hand. A member holding only `Read` is shown the list
+without the controls that would be refused. A Space-scoped `404` mid-session
+means access was withdrawn: the client re-reads its Space list and, if the
+active one has gone, returns to `/` with a notice.
+
+The main screen is backed by `GET /api/spaces/{spaceId}/todos`; it does not
+keep a browser-only TODO collection. Active, Archived, and Trash tabs select
+the matching server scope. Changing scope, filters, sort field, or direction
+starts a new first-page request without a cursor and replaces the displayed
+items. Load More sends the
 opaque `nextCursor` and appends the returned page.
 
 List responses remain projections. Full TODO details are loaded only when the
@@ -120,7 +141,7 @@ index-backed; see the decision log.
 ## Authentication and session boundary
 
 This section records the boundary the authentication slice holds, because the
-ownership, transport, and test decisions all rest on it.
+Space, transport, and test decisions all rest on it.
 
 Login uses OpenID Connect, and the application session is an ASP.NET Core
 encrypted cookie. The React client never receives or stores an access, ID, or
@@ -232,42 +253,99 @@ own idle limit — still lands on `/login`, because an expired `id_token_hint` o
 an already-dead single sign-on session makes the end-session endpoint a
 redirect back rather than an error.
 
-## Ownership boundary
+## Space boundary
 
-Every TODO carries an `OwnerId` holding the internal user ID, persisted as a
-standard BSON UUID like the other backend-owned identifiers. Application code
-reads the current user through an `ICurrentUser` abstraction; handlers never
-touch `HttpContext`.
+A **Space** is the collaboration and authorization boundary: a named collection
+of TODOs with an embedded access list, where each entry is a subject, a subject
+type, and a permission from the lattice `Read < Write < Owner`. Membership of a
+Space decides what a signed-in user may do to everything inside it. Every user
+gets one Space of their own — "My Space", created on their first listing —
+and it is an ordinary Space, renameable and shareable like any other.
 
-Ownership is enforced where the query is built rather than at each call site.
-Infrastructure injects `ICurrentUser` into the repository and list reader and
-applies the owner predicate inside the shared identifier, mutation, and list
-filters, so reads, existence checks, batch loads, dependency lookups, graph
-traversal, active-dependent checks, mutations, and cursor pages are scoped by
-construction. A future query cannot omit the filter by forgetting it, because no
-handler supplies it. The repository refuses to run without an authenticated
-user. The retention purge, when it is built, will be the one deliberate
-exception, because it is a maintenance operation that spans owners; today no
-repository member is exempt from the owner filter.
+Every TODO carries two identifiers. `SpaceId` names the Space that contains it
+and is the only one authorization consults. `CreatedByUserId` records who wrote
+it, so a shared list can show "created by Bob", and is never read by a filter or
+a rule; it is audit data.
 
-A TODO belonging to another user is reported as `404` rather than `403`, so the
-response does not disclose that the identifier exists.
+```text
+Keycloak
+  -> authenticated user (ICurrentUser)
+  -> SpaceAccessBehavior          404 for a non-member · 403 below the level
+                                  binds ISpaceScope for the rest of the request
+  -> Space CQRS   ·   Todo CQRS   <- assistant tools, the same commands,
+                                     with the Space taken from the turn
+  -> TodoRepository / MongoTodoListReader     filter: spaceId == bound Space
+  -> MongoDB
+```
 
-The assistant is a second actor on this boundary and needed no rule of its own.
-It dispatches the same commands from inside the caller's request, so the owner
-predicate is applied by the same filters; an integration test drives its tool
-layer against another owner's TODO and gets the same nothing a controller would.
+Access is decided in the request pipeline, and the answer is then carried
+ambiently rather than passed along. A request that implements
+`ISpaceScopedRequest` declares the Space it acts in and the permission it needs.
+`SpaceAccessBehavior` runs after validation, resolves the caller's entry through
+`ISpaceAccessService`, and either refuses or binds a request-scoped
+`ISpaceScope` holding the Space's identifier, its name, and the level the caller
+holds. Handlers contain no access checks at all.
 
-Sort and lookup indexes gain `ownerId` as their leading key, since every query
-now filters on it before any scope, sort, or dependency term. The retention
-`purgeAt` index stays owner-independent to match the purge path. The index
-initializer creates indexes but does not remove superseded ones, so the
-replaced index names are dropped explicitly before creation; otherwise an
-existing deployment would retain unused indexes that still cost write time.
+Infrastructure reads that scope exactly the way it reads the current user.
+`TodoRepository` and `MongoTodoListReader` apply `spaceId ==` inside their
+shared identifier, mutation, and list filters, so reads, existence checks, batch
+loads, dependency lookups, graph traversal, active-dependent checks, mutations,
+and cursor pages are scoped by construction, and no repository or reader
+signature carries a Space argument a call site could omit. Reading the scope
+before anything has bound it throws, so a query that reached persistence without
+an authorization step fails rather than quietly matching every Space in the
+collection. The retention purge, when it is built, will be the one deliberate
+exception, because it is maintenance work that spans Spaces; today no repository
+member is exempt from the Space filter.
 
-`owner_active_search_tokens` puts its array key last — `ownerId`, `deletedAt`,
-then `searchTokens` — unlike `owner_active_dependency_ids`, which carries its
-array second. The difference is deliberate: a search matches owner and scope
+The two refusals answer differently on purpose. A caller who is not a member is
+told `404` — for the Space itself and for everything under it — so the
+response does not disclose that the identifier exists. A member whose level is
+below what
+the route needs is told `403`, which does confirm the Space exists, because they
+are in it and already know. The client keeps `403` separate from `401`: an
+expired session ends the session, a refused permission raises a message and
+leaves the user signed in.
+
+Because the check and the write it authorizes are separate steps, a member
+removed in between still lands that write. The window is accepted rather than
+closed; the decision log records why. The read path is where it was visible —
+re-reading a Space the caller had just been removed from left no permission to
+report — and it answers `404` there, the same as for anyone who was never a
+member.
+
+The assistant is a second actor on this boundary, and the one that needs a rule
+of its own. Its tools dispatch the same commands, so the Space filter reaches
+them through the same pipeline; what differs is that a turn carries its Space on
+the request rather than in a route, and that two things happen before the
+pipeline could refuse anything. A turn answers as server-sent events, where a
+failure after the first byte can no longer become a status code, and a confirmed
+deletion is applied at the top of the run, ahead of any call to the model. The
+Space is therefore authorized in the controller before the stream opens and
+again as the runner's first statement — both through the same
+`ISpaceAccessService` the behaviour uses, so it is one rule at three call sites
+rather than a second implementation. The tool schemas the model sees carry no
+Space at all: the turn's Space is fixed for the turn and is not something the
+model can name or argue about.
+
+Sort and lookup indexes take `spaceId` as their leading key, since every query
+filters on it before any scope, sort, or dependency term:
+`space_active_due_date_id`, `space_active_priority_id`,
+`space_active_status_id`, `space_active_name_normalized_id`,
+`space_active_dependency_ids`, `space_active_search_tokens`, and the unique
+partial `space_unique_series_occurrence`. The retention `purgeAt` index stays
+Space-independent to match the purge path. The index initializer creates indexes
+but does not remove superseded ones, so every replaced name — the unscoped
+originals and the seven `owner_*` indexes that followed them — is dropped
+explicitly before creation; otherwise an existing deployment would retain unused
+indexes that still cost write time. The
+Spaces collection has one index of its own, `access_subject`, a multikey over
+the access list's subject and subject type, which is what makes "the Spaces this
+user belongs to" a lookup rather than a scan.
+
+`space_active_search_tokens` puts its array key last — `spaceId`, `deletedAt`,
+then `searchTokens` — unlike `space_active_dependency_ids`, which carries its
+array second. The difference is deliberate: a search matches Space and scope
 exactly and then scans a range of tokens, so the equality keys have to precede
 the range for the bounds to be tight, while a dependency lookup matches an
 exact identifier inside the array and does not pay the same cost.
@@ -278,10 +356,13 @@ and a hint naming an index that does not exist fails the query rather than
 falling back to a scan. If search returns 500 while every other list, filter,
 and sort keeps working — after a hand-dropped index, a restored database, or a
 harness that drops the database behind a running instance — check that
-`owner_active_search_tokens` exists. Restarting the application rebuilds it.
+`space_active_search_tokens` exists. Restarting the application rebuilds it.
 
-Recurring occurrences inherit the completed occurrence's owner through the
-domain entity, so the transactional insert requires no separate ownership rule.
+Recurring occurrences inherit both identifiers from the occurrence that was
+completed: the successor belongs to the same Space and keeps the *original*
+creator rather than whoever completed it, so a series in a shared list does not
+change hands each time someone else ticks it off. Both travel through the domain
+entity, so the transactional insert needs no separate rule.
 
 ## Persistence boundary
 
@@ -297,7 +378,9 @@ Application handler
 
 `TodoDocument`, its serializer, and its mapper are internal Infrastructure details. They are not exposed to Application or test projects. Repository integration tests exercise the public `ITodoRepository` contract and inspect raw BSON only when the persisted representation matters.
 
-A separate `MongoDbContext` wrapper is intentionally not used. With one database and one collection it only duplicated `IMongoDatabase.GetCollection`; the repository owns collection access directly.
+Spaces are a second aggregate behind the same boundary: `ISpaceRepository` in Application, `SpaceRepository` in Infrastructure, with the same version-matched replace the TODO repository uses and one extra member, `GetOrAddAsync`, whose insert treats a duplicate key as success — that is how the personal Space is ensured without a check-then-create race. It is deliberately not Space-scoped: it is the component that decides what a Space *is*, so scoping it to a Space would be circular.
+
+A separate `MongoDbContext` wrapper is intentionally not used. Each repository owns its own collection access, and a shared wrapper would only duplicate `IMongoDatabase.GetCollection`.
 
 Assistant provider settings are a second collection behind the same boundary:
 `IAssistantSettingsRepository` in Application, `AssistantSettingsRepository`
@@ -324,10 +407,13 @@ integration test asserts the bounds themselves, so a server or driver upgrade
 that changes which predicate is chosen fails there rather than silently
 becoming a scan.
 
-The cursor's filter signature gains a seventh component carrying the tokens,
-appended only when there are any. An unsearched query therefore hashes exactly
-as it did before search existed, and cursors already in flight survive the
-deployment that introduced it.
+The cursor's filter signature is a hash of the canonical form of the question a
+page answered, and the Space leads that form. A cursor minted in one Space and
+replayed against another fails the signature check and is refused as an invalid
+cursor — a `400` — rather than resuming a page of the second Space from a
+position the first produced. The search tokens are the last component and are
+appended only when there are any, so an unsearched query hashes exactly as it
+did before search existed.
 
 ### Enum storage
 
@@ -435,7 +521,7 @@ models ignore unknown BSON elements to support additive rolling schema changes.
 The repository performs each mutation as one MongoDB `FindOneAndReplace` operation with a filter equivalent to:
 
 ```text
-ownerId == currentUser AND _id == todoId AND version == expectedVersion
+spaceId == boundSpace AND _id == todoId AND version == expectedVersion
 ```
 
 Update and soft-delete also require an active document. Restore requires a deleted document. The replacement increments the version by one, and `ReturnDocument.After` returns the actual persisted state.
@@ -458,15 +544,15 @@ sequenceDiagram
     participant R as TodoRepository
     participant M as MongoDB
 
-    C->>H: PUT /api/todos/{id}/status {status: Completed, version: N}
+    C->>H: PUT /api/spaces/{spaceId}/todos/{id}/status {status: Completed, version: N}
     H->>R: GetByIdAsync(id)
-    R->>M: find {_id, ownerId, deletedAt: null}
+    R->>M: find {_id, spaceId, deletedAt: null}
     H->>H: version guard · dependency evaluator (blocked?)
     H->>H: todo.ChangeStatus(Completed) records todo.Completion
     H->>TX: ExecuteAsync(work)
     TX->>M: start session and transaction
     H->>R: UpdateAsync(todo)
-    R->>M: findOneAndReplace {_id, ownerId, deletedAt: null, version: N} → version N+1
+    R->>M: findOneAndReplace {_id, spaceId, deletedAt: null, version: N} → version N+1
     alt no document matched
         R-->>H: ConcurrencyConflictException
         TX->>M: abort
@@ -474,7 +560,7 @@ sequenceDiagram
     else replaced
         H->>H: read todo.Completion → next date from the scheduled due date
         H->>R: AddAsync(next occurrence: same seriesId, occurrenceNumber + 1)
-        R->>M: insertOne (unique partial index on owner + seriesId + occurrenceNumber)
+        R->>M: insertOne (unique partial index on spaceId + seriesId + occurrenceNumber)
         TX->>M: commit
         H-->>C: 200 {version: N+1, nextOccurrenceId}
     end
@@ -508,7 +594,7 @@ transaction without knowing it exists. Any write failure aborts it.
 
 An aborted transaction surfaces as `TransactionConflictException`, which carries
 no resource identifier because the conflicting document is not always the one
-the caller named. A unique partial index on owner, series ID, and occurrence
+the caller named. A unique partial index on Space, series ID, and occurrence
 number complements optimistic concurrency and prevents duplicate next
 occurrences.
 
@@ -524,9 +610,10 @@ the schedule, but deliberately start with no dependency IDs.
 
 ## Bulk status changes and deletion
 
-`PUT /api/todos/status` and `DELETE /api/todos` mirror their single-item
-counterparts at collection level, so the target status stays the discriminator
-rather than becoming a separate action name. A request carries up to 100 unique
+`PUT /api/spaces/{spaceId}/todos/status` and
+`DELETE /api/spaces/{spaceId}/todos` mirror their single-item counterparts at
+collection level, so the target status stays the discriminator rather than
+becoming a separate action name. A request carries up to 100 unique
 selections, each with the version the client last read.
 
 ```text
@@ -564,8 +651,9 @@ before the transaction commits. A duplicate key arrives as a bulk write error
 rather than the single write error the transaction executor recognises, so the
 repository maps it back to the offending TODO through the write error index.
 
-A rejected batch is repaired through `GET /api/todos/selection`, which reports
-the current version and deletion state of specific identifiers without
+A rejected batch is repaired through
+`GET /api/spaces/{spaceId}/todos/selection`, which reports the current version
+and deletion state of specific identifiers without
 disturbing the list — a list refresh would replace the versions the selection
 was resolved from. The browser retries a status batch once, silently, with the
 versions that probe returns, and only when every selected identifier still
@@ -580,14 +668,34 @@ The assistant turns natural language into the same bulk writes the toolbar
 issues. It runs in process and synchronously, inside the caller's own
 authenticated request, so `ICurrentUser` resolves from that HTTP context and the
 assistant acts as the user by construction rather than by an impersonation rule.
+It is the one caller with an access check of its own, for the reason below.
 
 ```text
 POST /api/assistant/turns  (server-sent events)
-  -> AssistantTurnRunner        resolves a provider, replays the transcript
+  -> ISpaceAccessService        may this user read the turn's Space?  404 / 403
+  -> AssistantTurnRunner        re-checks and binds the scope, resolves a
+                                provider, replays the transcript
   -> IChatClient                Anthropic or an OpenAI-compatible endpoint
   -> TodoTools                  six AIFunctions over commands and queries
-  -> MediatR                    validation, domain rules, logging, ownership
+  -> MediatR                    validation, domain rules, logging, Space scoping
 ```
+
+A turn carries the Space it runs in, and that Space is authorized before the
+model is ever invoked. The controller checks it before the stream opens, because
+a server-sent event response cannot turn a later failure into a status code, and
+the runner checks it again as its very first statement — ahead of a confirmed
+deletion, which commits before any model call, and ahead of building the
+provider client. A caller who may not read the Space therefore reaches neither
+the store nor the provider. Both checks call the same `ISpaceAccessService` the
+pipeline behaviour uses.
+
+The model is told which Space it is in and never given a way to change it. The
+turn's first user message names the Space — and, for a `Read` member, says the
+tools will refuse to write — while the tool schemas carry no Space parameter at
+all: every command a tool builds takes the Space from the turn. The toolset is
+byte-for-byte identical at every permission level, so nothing about the caller's
+level moves the cacheable prefix; a `Read` member's write simply comes back as a
+tool failure the model can explain.
 
 The project is laid out by role. `Providers` resolves whose provider, model,
 and key a turn runs on and builds the client for it, including the guard that
@@ -688,9 +796,10 @@ runs before handlers, and a domain-rule pipeline behavior converts domain
 exceptions into the application-facing `DomainRuleException`.
 
 The global API exception handler produces RFC Problem Details. It maps
-`NotFoundException` to 404; `ConcurrencyConflictException`,
-`BulkConcurrencyConflictException`, `TransactionConflictException`, and
-`DomainRuleException` to 409; and `InvalidCursorException` to 400. Validation
+`NotFoundException` to 404; `ForbiddenException` to 403;
+`ConcurrencyConflictException`, `BulkConcurrencyConflictException`,
+`TransactionConflictException`, and `DomainRuleException` to 409; and
+`InvalidCursorException` to 400. Validation
 errors are 400 with a predictable camel-cased `errors` dictionary. Anything
 else is a 500. All problem responses include the request path and a `traceId`.
 
@@ -762,9 +871,9 @@ class and event shape remain explicit without provider-specific APIs.
 
 Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
-repository and health check, and runs its schema bootstrap through a hosted
-service that initializes indexes. This keeps `Program.cs` limited to
-composition and application startup.
+repositories and health check, and runs its schema bootstrap through hosted
+services that initialize the TODO and Space indexes. This keeps `Program.cs`
+limited to composition and application startup.
 
 `AddAssistant` binds provider options without validating them on start: an
 application-level API key is optional, and a deployment where every user brings
