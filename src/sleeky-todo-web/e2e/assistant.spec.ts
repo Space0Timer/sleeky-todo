@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 import { signIn } from './auth.ts'
-import { resetOwnedData } from './database.ts'
+import { resetUserData } from './database.ts'
+import { createSpaceThroughUi, switchToSpace } from './spaces.ts'
 import { apiOrigin } from './todos.ts'
 
 /**
@@ -13,7 +14,7 @@ import { apiOrigin } from './todos.ts'
  */
 test.beforeEach(async ({ page }) => {
   await signIn(page)
-  await resetOwnedData(page)
+  await resetUserData(page)
 })
 
 test('the assistant panel asks for a provider before it can help', async ({ page }) => {
@@ -78,4 +79,53 @@ test('removing a provider clears the stored key', async ({ page }) => {
     'placeholder',
     'Required',
   )
+})
+
+test('the panel names the space the conversation belongs to', async ({ page }) => {
+  await expect(page.getByTestId('assistant-space')).toHaveText('in My Space')
+
+  await createSpaceThroughUi(page, 'Assistant Alpha')
+
+  await expect(page.getByTestId('assistant-space')).toHaveText('in Assistant Alpha')
+})
+
+/**
+ * One conversation belongs to one Space. The panel is rendered inside the
+ * Space-keyed page, so switching remounts it and there is nothing to carry
+ * over — which is what keeps a question asked about one list from being
+ * answered against another.
+ */
+test('switching spaces starts the conversation over', async ({ page }) => {
+  const panel = page.getByRole('region', { name: 'Assistant' })
+
+  await panel.getByLabel('Ask the assistant').fill('What is due today?')
+  await panel.getByRole('button', { name: 'Send' }).click()
+  await expect(page.getByTestId('assistant-user')).toContainText('What is due today?')
+
+  await createSpaceThroughUi(page, 'Assistant Beta')
+
+  await expect(page.getByTestId('assistant-user')).toHaveCount(0)
+  await expect(page.getByTestId('assistant-assistant')).toHaveCount(0)
+
+  await switchToSpace(page, 'My Space')
+
+  // Nothing is persisted per Space either: coming back is a new conversation,
+  // not the one that was left behind.
+  await expect(page.getByTestId('assistant-user')).toHaveCount(0)
+})
+
+test('a turn is sent against the space on screen', async ({ page }) => {
+  const alphaId = await createSpaceThroughUi(page, 'Assistant Gamma')
+  const panel = page.getByRole('region', { name: 'Assistant' })
+
+  const turn = page.waitForRequest(
+    (request) => request.url().endsWith('/api/assistant/turns')
+      && request.method() === 'POST',
+  )
+
+  await panel.getByLabel('Ask the assistant').fill('What is due today?')
+  await panel.getByRole('button', { name: 'Send' }).click()
+
+  const body = (await turn).postDataJSON() as { spaceId?: string }
+  expect(body.spaceId).toBe(alphaId)
 })

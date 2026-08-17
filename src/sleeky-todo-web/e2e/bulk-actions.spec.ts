@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 import { todoStatus } from '../src/types/todo.ts'
 import { signIn } from './auth.ts'
-import { resetOwnedData } from './database.ts'
+import { resetUserData } from './database.ts'
 import {
   bulkAction,
   cardId,
@@ -16,7 +16,7 @@ import {
 
 test.beforeEach(async ({ page }) => {
   await signIn(page)
-  await resetOwnedData(page)
+  await resetUserData(page)
 })
 
 test('completes several selected TODOs in one request', async ({ page }) => {
@@ -197,7 +197,7 @@ test('a conflicted restore is not retried silently', async ({ page }) => {
   // fail the same way it did the first time and report the same banner.
   let attempts = 0
   page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().endsWith('/api/todos/restore')) {
+    if (request.method() === 'POST' && request.url().endsWith('/todos/restore')) {
       attempts += 1
     }
   })
@@ -253,7 +253,7 @@ test('a deletion that loses the race after the dialog opened is not retried', as
 
   let attempts = 0
   page.on('request', (request) => {
-    if (request.method() === 'DELETE' && request.url().endsWith('/api/todos')) {
+    if (request.method() === 'DELETE' && request.url().endsWith('/todos')) {
       attempts += 1
     }
   })

@@ -18,6 +18,12 @@ export type TestUserName = keyof typeof testUsers
 const appHeading = 'Keep today clear.'
 
 /**
+ * The list always lives under a Space, so a signed-in page is a page on one:
+ * `/` only resolves which and redirects.
+ */
+export const spaceUrlPattern = /\/spaces\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
  * Drives the real provider login form and reports whether credentials were
  * asked for. Sign-out goes through the provider's end-session endpoint, so a
  * signed-out browser context is prompted again; the branch remains because a
@@ -51,6 +57,7 @@ export async function signIn(
 }
 
 export async function expectSignedIn(page: Page): Promise<void> {
+  await expect(page).toHaveURL(spaceUrlPattern)
   await expect(page.getByRole('heading', { name: appHeading })).toBeVisible()
   await expect(page.getByText('Loading TODOs…')).toHaveCount(0)
 }

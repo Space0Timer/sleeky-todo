@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test'
 
 import { ask, configureAssistant, scriptModel } from './assistant-model.ts'
 import { signIn } from './auth.ts'
-import { resetOwnedData } from './database.ts'
+import { resetUserData } from './database.ts'
+import { createSpaceThroughUi, switchToSpace } from './spaces.ts'
 import { cardId, createTodo, todoCard } from './todos.ts'
 
 /**
@@ -20,7 +21,7 @@ const turnTimeout = 20_000
  */
 test.beforeEach(async ({ page }) => {
   await signIn(page)
-  await resetOwnedData(page)
+  await resetUserData(page)
   await configureAssistant(page)
 })
 
@@ -134,4 +135,60 @@ test('a second turn writes to what the first turn read', async ({ page }) => {
   await expect(
     todoCard(page, 'Assistant remembers me').getByText('Completed'),
   ).toBeVisible({ timeout: turnTimeout })
+})
+
+/**
+ * A confirmation carries the versions the proposal displayed, and it belongs
+ * to the Space the proposal was made in. Switching Spaces takes the panel with
+ * it, which is what discards the pending question rather than leaving a
+ * Confirm button that would act on another list's TODOs.
+ */
+test('switching spaces discards a pending confirmation', async ({ page }) => {
+  const card = await createTodo(page, 'Assistant pending delete')
+  const id = await cardId(card)
+
+  await scriptModel(page, [{ tool: 'delete_todos', arguments: { ids: [id] } }])
+  await ask(page, 'Delete that one.')
+  await expect(page.getByTestId('assistant-confirmation'))
+    .toBeVisible({ timeout: turnTimeout })
+
+  await createSpaceThroughUi(page, 'Confirmation Alpha')
+
+  await expect(page.getByTestId('assistant-confirmation')).toHaveCount(0)
+  await expect(page.getByTestId('assistant-user')).toHaveCount(0)
+
+  // Nothing was deleted: the proposal was never confirmed.
+  await switchToSpace(page, 'My Space')
+  await expect(todoCard(page, 'Assistant pending delete')).toHaveCount(1)
+})
+
+/**
+ * The assistant's tools act only inside the Space the turn named, so a write
+ * asked for in one Space lands in that one and nowhere else.
+ */
+test('a turn writes only in the space it was asked in', async ({ page }) => {
+  const personalCard = await createTodo(page, 'Assistant leaves me alone')
+  const personalId = await cardId(personalCard)
+
+  await createSpaceThroughUi(page, 'Isolated Alpha')
+  const alphaCard = await createTodo(page, 'Assistant works here')
+  const alphaId = await cardId(alphaCard)
+
+  await scriptModel(page, [
+    { tool: 'change_todo_status', arguments: { status: 'Completed', ids: [alphaId] } },
+    { text: 'Marked 1 completed.' },
+  ])
+  await ask(page, 'Complete that one.')
+
+  await expect(page.getByTestId('assistant-assistant'))
+    .toContainText('Marked 1 completed.', { timeout: turnTimeout })
+  await expect(
+    todoCard(page, 'Assistant works here').getByText('Completed'),
+  ).toBeVisible()
+
+  await switchToSpace(page, 'My Space')
+  await expect(
+    todoCard(page, 'Assistant leaves me alone').getByText('Open', { exact: true }),
+  ).toBeVisible()
+  expect(personalId).not.toBe(alphaId)
 })

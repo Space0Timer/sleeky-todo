@@ -1,92 +1,20 @@
 import { expect, test } from '@playwright/test'
 
 import { signIn } from './auth.ts'
-import { databaseName } from './database-name.ts'
-import { evaluate, resetOwnedData } from './database.ts'
+import { resetUserData } from './database.ts'
+import { renameSeeded, seedTodos } from './seed.ts'
 import {
   antiforgeryHeader,
   apiOrigin,
   createTodo,
+  currentSpaceId,
   currentUserId,
   todoCard,
 } from './todos.ts'
 
-const todoCollection = `db.getSiblingDB('${databaseName}').todoItems`
-
-/** The identifier of the nth seeded TODO, which the seed derives from its index. */
-function seededId(index: number): string {
-  return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
-}
-
-/** Mirrors the domain tokenizer as far as these fixed names need. */
-function searchTokensFor(name: string): string[] {
-  return [
-    ...new Set(`${name} Cursor acceptance record`
-      .toLowerCase()
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter((token) => token.length > 0)),
-  ]
-}
-
-/**
- * Seeds a page and a bit of TODOs straight into MongoDB. More than the create
- * form should have to type, and the ordering has to be exact.
- *
- * A retry runs the calling test again while the previous attempt's documents
- * are still present, because global teardown only drops the database once the
- * whole run has finished. These identifiers are fixed, so insertMany would fail
- * on a duplicate key and the retry would report that rather than whatever
- * actually went wrong. Clearing the same identifiers first makes the seed
- * idempotent.
- *
- * The delete has to follow the UUID conversion: identifiers persist as BSON
- * UUIDs rather than strings, so matching on the string form silently removes
- * nothing. It is scoped to these documents so that a parallel worker's data is
- * left alone.
- */
-async function seedTodos(ownerId: string, names: string[]): Promise<void> {
-  const documents = names.map((name, index) => ({
-    _id: seededId(index),
-    ownerId,
-    name,
-    nameNormalized: name.toLowerCase(),
-    description: 'Cursor acceptance record',
-    // Search reads these rather than the text, and nothing backfills them —
-    // the API writes the field only on its own inserts and replaces. A seed
-    // without them is a document no search can reach.
-    searchTokens: searchTokensFor(name),
-    dueDate: '2027-04-19',
-    // Status and priority persist as their numeric business order, so a
-    // seeded document must match that representation to be queryable.
-    status: 0,
-    priority: 0,
-    dependencyIds: [],
-    recurrence: null,
-    seriesId: null,
-    occurrenceNumber: null,
-    version: 1,
-    createdAt: '2026-08-12T00:00:00.000Z',
-    updatedAt: '2026-08-12T00:00:00.000Z',
-    deletedAt: null,
-    purgeAt: null,
-  }))
-
-  await evaluate(`
-    const docs = ${JSON.stringify(documents)};
-    docs.forEach((doc) => {
-      doc._id = UUID(doc._id);
-      doc.ownerId = UUID(doc.ownerId);
-      doc.createdAt = new Date(doc.createdAt);
-      doc.updatedAt = new Date(doc.updatedAt);
-    });
-    ${todoCollection}.deleteMany({ _id: { $in: docs.map((doc) => doc._id) } });
-    ${todoCollection}.insertMany(docs);
-  `)
-}
-
 test.beforeEach(async ({ page }) => {
   await signIn(page)
-  await resetOwnedData(page)
+  await resetUserData(page)
 })
 
 test('creates, edits, archives, soft-deletes, and restores a TODO', async ({ page }) => {
@@ -183,16 +111,20 @@ test('shows a concurrency conflict and reloads the latest version', async ({ pag
   await card.getByRole('button', { name: 'Manage' }).click()
   await expect(card.getByRole('region', { name: 'Manage UI stale TODO' })).toBeVisible()
 
-  const response = await page.request.put(`${apiOrigin}/api/todos/${id}`, {
-    headers: await antiforgeryHeader(page),
-    data: {
-      name: 'Changed by another writer',
-      description: 'External change',
-      dueDate: '2026-09-01',
-      priority: 1,
-      version: 1,
+  const spaceId = await currentSpaceId(page)
+  const response = await page.request.put(
+    `${apiOrigin}/api/spaces/${spaceId}/todos/${id}`,
+    {
+      headers: await antiforgeryHeader(page),
+      data: {
+        name: 'Changed by another writer',
+        description: 'External change',
+        dueDate: '2026-09-01',
+        priority: 1,
+        version: 1,
+      },
     },
-  })
+  )
   expect(response.ok()).toBeTruthy()
 
   await card.getByRole('button', { name: 'Edit details' }).click()
@@ -262,11 +194,12 @@ test('creates the next occurrence when a recurring TODO is completed', async ({ 
 })
 
 test('filters, sorts, and loads a second cursor page without duplicates', async ({ page }) => {
-  const ownerId = await currentUserId(page)
+  const spaceId = await currentSpaceId(page)
+  const createdByUserId = await currentUserId(page)
   const names = Array.from({ length: 13 }, (_, index) => (
     `UI page ${String(index).padStart(2, '0')}`
   ))
-  await seedTodos(ownerId, names)
+  await seedTodos(spaceId, createdByUserId, names)
 
   await page.reload()
   await page.getByLabel('Status filter').selectOption({ label: 'Open' })
@@ -307,11 +240,12 @@ test('filters, sorts, and loads a second cursor page without duplicates', async 
  * would produce.
  */
 test('shows one card when an edit moves a seen TODO onto the next page', async ({ page }) => {
-  const ownerId = await currentUserId(page)
+  const spaceId = await currentSpaceId(page)
+  const createdByUserId = await currentUserId(page)
   const names = Array.from({ length: 13 }, (_, index) => (
     `UI drift ${String(index).padStart(2, '0')}`
   ))
-  await seedTodos(ownerId, names)
+  await seedTodos(spaceId, createdByUserId, names)
 
   await page.reload()
   await page.getByLabel('Sort field').selectOption({ label: 'Name' })
@@ -326,22 +260,7 @@ test('shows one card when an edit moves a seen TODO onto the next page', async (
   // not been seen yet. The version has to rise with it: that is how the client
   // tells the newer read from the copy it is already showing.
   const drifted = 'UI drift 99'
-  await evaluate(`
-    ${todoCollection}.updateOne(
-      { _id: UUID('${seededId(0)}') },
-      {
-        $set: {
-          name: '${drifted}',
-          nameNormalized: '${drifted.toLowerCase()}',
-          // Written alongside the name, as every repository write does. A
-          // partial rename would leave the document searchable only by the
-          // name it no longer has.
-          searchTokens: ${JSON.stringify(searchTokensFor(drifted))},
-        },
-        $inc: { version: 1 },
-      },
-    );
-  `)
+  await renameSeeded(0, drifted)
 
   await page.getByRole('button', { name: 'Load more' }).click()
 

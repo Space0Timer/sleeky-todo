@@ -1,65 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 
 import { signIn } from './auth.ts'
-import { databaseName } from './database-name.ts'
-import { evaluate, resetOwnedData } from './database.ts'
-import { createTodo, currentUserId, todoCard } from './todos.ts'
-
-const todoCollection = `db.getSiblingDB('${databaseName}').todoItems`
-
-function seededId(index: number): string {
-  return `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`
-}
-
-/**
- * Search reads the stored `searchTokens` rather than the name, so a seed that
- * omits them is invisible to every assertion here. Nothing backfills the field
- * — the API only writes it on its own inserts and replaces — so a document
- * seeded without it stays unsearchable.
- *
- * The tokenizer's rules are mirrored here only as far as the fixed names below
- * need: lowercase, split on non-alphanumeric runs. Anything more elaborate
- * belongs in a TODO created through the UI instead.
- */
-async function seedTodos(ownerId: string, names: string[]): Promise<void> {
-  const documents = names.map((name, index) => ({
-    _id: seededId(index),
-    ownerId,
-    name,
-    nameNormalized: name.toLowerCase(),
-    description: 'Cursor acceptance record',
-    searchTokens: [
-      ...new Set(`${name} Cursor acceptance record`
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((token) => token.length > 0)),
-    ],
-    dueDate: '2027-04-19',
-    status: 0,
-    priority: 0,
-    dependencyIds: [],
-    recurrence: null,
-    seriesId: null,
-    occurrenceNumber: null,
-    version: 1,
-    createdAt: '2026-08-12T00:00:00.000Z',
-    updatedAt: '2026-08-12T00:00:00.000Z',
-    deletedAt: null,
-    purgeAt: null,
-  }))
-
-  await evaluate(`
-    const docs = ${JSON.stringify(documents)};
-    docs.forEach((doc) => {
-      doc._id = UUID(doc._id);
-      doc.ownerId = UUID(doc.ownerId);
-      doc.createdAt = new Date(doc.createdAt);
-      doc.updatedAt = new Date(doc.updatedAt);
-    });
-    ${todoCollection}.deleteMany({ _id: { $in: docs.map((doc) => doc._id) } });
-    ${todoCollection}.insertMany(docs);
-  `)
-}
+import { resetUserData } from './database.ts'
+import { seedTodos } from './seed.ts'
+import { createTodo, currentSpaceId, currentUserId, todoCard } from './todos.ts'
 
 function activeCards(page: Page) {
   return page.getByRole('region', { name: 'Active' }).locator('[data-testid^="todo-"]')
@@ -67,7 +11,7 @@ function activeCards(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   await signIn(page)
-  await resetOwnedData(page)
+  await resetUserData(page)
 })
 
 test('narrows the list to matching TODOs and restores it when cleared', async ({ page }) => {
@@ -90,7 +34,7 @@ test('narrows the list to matching TODOs and restores it when cleared', async ({
   // returns the same object when nothing changed.
   let listRequests = 0
   await page.route(
-    (url) => url.pathname === '/api/todos',
+    (url) => url.pathname.endsWith('/todos'),
     async (route) => {
       listRequests += 1
       await route.continue()
@@ -119,14 +63,15 @@ test('matches the start of a word rather than any part of one', async ({ page })
 })
 
 test('loads a second page under a search without duplicates', async ({ page }) => {
-  const ownerId = await currentUserId(page)
+  const spaceId = await currentSpaceId(page)
+  const createdByUserId = await currentUserId(page)
   const names = Array.from({ length: 13 }, (_, index) => (
     `Grocery run ${String(index).padStart(2, '0')}`
   ))
   // Sorts ahead of every grocery name, so the first page before the search
   // lands differs from the first page after it. Without that the two are
   // identical and the assertions below pass against the unsearched list.
-  await seedTodos(ownerId, [...names, 'Alpha errand'])
+  await seedTodos(spaceId, createdByUserId, [...names, 'Alpha errand'])
 
   await page.reload()
   await page.getByLabel('Sort field').selectOption({ label: 'Name' })
@@ -156,9 +101,11 @@ test('loads a second page under a search without duplicates', async ({ page }) =
  * absence: the bad request can no longer be made, and no error toast follows.
  */
 test('offers no stale cursor while a searched page is still loading', async ({ page }) => {
-  const ownerId = await currentUserId(page)
+  const spaceId = await currentSpaceId(page)
+  const createdByUserId = await currentUserId(page)
   await seedTodos(
-    ownerId,
+    spaceId,
+    createdByUserId,
     Array.from({ length: 13 }, (_, index) => `Grocery run ${String(index).padStart(2, '0')}`),
   )
 
@@ -170,7 +117,7 @@ test('offers no stale cursor while a searched page is still loading', async ({ p
   let release = (): void => {}
   const held = new Promise<void>((resolve) => { release = resolve })
   await page.route(
-    (url) => url.pathname === '/api/todos' && url.searchParams.has('search'),
+    (url) => url.pathname.endsWith('/todos') && url.searchParams.has('search'),
     async (route) => {
       await held
       await route.continue()
