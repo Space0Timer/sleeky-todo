@@ -29,6 +29,22 @@ export async function switchToSpace(page: Page, name: string): Promise<void> {
 }
 
 /**
+ * Switches Spaces by going straight to the URL, the way a bookmark or the back
+ * button does. Needed when something modal is on screen: a dialog covers the
+ * selector, but it does not pin the browser to the page.
+ */
+export async function navigateToSpace(
+  page: Page,
+  spaceId: string,
+  name: string,
+): Promise<void> {
+  await page.goto(`/spaces/${spaceId}`)
+
+  await expectActiveSpace(page, name)
+  await expect(page.getByText('Loading TODOs…')).toHaveCount(0)
+}
+
+/**
  * Creates a Space through the dialog and lands on it. Returns its identifier,
  * which is what the URL and every nested route below it carry.
  */

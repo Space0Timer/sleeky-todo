@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { ask, configureAssistant, scriptModel } from './assistant-model.ts'
 import { signIn } from './auth.ts'
 import { resetUserData } from './database.ts'
-import { createSpaceThroughUi, switchToSpace } from './spaces.ts'
+import { createSpaceThroughUi, navigateToSpace, switchToSpace } from './spaces.ts'
 import { cardId, createTodo, todoCard } from './todos.ts'
 
 /**
@@ -147,12 +147,19 @@ test('switching spaces discards a pending confirmation', async ({ page }) => {
   const card = await createTodo(page, 'Assistant pending delete')
   const id = await cardId(card)
 
+  // The other Space is made before the question is asked: the confirmation is
+  // modal, so once it is on screen the selector is behind its backdrop.
+  const alphaId = await createSpaceThroughUi(page, 'Confirmation Alpha')
+  await switchToSpace(page, 'My Space')
+
   await scriptModel(page, [{ tool: 'delete_todos', arguments: { ids: [id] } }])
   await ask(page, 'Delete that one.')
   await expect(page.getByTestId('assistant-confirmation'))
     .toBeVisible({ timeout: turnTimeout })
 
-  await createSpaceThroughUi(page, 'Confirmation Alpha')
+  // A pending question does not pin the browser to the page — the URL is still
+  // a way out, and leaving takes the conversation with it.
+  await navigateToSpace(page, alphaId, 'Confirmation Alpha')
 
   await expect(page.getByTestId('assistant-confirmation')).toHaveCount(0)
   await expect(page.getByTestId('assistant-user')).toHaveCount(0)
@@ -174,7 +181,11 @@ test('a turn writes only in the space it was asked in', async ({ page }) => {
   const alphaCard = await createTodo(page, 'Assistant works here')
   const alphaId = await cardId(alphaCard)
 
+  // The list read comes first because a write is bound to a version the
+  // assistant has actually seen; without it the tool refuses the change and
+  // the scripted reply would claim work that never happened.
   await scriptModel(page, [
+    { tool: 'get_todos', arguments: { limit: 50 } },
     { tool: 'change_todo_status', arguments: { status: 'Completed', ids: [alphaId] } },
     { text: 'Marked 1 completed.' },
   ])

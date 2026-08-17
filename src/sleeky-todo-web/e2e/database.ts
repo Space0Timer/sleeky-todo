@@ -71,25 +71,26 @@ export async function resetUserData(page: Page): Promise<void> {
 
     database.todoItems.deleteMany({ spaceId: { $in: spaceIds } });
 
-    const solelyOwned = database.spaces
-      .find({
-        _id: {
-          $in: spaceIds.filter((id) => id.toString() !== personal.toString()),
+    // Matched by the server rather than compared in the shell: a UUID read back
+    // from a document stringifies to its canonical text, while one built here
+    // stringifies to its raw bytes, so comparing the two forms never matches
+    // and every Space would survive the reset.
+    database.spaces.deleteMany({
+      $and: [
+        { _id: { $in: spaceIds, $ne: personal } },
+        { access: { $elemMatch: { subjectId: user, permission: ${ownerPermission} } } },
+        {
+          access: {
+            $not: {
+              $elemMatch: {
+                subjectId: { $ne: user },
+                permission: ${ownerPermission},
+              },
+            },
+          },
         },
-      })
-      .toArray()
-      .filter((space) => {
-        const owners = space.access.filter(
-          (entry) => entry.permission === ${ownerPermission},
-        );
-        return owners.length === 1
-          && owners[0].subjectId.toString() === user.toString();
-      })
-      .map((space) => space._id);
-
-    if (solelyOwned.length > 0) {
-      database.spaces.deleteMany({ _id: { $in: solelyOwned } });
-    }
+      ],
+    });
 
     database.assistantSettings.deleteMany({ _id: user });
   `)
