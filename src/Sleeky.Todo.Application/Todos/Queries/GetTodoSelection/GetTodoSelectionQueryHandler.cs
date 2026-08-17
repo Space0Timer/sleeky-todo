@@ -24,18 +24,39 @@ public sealed class GetTodoSelectionQueryHandler
     {
         // Soft-deleted TODOs are reported: they still exist, the trash lists
         // them, and a selection there has to be diffable like any other. Only
-        // what is purged or owned by someone else is absent.
+        // what is purged or outside this Space is absent.
         IReadOnlyCollection<TodoItem> loaded = await todoRepository.GetByIdsAsync(
             request.Ids,
             includeDeleted: true,
             cancellationToken);
         Dictionary<Guid, TodoItem> todosById = loaded.ToDictionary(todoItem => todoItem.Id);
 
-        TodoDto[] items = request.Ids
-            .Where(todosById.ContainsKey)
-            .Select(id => TodoDto.FromEntity(todosById[id]))
-            .ToArray();
+        return new TodoSelection(SelectFound(request.Ids, todosById));
+    }
 
-        return new TodoSelection(items);
+    /// <summary>
+    /// The TODOs that came back, in the order they were asked for, with the
+    /// unresolved identifiers simply absent.
+    /// </summary>
+    /// <remarks>
+    /// One lookup per identifier: testing membership and then reading the
+    /// value searches the same dictionary twice for every TODO that was
+    /// found, which is every TODO in the ordinary case.
+    /// </remarks>
+    private static TodoDto[] SelectFound(
+        IReadOnlyCollection<Guid> requestedIds,
+        Dictionary<Guid, TodoItem> todosById)
+    {
+        List<TodoDto> found = new List<TodoDto>(requestedIds.Count);
+
+        foreach (Guid id in requestedIds)
+        {
+            if (todosById.TryGetValue(id, out TodoItem? todoItem))
+            {
+                found.Add(TodoDto.FromEntity(todoItem));
+            }
+        }
+
+        return found.ToArray();
     }
 }
