@@ -1,3 +1,6 @@
+using System.Text.RegularExpressions;
+
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 using Sleeky.Todo.Application.Abstractions.Identity;
@@ -22,6 +25,16 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
             .Include(user => user.Id)
             .Include(user => user.DisplayName);
 
+    /// <summary>
+    /// What a search answers with: the identity fields plus the address, which
+    /// is how someone recognises the right person among similar names.
+    /// </summary>
+    private static readonly ProjectionDefinition<UserDocument, UserDocument> SearchFields =
+        Builders<UserDocument>.Projection
+            .Include(user => user.Id)
+            .Include(user => user.DisplayName)
+            .Include(user => user.Email);
+
     private readonly IClock clock;
     private readonly IMongoCollection<UserDocument> users;
 
@@ -40,6 +53,7 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
         string issuer,
         string subject,
         string? displayName,
+        string? email,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(issuer);
@@ -50,6 +64,7 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
             issuer,
             subject,
             displayName,
+            email,
             clock.UtcNow.UtcDateTime);
         FindOneAndUpdateOptions<UserDocument> options =
             new FindOneAndUpdateOptions<UserDocument>
@@ -102,6 +117,31 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
         return documents.Select(ToIdentity).ToArray();
     }
 
+    public async Task<IReadOnlyCollection<UserSearchMatch>> SearchAsync(
+        string query,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        string prefix = Normalize(query) ?? string.Empty;
+
+        if (prefix.Length == 0)
+        {
+            return Array.Empty<UserSearchMatch>();
+        }
+
+        List<UserDocument> documents = await users
+            .Find(BuildPrefixFilter(prefix))
+            .Project(SearchFields)
+            .Sort(Builders<UserDocument>.Sort.Ascending(user => user.DisplayNameNormalized))
+            .Limit(limit)
+            .ToListAsync(cancellationToken);
+
+        return documents.Select(ToSearchMatch).ToArray();
+    }
+
     private static FilterDefinition<UserDocument> BuildIdentityFilter(
         string issuer,
         string subject)
@@ -111,20 +151,46 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
     }
 
     /// <summary>
-    /// Writes the display name only when the provider supplied one.
+    /// A name-or-address prefix, matched against the normalised copies.
     /// </summary>
     /// <remarks>
-    /// The name is an optional claim: a response carrying neither
-    /// <c>name</c> nor <c>preferred_username</c> resolves it to null, and
-    /// setting that unconditionally would erase a name an earlier login had
-    /// stored. <c>SetOnInsert</c> would not do either — it would pin the name
-    /// at first login and never track a rename at the provider — so the write
-    /// is kept and made conditional instead.
+    /// Anchored regular expressions, which MongoDB answers from an index by
+    /// walking the key range the prefix bounds — the same work an equality
+    /// match does. The unanchored form has no such range and would read every
+    /// document, which is the difference between a typeahead and a table scan.
+    /// The prefix is escaped, so a user typing <c>.*</c> searches for those
+    /// two characters rather than for everybody.
+    /// </remarks>
+    private static FilterDefinition<UserDocument> BuildPrefixFilter(string prefix)
+    {
+        BsonRegularExpression pattern = new BsonRegularExpression(
+            $"^{Regex.Escape(prefix)}");
+        FilterDefinitionBuilder<UserDocument> filters = Builders<UserDocument>.Filter;
+
+        return filters.Or(
+            filters.Regex(user => user.DisplayNameNormalized, pattern),
+            filters.Regex(user => user.EmailNormalized, pattern));
+    }
+
+    /// <summary>
+    /// Writes the display name and the e-mail address only when the provider
+    /// supplied them.
+    /// </summary>
+    /// <remarks>
+    /// Both are optional claims: a response carrying neither <c>name</c> nor
+    /// <c>preferred_username</c> resolves the name to null, and one without
+    /// <c>email</c> resolves the address to null. Setting either
+    /// unconditionally would erase what an earlier login had stored.
+    /// <c>SetOnInsert</c> would not do either — it would pin the value at first
+    /// login and never track a change at the provider — so the writes are kept
+    /// and made conditional instead. The normalised copy is written with its
+    /// original, never on its own, so the pair cannot drift apart.
     /// </remarks>
     private static UpdateDefinition<UserDocument> BuildResolveUpdate(
         string issuer,
         string subject,
         string? displayName,
+        string? email,
         DateTime timestamp)
     {
         UpdateDefinitionBuilder<UserDocument> updates = Builders<UserDocument>.Update;
@@ -140,14 +206,32 @@ internal sealed class UserDirectoryRepository : IUserDirectoryRepository
         if (!string.IsNullOrWhiteSpace(displayName))
         {
             definitions.Add(updates.Set(user => user.DisplayName, displayName));
+            definitions.Add(
+                updates.Set(user => user.DisplayNameNormalized, Normalize(displayName)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            definitions.Add(updates.Set(user => user.Email, email));
+            definitions.Add(updates.Set(user => user.EmailNormalized, Normalize(email)));
         }
 
         return updates.Combine(definitions);
     }
 
+    private static string? Normalize(string? value)
+    {
+        return value?.Trim().ToLowerInvariant();
+    }
+
     private static UserIdentity ToIdentity(UserDocument document)
     {
         return new UserIdentity(document.Id, document.DisplayName);
+    }
+
+    private static UserSearchMatch ToSearchMatch(UserDocument document)
+    {
+        return new UserSearchMatch(document.Id, document.DisplayName, document.Email);
     }
 
     private async Task<UserIdentity> ReadExistingAsync(

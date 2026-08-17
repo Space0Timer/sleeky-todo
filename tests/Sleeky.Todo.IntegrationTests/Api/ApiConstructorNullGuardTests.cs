@@ -29,6 +29,16 @@ public sealed class ApiConstructorNullGuardTests
     }
 
     [TestMethod]
+    public void UsersControllerRejectsNullSender()
+    {
+        Action action = () => _ = new UsersController(null!);
+
+        action.Should()
+            .Throw<ArgumentNullException>()
+            .Which.ParamName.Should().Be("sender");
+    }
+
+    [TestMethod]
     public void ApiExceptionHandlerRejectsNullLogger()
     {
         Action action = () => _ = new ApiExceptionHandler(null!);
