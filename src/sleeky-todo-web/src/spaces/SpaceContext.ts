@@ -44,3 +44,19 @@ export function useSpaces(): SpacesState {
 
   return state
 }
+
+// A hot update cannot be applied to this module. Re-running it calls
+// `createContext` again, and the new context is a different object from the one
+// the mounted provider is still supplying — so a consumer that picked up the
+// new module reads null and throws, while nothing is actually wrong. The update
+// is taken and immediately handed back, which makes the dev server reload the
+// page: the only way both halves end up on the same context. Invalidating
+// outside the handler would instead fire on the very first evaluation, when
+// there is no update to refuse, and reload a page that had only just loaded.
+// It costs nothing in a build: `import.meta.hot` is statically undefined there
+// and the branch is dropped.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    import.meta.hot?.invalidate()
+  })
+}
