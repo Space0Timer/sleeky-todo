@@ -240,14 +240,15 @@ answers a ping.
 
 ## Tests
 
-804 tests in three layers, each answering a different question.
+812 tests in three layers, each answering a different question.
 
-- **708 .NET tests.** Domain rules with nothing running (90), application
-  handlers against substitutes (241), the assistant's tool and turn layer
-  (154), and 223 integration tests against a real MongoDB — repository and
-  list-reader contracts, and the HTTP API end to end. The database is started
-  per test class by Testcontainers, as a replica set where a transaction is
-  under test.
+- **716 .NET tests.** Domain rules with nothing running (92), application
+  handlers against substitutes (244), the assistant's tool and turn layer
+  (154), and 226 integration tests — repository and list-reader contracts, and
+  the HTTP API end to end, most of them against a real MongoDB started per
+  test class by Testcontainers, as a replica set where a transaction is under
+  test; the rest boot the host without a database to check its startup,
+  hosting, and rate limits.
 - **39 client unit tests** over the logic worth isolating: which Space a URL
   resolves to, how a page of TODOs merges with the one before it, how a status
   code becomes a message.
@@ -312,9 +313,9 @@ data-protection key ring. They are covered in
   flow, and each boundary the code holds: persistence, concurrency, the
   recurring-completion transaction, authentication, the Space boundary, the
   assistant, logging
-- [docs/decision-log.md](docs/decision-log.md) — two pages: how the ambiguous
-  requirements were read, the key trade-offs, what was deliberately not built,
-  and what more time would change
+- [docs/decision-log.md](docs/decision-log.md) — about two pages: how the
+  ambiguous requirements were read, the key trade-offs, what was deliberately
+  not built, and what more time would change
 - [docs/decision-log-detailed.md](docs/decision-log-detailed.md) — every
   decision as it was made, with the alternatives that were rejected
 - [docs/coding-standards.md](docs/coding-standards.md) — the conventions the

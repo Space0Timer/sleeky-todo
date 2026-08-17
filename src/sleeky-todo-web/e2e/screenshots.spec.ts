@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { ask, configureAssistant, scriptModel } from './assistant-model.ts'
 import { expectSignedIn, signIn, testUsers } from './auth.ts'
@@ -33,6 +33,20 @@ import {
 const sharedSpaceName = 'Project Alpha'
 const shot = (name: string) => `../../docs/screenshots/${name}.png`
 
+/**
+ * Brings the list into the frame. The create form and the assistant sit above
+ * it, so a shot taken from the top of the page shows the toast that a TODO
+ * was created and none of the TODOs themselves; the filters are scrolled to
+ * the top edge so the cards, and who created them, are what the image shows.
+ */
+async function showTheList(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Dismiss' }).click({ timeout: 2_000 }).catch(() => {})
+  await page.getByLabel('TODO filters').evaluate((element) => {
+    element.scrollIntoView({ block: 'start' })
+  })
+  await expect(page.locator('[data-testid^="todo-"]').first()).toBeInViewport()
+}
+
 test('the sharing walkthrough', async ({ browser }) => {
   // Two sign-ins through the real provider, a grant, a downgrade, and two
   // navigations: more round trips than any single test makes.
@@ -55,8 +69,9 @@ test('the sharing walkthrough', async ({ browser }) => {
     await signIn(alice, 'alice')
     await resetUserData(alice)
     await createSpaceThroughUi(alice, sharedSpaceName)
-    await createTodo(alice, 'Draft the brief')
+    await createTodo(alice, 'Draft the agenda')
     await createTodo(alice, 'Send the invitations')
+    await showTheList(alice)
     await alice.screenshot({ path: shot('01-a-space-of-her-own') })
 
     await openSpaceSettings(alice)
@@ -73,8 +88,9 @@ test('the sharing walkthrough', async ({ browser }) => {
     await bob.goto('/')
     await expectSignedIn(bob)
     await switchToSpace(bob, sharedSpaceName)
-    await expect(todoCard(bob, 'Draft the brief')).toHaveCount(1)
+    await expect(todoCard(bob, 'Draft the agenda')).toHaveCount(1)
     await createTodo(bob, 'Book the room')
+    await showTheList(bob)
     await bob.screenshot({ path: shot('03-bob-works-in-it') })
 
     await openSpaceSettings(alice)

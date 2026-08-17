@@ -117,7 +117,7 @@ public sealed class SpaceSharingApiTests
     [TestMethod]
     public async Task AWriteGrantGivesTheNewMemberTheSpaceAndItsTodos()
     {
-        Guid aliceTodoId = await CreateTodoAsync(alice, "Draft the brief");
+        Guid aliceTodoId = await CreateTodoAsync(alice, "Draft the agenda");
         using HttpResponseMessage beforeResponse = await bob.GetAsync(Todos);
 
         using HttpResponseMessage grantResponse = await AddAccessAsync(
@@ -141,7 +141,7 @@ public sealed class SpaceSharingApiTests
             .GetProperty("permission").GetInt32()
             .Should().Be((int)SpacePermission.Write);
         readResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        Names(aliceSees).Should().BeEquivalentTo(["Draft the brief", "Book the room"]);
+        Names(aliceSees).Should().BeEquivalentTo(["Draft the agenda", "Book the room"]);
         CreatorsByName(aliceSees)["Book the room"].Should().Be(bobId);
         bobTodoId.Should().NotBe(aliceTodoId);
     }
@@ -154,7 +154,7 @@ public sealed class SpaceSharingApiTests
     [TestMethod]
     public async Task ADowngradeToReadLeavesTheSpaceVisibleAndTheTodosUntouchable()
     {
-        Guid todoId = await CreateTodoAsync(alice, "Draft the brief");
+        Guid todoId = await CreateTodoAsync(alice, "Draft the agenda");
         _ = await AddAccessAsync(bobId, SpacePermission.Write, version: 1);
 
         using HttpResponseMessage changeResponse = await alice.PutAsJsonAsync(
@@ -177,7 +177,7 @@ public sealed class SpaceSharingApiTests
         readResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         statusResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        Names(await ReadJsonAsync(unchangedResponse)).Should().Equal("Draft the brief");
+        Names(await ReadJsonAsync(unchangedResponse)).Should().Equal("Draft the agenda");
     }
 
     /// <summary>
@@ -188,7 +188,7 @@ public sealed class SpaceSharingApiTests
     [TestMethod]
     public async Task ARemovedMemberLosesTheSpaceAndEverythingUnderIt()
     {
-        Guid todoId = await CreateTodoAsync(alice, "Draft the brief");
+        Guid todoId = await CreateTodoAsync(alice, "Draft the agenda");
         _ = await AddAccessAsync(bobId, SpacePermission.Write, version: 1);
 
         using HttpRequestMessage removal = new HttpRequestMessage(
