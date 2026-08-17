@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { expectSignedIn, signIn } from './auth.ts'
+import { expectSignedIn, signIn, signOut, testUsers } from './auth.ts'
 import { resetUserData } from './database.ts'
 import {
   createSpaceThroughUi,
@@ -71,6 +71,40 @@ test('a space that cannot be reached falls back to one that can', async ({ page 
   await expectSignedIn(page)
   await expectActiveSpace(page, personalSpaceName)
   await expect(page.getByText('That space is no longer available.')).toBeVisible()
+})
+
+/**
+ * A shared link is most often opened by someone who is not signed in. The
+ * link has to survive the trip through the login page and the provider, or
+ * it lands on whatever Space was last remembered instead of the one it named.
+ */
+test('a space link opened while signed out lands on that space after signing in', async ({
+  page,
+}) => {
+  const betaId = await createSpaceThroughUi(page, 'Project Beta')
+  await switchToSpace(page, personalSpaceName)
+  await signOut(page)
+
+  await page.goto(`/spaces/${betaId}`)
+  await expect(page).toHaveURL(/\/login$/)
+
+  // Not the shared sign-in helper: that one starts from `/login` itself, and
+  // the point here is arriving there from the link.
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  const usernameField = page.locator('#username')
+  const asksForCredentials = await usernameField
+    .waitFor({ state: 'visible', timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false)
+  if (asksForCredentials) {
+    await usernameField.fill(testUsers.alice.username)
+    await page.locator('#password').fill(testUsers.alice.password)
+    await page.locator('#kc-login').click()
+  }
+
+  await expectSignedIn(page)
+  await expect(page).toHaveURL(new RegExp(`/spaces/${betaId}$`, 'i'))
+  await expectActiveSpace(page, 'Project Beta')
 })
 
 test('the create dialog refuses an empty name without asking the server', async ({

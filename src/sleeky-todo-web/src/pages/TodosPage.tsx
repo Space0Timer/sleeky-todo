@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { listSpaceAccess } from '../api/spaces.ts'
@@ -129,6 +129,23 @@ export function TodosPage({ space }: TodosPageProps) {
     setRefreshKey((current) => current + 1)
   }, [])
 
+  // The cards with a Manage or Edit panel open right now. A ref rather than
+  // state: nothing renders from it, it only decides whether a background
+  // refresh may run, and a panel opening should not re-render the page.
+  const openPanelsRef = useRef(new Set<string>())
+  const trackPanel = useCallback((id: string, open: boolean) => {
+    if (open) {
+      openPanelsRef.current.add(id)
+    } else {
+      openPanelsRef.current.delete(id)
+    }
+  }, [])
+
+  // The first page a filter change requested. Load more compares against it
+  // after its own request returns, so a page fetched under the previous
+  // filters cannot be appended to the list that replaced them.
+  const listRequestRef = useRef(0)
+
   const bulk = useBulkActions({ spaceId, items, onRefresh: reloadList })
 
   const captureError = useCallback((caught: unknown, affectedTodoId?: string) => {
@@ -216,6 +233,7 @@ export function TodosPage({ space }: TodosPageProps) {
 
   useEffect(() => {
     let cancelled = false
+    listRequestRef.current += 1
     setLoading(true)
     setError(null)
 
@@ -277,12 +295,16 @@ export function TodosPage({ space }: TodosPageProps) {
 
   // Returning to the tab is when another tab's edits are most likely to have
   // landed. Refreshing then keeps versions fresh, but only while nothing is
-  // selected: a selection resolves its versions from what is on screen, so
-  // changing the list underneath one would send versions the user never saw.
+  // selected and no panel is open: a selection resolves its versions from what
+  // is on screen, so changing the list underneath one would send versions the
+  // user never saw; and a refresh replaces the cards, so it would close an open
+  // Manage or Edit panel and discard what was typed into it. A stale panel is
+  // the safer outcome — its save is refused with a reload offered.
   useEffect(() => {
     function revalidate() {
       if (document.visibilityState !== 'visible') return
       if (bulk.selectedCount > 0 || bulk.bulkBusy || busyId !== null) return
+      if (openPanelsRef.current.size > 0) return
       reloadList()
     }
 
@@ -305,14 +327,18 @@ export function TodosPage({ space }: TodosPageProps) {
 
   async function loadMore() {
     if (!nextCursor) return
+    const requestedFor = listRequestRef.current
     setLoadingMore(true)
     setError(null)
     try {
       const page = await listTodos(spaceId, { ...filters, scope, cursor: nextCursor })
+      // A filter, sort, or scope change while this was in flight has already
+      // replaced the list; this page belongs to the one it replaced.
+      if (listRequestRef.current !== requestedFor) return
       setItems((current) => mergeTodoPage(current, page.items))
       setNextCursor(page.nextCursor)
     } catch (caught) {
-      captureError(caught)
+      if (listRequestRef.current === requestedFor) captureError(caught)
     } finally {
       setLoadingMore(false)
     }
@@ -696,6 +722,7 @@ export function TodosPage({ space }: TodosPageProps) {
                 onAddDependency={handleAddDependency}
                 onDelete={handleDelete}
                 onLoad={loadTodo}
+                onPanelToggle={trackPanel}
                 onRemoveDependency={handleRemoveDependency}
                 onRestore={handleRestore}
                 onSearchCandidates={searchCandidates}

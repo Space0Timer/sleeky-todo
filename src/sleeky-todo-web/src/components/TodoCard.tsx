@@ -38,6 +38,13 @@ type TodoCardProps = {
   onAddDependency: (todo: Todo, dependencyId: string) => Promise<Todo | null>
   onDelete: (todo: TodoListItem) => Promise<boolean>
   onLoad: (id: string, quiet?: boolean) => Promise<Todo | null>
+  /**
+   * Reports whether this card has a Manage or Edit panel open. The page holds
+   * off its background refreshes while any card does, because a refresh
+   * replaces the list and would take an open panel — and whatever was typed
+   * into it — down with it.
+   */
+  onPanelToggle?: (id: string, open: boolean) => void
   onRemoveDependency: (todo: Todo, dependencyId: string) => Promise<Todo | null>
   onRestore: (todo: TodoListItem) => Promise<boolean>
   onSearchCandidates: (search: string) => Promise<TodoListItem[]>
@@ -80,6 +87,7 @@ export function TodoCard({
   onAddDependency,
   onDelete,
   onLoad,
+  onPanelToggle,
   onRemoveDependency,
   onRestore,
   onSearchCandidates,
@@ -162,6 +170,13 @@ export function TodoCard({
     setSelectedDependencyId('')
   }, [availableDependencies, selectedDependencyId])
 
+  // Reported on every change and withdrawn on unmount, so the page's count of
+  // open panels cannot outlive the card that opened one.
+  useEffect(() => {
+    onPanelToggle?.(item.id, managing || editing)
+    return () => onPanelToggle?.(item.id, false)
+  }, [editing, item.id, managing, onPanelToggle])
+
   async function openManager() {
     const loaded = await onLoad(item.id)
     if (loaded) {
@@ -223,7 +238,9 @@ export function TodoCard({
     }
   }
 
-  if (editing && details) {
+  // A form left open across a downgrade to Read would still offer Save; the
+  // server would refuse it, but the card should not offer what it cannot do.
+  if (editing && details && !readOnly) {
     return (
       <article
       className={drifted ? `${styles.todoCard} ${styles.drifted}` : styles.todoCard}
