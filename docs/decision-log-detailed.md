@@ -165,7 +165,7 @@ The rule lives in the domain, so the single-item and bulk endpoints inherit iden
 
 ## Bulk actions mirror the single-item API
 
-Bulk endpoints reuse the vocabulary of the single-item routes — `PUT /api/todos/status` and `DELETE /api/todos` — rather than introducing an action name and a discriminator enum. Widening bulk status changes to reopening or unarchiving later becomes a validator change instead of a new endpoint. Literal segments outrank route parameters, and the `{id}` routes carry `:guid` constraints so that precedence is enforced rather than incidental.
+Bulk endpoints reuse the vocabulary of the single-item routes — `PUT /api/spaces/{spaceId}/todos/status` and `DELETE /api/spaces/{spaceId}/todos` — rather than introducing an action name and a discriminator enum. Widening bulk status changes to reopening or unarchiving later becomes a validator change instead of a new endpoint. Literal segments outrank route parameters, and the `{id}` routes carry `:guid` constraints so that precedence is enforced rather than incidental.
 
 A batch is all-or-nothing. Every selected TODO is loaded in one query, a missing identifier fails as 404 before any version is compared, and every stale version is reported together. Validation runs against the whole selection, so completing a prerequisite alongside its dependent succeeds while completing a TODO blocked by something outside the selection fails the entire request. Partial success was rejected because dependency chains and recurring occurrence creation would leave callers unable to tell what actually happened.
 
@@ -173,7 +173,7 @@ Both delete routes answer 200 with a body, because the response carries the new 
 
 ## Reading a selection without disturbing the list
 
-`GET /api/todos/selection` reports the current state of specific identifiers. A client holding a selection that the server has just rejected needs to know what changed and what vanished, and it needs that without refreshing the list, because a selection resolves its versions from what is on screen: refreshing underneath one would send versions the user never saw.
+`GET /api/spaces/{spaceId}/todos/selection` reports the current state of specific identifiers. A client holding a selection that the server has just rejected needs to know what changed and what vanished, and it needs that without refreshing the list, because a selection resolves its versions from what is on screen: refreshing underneath one would send versions the user never saw.
 
 The list route cannot answer this. Its scope defaults to Active, so a TODO that drifted into Archived reads as vanished; its cursor is bound to a filter signature that an identifier set does not have; and covering a selection by paging is unsound at any page size.
 
@@ -209,13 +209,17 @@ The only coherent route to one policy is a product decision to make the assistan
 
 ## The assistant acts as the user, in the user's own request
 
-Assistant turns dispatch MediatR commands inside the caller's authenticated HTTP request, synchronously and in process. `ICurrentUser` resolves from that HTTP context, so the assistant acts *as* the user by construction: there is no impersonation, no machine credential, and no second authorization surface to keep aligned with the first.
+Assistant turns dispatch MediatR commands inside the caller's authenticated HTTP request, synchronously and in process. `ICurrentUser` resolves from that HTTP context, so the assistant acts *as* the user by construction: there is no impersonation and no machine credential.
 
-Tools send commands and queries only, never repositories. Every call therefore inherits `ValidationBehavior`, `DomainRuleExceptionBehavior`, `RequestLoggingBehavior`, and the ownership scoping in the persistence boundary — every guardrail the HTTP API has. There is no path by which the assistant can do something a browser could not.
+There is a second authorization surface, and it is deliberate. A turn names the Space it runs in, and that Space is checked before the turn starts rather than left to the commands the tools will eventually send. Two facts about a turn force the check forward. It answers as server-sent events, so once the stream has opened a failure can no longer become a status code — the status line is already written — and a refusal has to be decided before the first byte if it is to arrive as an ordinary `404` or `403`. And a confirmed deletion is applied at the top of the run, ahead of any call to the model, so a turn nobody authorized must not reach that point either. The check therefore runs twice: in the controller, where it gives a refusal its HTTP shape, and as the runner's first statement, where it binds the ambient Space scope the tools then dispatch under.
+
+What keeps that from becoming a second rule to hold in step with the first is that both call `ISpaceAccessService` — the same service `SpaceAccessBehavior` calls. One rule, three call sites, no re-implementation of who may do what.
+
+Tools send commands and queries only, never repositories. Every call therefore inherits `ValidationBehavior`, `DomainRuleExceptionBehavior`, `RequestLoggingBehavior`, and the Space scoping in the persistence boundary — every guardrail the HTTP API has. There is no path by which the assistant can do something a browser could not. The tool schemas the model sees carry no Space: the Space comes from the turn, is fixed for the turn's duration, and is not a parameter the model can name, so it cannot be argued into acting somewhere else. A Read member's toolset is identical too; the writes fail through the handlers, and a sentence in the context tells the model what it will find.
 
 Assistant-issued commands open a logging scope carrying `RequestOrigin`, so a log answers "did I do that or did the assistant?" without the request pipeline needing to know the assistant exists.
 
-The threat model this leaves is small and stated: a TODO's name and description are the user's own text, and the system prompt says to read them as data even when they are phrased as instructions. The blast radius is already bounded by owner scoping and by the confirmation gate, so prompt injection through a TODO can at worst propose something to the user's own list that the user is then asked to confirm.
+The threat model this leaves is small and stated: a TODO's name and description are text the members of a Space wrote, and the system prompt says to read them as data even when they are phrased as instructions. The blast radius is bounded by the Space scope and by the confirmation gate, so prompt injection through a TODO can at worst propose something inside a Space the reader is already a member of, and the reader is then asked to confirm it. Sharing widens who can plant that text — a Write member can — without widening what it can reach.
 
 ## Version binding: reads return versions, writes take identifiers
 
@@ -416,7 +420,7 @@ no marker interface left, and Domain has no package references — this time
 because nothing needs one, rather than as a rule held for its own sake.
 
 The transaction reuses the existing expected-version filter. A unique partial
-index on `ownerId + seriesId + occurrenceNumber` is the second idempotency
+index on `spaceId + seriesId + occurrenceNumber` is the second idempotency
 boundary.
 Concurrent completion therefore produces one committed completion and next
 occurrence, while the stale request returns 409.
@@ -472,29 +476,108 @@ First login inserts the mapping, so two concurrent callbacks for a new user can
 race. The unique index is the authority: the losing insert catches the duplicate
 key error and re-reads the winner rather than failing the login.
 
-## Ownership enforced in the persistence boundary
+## The Space aggregate: an embedded, versioned access list
 
-Each TODO stores an `OwnerId`, and the owner predicate is applied inside the
-shared repository and list-reader filters rather than added by each handler.
-Threading an owner argument through every query was rejected: it makes every
-current and future call site a place where the filter can be omitted, and an
-omission is a cross-tenant data leak rather than a visible bug. Handlers cannot
-forget a filter they never supply.
+A Space is an identifier, a name, an access list, a version, and timestamps, and
+the access list is embedded in the Space document rather than kept as rows in a
+membership collection. Reads decide this. Every Space-scoped request begins by
+loading one Space and asking what the caller may do there, which as an embedded
+list is a single read against the primary key; membership rows make it a query,
+plus a second read for the name the interface shows beside the answer. The cost
+lands on the write side: adding a member rewrites the Space, so two Owners
+editing the access list at the same moment contend where independent rows would
+not. That is what the version is there to arbitrate, and editing membership is
+rare next to reading it.
 
-The repository refuses to operate without an authenticated user. The retention
-purge, once built, will be the deliberate exception, since it is maintenance
-work that spans owners; no such path exists yet, so today every repository
-member is owner-scoped.
+Name and access list are versioned together because they move together — same
+screen, same permission, and a caller who read one read both — so one version
+covers the whole document a client last saw.
 
-Requests for another user's TODO return `404` rather than `403`, so the response
-does not confirm that the identifier exists.
+`Space.Version` deliberately does not move when a TODO in the Space is written.
+Bumping it would turn every create, edit, and status change into a write to one
+shared document: a Space-wide lock, which is exactly what this design avoids,
+and which would make concurrency a property of the list rather than of the item
+being changed. The Space's version therefore answers "did the name or the
+membership move under me?", the TODO's version answers "did this item move under
+me?", and neither question can be spoiled by the other's answer.
 
-Sort and lookup indexes take `ownerId` as their leading key because every query
-now filters on it first. The index initializer only creates indexes, so the
-superseded index names are dropped explicitly before creation; otherwise an
-existing deployment keeps unused indexes that still cost write time. Existing
-TODO documents predate `OwnerId` and cannot be attributed to a user, so
-disposable local data is recreated rather than backfilled.
+The personal Space's identifier is derived from the user rather than generated:
+a UUID v5 over a fixed namespace and the internal user ID. It is created lazily,
+on the user's first listing, by an insert that treats a duplicate key as success
+and re-reads the winner. A check-then-create would race — two first requests can
+both find nothing and both insert — and a derived identifier removes the race
+instead of coordinating it, the same way the user directory's unique index
+settles two concurrent first logins. Nothing marks the result as special: "My
+Space" is renameable, shareable, and in every other respect an ordinary Space,
+so no other code has to know that a second kind of Space exists.
+
+## Space access enforced by the pipeline, not at each call site
+
+Each TODO stores the `SpaceId` of the Space that contains it, and a
+`CreatedByUserId` that is audit data and is never consulted for authorization.
+Access is a property of the Space rather than of the TODO: the Space holds the
+access list, and a member's level in it decides what they may do to everything
+inside.
+
+This entry replaces an earlier one that put ownership in the persistence
+boundary, and the part of that decision worth keeping is its rejection of
+threading an owner argument through every query — because it makes every current
+and future call site a place where the filter can be omitted, and an omission is
+a data leak rather than a visible bug. That conclusion stands and no Space
+argument is threaded through any repository or reader signature either. The
+mechanism behind it is what moved, from one filter applied in one place to a
+pair:
+
+- **`SpaceAccessBehavior`**, a MediatR behaviour running after validation. A
+  request implementing `ISpaceScopedRequest` declares the Space it acts in and
+  the level it needs; the behaviour resolves the caller's entry in that Space
+  and answers before any handler runs. Handlers hold no `Require` calls.
+- **`ISpaceScope`**, request-scoped, bound only by a check that passed.
+  `TodoRepository` and `MongoTodoListReader` read it exactly the way they read
+  `ICurrentUser`, inside the same shared identifier, mutation, and list filters,
+  so reads, existence checks, batch loads, dependency lookups, graph traversal,
+  active-dependent checks, mutations, and cursor pages stay scoped by
+  construction.
+
+The scope is fail-closed, which is what makes it a guarantee rather than a
+convenience. Reading a Space from an unbound scope throws, so a query that
+reached persistence without an authorization step fails loudly instead of
+quietly matching every Space in the collection — the property the old rule got
+from a repository that refused to run without an authenticated user. Binding
+twice to different Spaces within one request is refused for the same reason: it
+would mean work authorized for one Space was dispatched in another.
+
+The repository's own `spaceId ==` filter is not redundant with the behaviour but
+the second wall behind it. The behaviour decides whether this caller may act in
+this Space; the filter decides which documents that Space contains. Neither
+alone failing lets a request cross a boundary.
+
+The two refusals are deliberately different answers. A caller who is not a
+member is told `404` for the Space and for everything under it, so a probe
+cannot separate an identifier that does not exist from one that belongs to
+someone else. A member below the level a route needs is told `403`, which does
+confirm the Space exists — they are in it, so they already knew — and names the
+real problem instead of hiding it. The client has to keep the two apart from
+`401`: an expired session ends the session, a refused permission does not.
+
+The gap between the check and the write is accepted rather than closed. The
+behaviour reads the access list, the handler writes moments later, and a member
+removed in between still lands that write. Closing it needs a lock over the
+Space or a transaction spanning the access list and the TODO, paid by every
+writer to correct a case the next request corrects anyway. The read path is the
+one place where the gap had a visible cost — re-reading a Space the caller has
+just been removed from left nobody's permission to report — and it answers `404`
+there, the same as for anyone else outside the Space.
+
+Sort and lookup indexes take `spaceId` as their leading key because every query
+filters on it first. The index initializer only creates indexes, so every
+superseded name — the unscoped originals and the seven `owner_*` indexes that
+followed them — is dropped explicitly before creation; otherwise an existing
+deployment keeps unused indexes that still cost write time. The
+retention `purgeAt` index stays Space-independent to match the purge path, which
+remains the one reserved exception to "no bound Space, no query". Documents
+written before the rename carry an `ownerId` no query reads, and nothing
+converts them: disposable local data is recreated rather than backfilled.
 
 ## Provider single logout
 
@@ -749,7 +832,7 @@ self-hosted `mongo:8.0` this deployment targets. An external search engine was
 rejected as a second always-on service for one text box.
 
 Search queries `hint()` the search index. Left to itself the planner can pick a
-sort-supporting index and then apply the token regexes to the owner's entire
+sort-supporting index and then apply the token regexes to the Space's entire
 range, which is the slow path the feature exists to avoid. Non-search queries
 are not hinted and keep whatever plan they have today. The hint costs the sort
 its index, but no index can serve both a range on the tokens and the sort
@@ -760,15 +843,15 @@ The accepted costs:
 
 - **Residual filtering.** The index bounds serve the first term only. Remaining
   terms and the status, priority, and due-date filters are applied to fetched
-  documents, each already owner-scoped, so the worst case is bounded by one
-  user's own TODO count.
+  documents, each already Space-scoped, so the worst case is bounded by one
+  Space's own TODO count.
 - **Paging under search is O(match set) per page.** The cursor predicate has no
   indexed field after the tokens key, so each Load More re-fetches and top-K
   sorts every matching document. Keyset paging's O(page) property is given back
-  while a search is active, again bounded by the owner's own TODOs.
+  while a search is active, again bounded by the Space's own TODOs.
 - **Trash-scope search scans wide.** Selecting deleted TODOs is a range on
   `deletedAt`, which sits before the tokens key, so the token bounds apply per
-  distinct value and the query effectively scans that owner's trash.
+  distinct value and the query effectively scans that Space's trash.
 - **Write amplification.** A 2000-character description can produce roughly 250
   to 300 distinct tokens, all rewritten as multikey entries on every
   full-document replace. This is likely the collection's largest index — fine

@@ -85,6 +85,30 @@ public sealed class GetSpaceQueryHandlerTests
         exception.ResourceId.Should().Be(TestSpaceFactory.SpaceId);
     }
 
+    /// <summary>
+    /// The access behavior admitted the caller from its own read of the Space.
+    /// If an Owner removes them before the handler reads it again, the Space
+    /// they are holding is one they no longer belong to, and the answer is the
+    /// one any outsider gets rather than a failure.
+    /// </summary>
+    [TestMethod]
+    public async Task HandleThrowsNotFoundWhenTheCallersAccessWasRevokedAfterTheCheck()
+    {
+        Space space = TestSpaceFactory.CreateShared();
+        GetSpaceQueryHandler handler = new GetSpaceQueryHandler(
+            TestSpaceFactory.CreateRepository(space),
+            TestSpaceFactory.CreateDirectory((TestSpaceFactory.OwnerId, "Alice")),
+            new TestCurrentUser(TestSpaceFactory.StrangerId));
+
+        Func<Task> act = () => handler.Handle(
+            new GetSpaceQuery(space.Id),
+            CancellationToken.None);
+
+        NotFoundException exception = (await act.Should().ThrowAsync<NotFoundException>()).Which;
+        exception.ResourceName.Should().Be("Space");
+        exception.ResourceId.Should().Be(space.Id);
+    }
+
     private static Guid UserHolding(SpacePermission permission)
     {
         return permission switch

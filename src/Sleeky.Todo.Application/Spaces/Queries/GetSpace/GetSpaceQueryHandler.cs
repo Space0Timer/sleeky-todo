@@ -30,17 +30,27 @@ public sealed class GetSpaceQueryHandler : IRequestHandler<GetSpaceQuery, SpaceD
         this.currentUser = currentUser;
     }
 
+    /// <remarks>
+    /// The access behavior has already established that the caller is a member,
+    /// but it did so against its own read of the Space. Between that read and
+    /// this one an Owner can remove the caller, and the answer to a read of a
+    /// Space the caller no longer belongs to is the answer anyone outside it
+    /// gets: not found. The mutating commands need no equivalent, because
+    /// removing an access entry moves the Space's version and their version
+    /// guard refuses first.
+    /// </remarks>
     public async Task<SpaceDto> Handle(
         GetSpaceQuery request,
         CancellationToken cancellationToken)
     {
         Space space = await spaces.GetByIdAsync(request.SpaceId, cancellationToken)
             ?? throw new NotFoundException(ResourceName, request.SpaceId);
-
-        return await SpaceDtoMapper.ToDtoAsync(
+        SpaceDto? view = await SpaceDtoMapper.ToDtoIfStillMemberAsync(
             space,
             currentUser.UserId,
             users,
             cancellationToken);
+
+        return view ?? throw new NotFoundException(ResourceName, request.SpaceId);
     }
 }

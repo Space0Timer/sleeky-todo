@@ -1,12 +1,19 @@
 # Sleeky To-Do
 
 A layered-monolith TODO application: ASP.NET Core and MediatR over MongoDB,
-with a React and TypeScript client. Every TODO belongs to a signed-in user,
-and the whole slice — domain rules, persistence, HTTP API, and UI — is
-implemented and tested end to end.
+with a React and TypeScript client. TODOs live in **Spaces**: shared lists
+whose membership decides who may read them and who may write to them. The
+whole slice — domain rules, persistence, HTTP API, and UI — is implemented and
+tested end to end.
 
 ## Features
 
+- **Shared lists.** A Space is a named list with its own access list. Everyone
+  gets a personal Space on first sign-in; any Space can be shared with a
+  colleague as Read, Write, or Owner, and the level can be changed or revoked.
+  A Space you are not in answers `404`, so an identifier is never confirmed; an
+  action above your level answers `403`. Every route under a Space is
+  authorized by the request pipeline, so no handler can forget to check.
 - **CRUD with optimistic concurrency.** Create, read, update, and delete with
   validation. Every write carries the version last read; a stale save is
   rejected with `409` and the client offers to reload rather than overwrite
@@ -24,18 +31,21 @@ implemented and tested end to end.
   window; a TODO that an active dependent still needs cannot be deleted.
 - **Bulk actions.** Status changes, restores, and deletes over a selection,
   all-or-nothing, mirroring the single-item routes.
-- **Authentication and ownership.** OpenID Connect login, an encrypted
-  HttpOnly cookie session, and per-user isolation — another user's TODO
-  answers `404`, not `403`.
+- **Authentication.** OpenID Connect login and an encrypted HttpOnly cookie
+  session; the browser never holds an access, ID, or refresh token.
 - **AI assistant.** Natural-language bulk actions over the same commands the
   toolbar uses, streamed as server-sent events, with confirmation before
-  anything destructive. Bring your own key — Anthropic or any
-  OpenAI-compatible endpoint — or use one configured for the deployment.
+  anything destructive. It works in whichever Space is open, and is told so:
+  a read-only member's writes come back refused. Bring your own key —
+  Anthropic or any OpenAI-compatible endpoint — or use one configured for the
+  deployment.
 
 Deliberately not built, with reasons in
 [docs/decision-log.md §3](docs/decision-log.md#3-what-i-chose-not-to-build-and-why):
-user registration, real-time push, the physical purge job, provider-initiated
-logout, and server-side assistant history.
+user registration, real-time push (a colleague's change appears on your next
+load), deleting or leaving a Space, moving a TODO between Spaces, invitations,
+groups, the physical purge job, provider-initiated logout, and server-side
+assistant history.
 
 ## Prerequisites & quick start
 
@@ -69,15 +79,36 @@ Open `http://localhost:5173` and sign in as `alice` / `alice-password`.
 
 ### Try it out
 
-- **Per-user isolation.** Create a TODO as `alice`, then sign in as `bob` /
-  `bob-password` in a private window. Bob's list is empty.
+- **Sharing a Space.** This is the main journey, and it needs two browsers —
+  a normal window for `alice` and a private one for `bob`.
+
+  1. Sign in as `alice`. The selector at the top of the list shows **My
+     Space**, created for her automatically.
+  2. **New space…** → `Project Alpha`. The URL becomes `/spaces/{id}`, the
+     selector switches to it, and the list is empty. Add a TODO.
+  3. In the private window, sign in as `bob` / `bob-password` once and leave
+     him signed in. Only people who have signed in at least once are in the
+     user directory, so this step is what makes him findable — there are no
+     invitation e-mails.
+  4. Back as alice: **Manage space…** → *Add a member*, type `bob`, pick
+     him, choose **Write**, add.
+  5. In Bob's window, reload. `Project Alpha` is now in his selector; he sees
+     Alice's TODO and can edit it and add his own.
+  6. In Alice's window, reload. Bob's TODO is there. Changes are not pushed —
+     the version check makes staleness safe, not invisible.
+  7. **Manage space…** → change Bob to **Read**. After his next reload the
+     list is marked *Read-only* and the editing controls are gone; a write he
+     had already started answers `403`. Remove him, and `Project Alpha`
+     disappears from his selector and answers `404` on every route.
 - **Dependencies.** Link two TODOs; the dependent cannot start until its
   prerequisite is completed, and a cycle is rejected.
 - **Recurrence.** Create a TODO with Repeat enabled and complete it; the next
   occurrence appears.
 - **Trash.** Delete a TODO, open the Trash tab, restore it.
-- **Concurrency.** Open Manage on one TODO in two tabs, save in both; the
-  second reports a stale version and offers Reload.
+- **Concurrency.** Open Manage on one TODO in two tabs — or in Alice's and
+  Bob's windows on a shared TODO — and save in both; the second reports a
+  stale version and offers Reload. Concurrency is per TODO, so two people
+  editing different TODOs in the same Space never collide.
 - **Assistant.** Configure a model (next section), then ask the Assistant
   panel to, say, complete everything due this week. Destructive actions come
   back as a proposal to confirm first.
@@ -160,9 +191,12 @@ next sign-in prompts for credentials again.
 
 Swagger UI documents every route and is served in Development at
 `https://localhost:7238/swagger` (OpenAPI document at
-`/swagger/v1/swagger.json`). Failures use RFC Problem Details: `400`
-validation, `404` not found, `409` stale version or domain-rule conflict.
-`GET /health` reports whether MongoDB answers a ping.
+`/swagger/v1/swagger.json`). TODO routes are nested under their Space —
+`/api/spaces/{spaceId}/todos/...` — and Spaces themselves live at
+`/api/spaces`. Failures use RFC Problem Details: `400` validation, `403`
+insufficient permission in a Space, `404` not found or not a member, `409`
+stale version or domain-rule conflict. `GET /health` reports whether MongoDB
+answers a ping.
 
 ## Tests
 
@@ -203,8 +237,8 @@ data-protection key ring. They are covered in
 
 - [docs/architecture.md](docs/architecture.md) — component diagram, request
   flow, and each boundary the code holds: persistence, concurrency, the
-  recurring-completion transaction, authentication, ownership, the assistant,
-  logging
+  recurring-completion transaction, authentication, the Space boundary, the
+  assistant, logging
 - [docs/decision-log.md](docs/decision-log.md) — two pages: how the ambiguous
   requirements were read, the key trade-offs, what was deliberately not built,
   and what more time would change

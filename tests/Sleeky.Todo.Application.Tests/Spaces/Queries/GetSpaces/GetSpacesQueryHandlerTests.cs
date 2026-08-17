@@ -111,4 +111,36 @@ public sealed class GetSpacesQueryHandlerTests
 
         result.Should().ContainSingle().Which.Id.Should().Be(PersonalSpace.IdFor(UserId));
     }
+
+    /// <summary>
+    /// The summaries report the caller's own level, and every Space here came
+    /// back from a query for that caller's memberships. One without an entry
+    /// for them is a contradiction in the store, not a Space to be listed at
+    /// some invented level, so it fails loudly.
+    /// </summary>
+    [TestMethod]
+    public async Task HandleFailsWhenAMembershipListingReturnsASpaceTheCallerIsNotIn()
+    {
+        Space personal = Space.Create(PersonalSpace.IdFor(UserId), PersonalSpace.Name, UserId, TestSpaceFactory.Timestamp);
+        Space foreign = Space.Create(
+            TestSpaceFactory.SpaceId,
+            "Project Alpha",
+            TestSpaceFactory.OwnerId,
+            TestSpaceFactory.Timestamp);
+        ISpaceRepository spaces = Substitute.For<ISpaceRepository>();
+        spaces
+            .GetOrAddAsync(Arg.Any<Space>(), Arg.Any<CancellationToken>())
+            .Returns(personal);
+        spaces
+            .GetForSubjectAsync(UserId, SubjectType.User, Arg.Any<CancellationToken>())
+            .Returns(new[] { personal, foreign });
+        GetSpacesQueryHandler handler = new GetSpacesQueryHandler(
+            spaces,
+            Substitute.For<IClock>(),
+            new TestCurrentUser(UserId));
+
+        Func<Task> act = () => handler.Handle(new GetSpacesQuery(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
 }
