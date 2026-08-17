@@ -77,8 +77,9 @@ This document defines the implementation and test standards for the repository.
 ## Styling
 
 Client styles are SCSS. Component styles are CSS Modules (`*.module.scss`), and
-`src/index.scss` is the only global stylesheet. See the decision log for why
-SCSS rather than the indented syntax, and why modules rather than global CSS.
+`src/index.scss` is the only global stylesheet. See
+[decision-log-detailed.md](decision-log-detailed.md) for why SCSS rather than
+the indented syntax, and why modules rather than global CSS.
 
 - Take every colour, radius, border width, shadow, typeface, and weight from
   `src/styles/_tokens.scss`. A literal hex, `rgb()`, or `hsl()` anywhere else

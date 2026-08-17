@@ -34,12 +34,17 @@ browser suite drives it with, so they show the product rather than a mock-up.
   action above your level answers `403`. Every route under a Space is
   authorized by the request pipeline, so no handler can forget to check.
 - **CRUD with optimistic concurrency.** Create, read, update, and delete with
-  validation. Every write carries the version last read; a stale save is
+  validation, across four statuses — Open, In progress, Completed, and
+  Archived. Every write carries the version last read; a stale save is
   rejected with `409` and the client offers to reload rather than overwrite
   silently.
-- **List queries.** Filters by status, priority, and due date; word-prefix
-  search across name and description; `Active`, `Archived`, and `Deleted`
-  scopes; sorting; deterministic cursor pagination.
+- **List queries.** Filter by status, priority, due-date range, and dependency
+  state (Blocked/Unblocked); word-prefix search across name and description;
+  `Active`, `Archived`, and `Deleted` scopes; sorting by due date, priority,
+  status, or name, ascending or descending; deterministic cursor pagination.
+  Filtering, sorting, and paging all run in MongoDB against Space-leading
+  indexes and projections — the collection is never loaded or counted in the
+  browser — so a Space of 10,000+ TODOs pages as cheaply as a small one.
 - **Dependencies and blocking.** A TODO can depend on others. Direct and
   transitive cycles are rejected, and a TODO whose prerequisites are incomplete,
   deleted, or archived is blocked from moving to In progress or Completed.
@@ -67,7 +72,7 @@ Three of those rules, caught in the act:
 | A save made against a version someone else had already moved past. The edit is kept; reloading is offered rather than chosen. | A prerequisite that is not finished, and a dependent that cannot start until it is. | The assistant proposes a deletion. Nothing is removed until it is confirmed. |
 
 Deliberately not built, with reasons in
-[docs/decision-log.md §3](docs/decision-log.md#3-what-i-chose-not-to-build-and-why):
+[docs/decision-log.md §3](docs/decision-log.md#3-what-was-deliberately-not-built):
 user registration, real-time push (a colleague's change appears on your next
 load), deleting or leaving a Space, moving a TODO between Spaces, invitations,
 groups, the physical purge job, provider-initiated logout, and server-side
@@ -103,41 +108,50 @@ cd src/sleeky-todo-web && corepack yarn install && corepack yarn dev
 
 Open `http://localhost:5173` and sign in as `alice` / `alice-password`.
 
-### Try it out
+### User journey
 
-- **Sharing a Space.** This is the main journey, and it needs two browsers —
-  a normal window for `alice` and a private one for `bob`.
+Two browsers: a normal window for `alice` and a private one for `bob`. Every
+step below is an ordinary feature; nothing exists only for this walkthrough.
 
-  1. Sign in as `alice`. The selector at the top of the list shows **My
-     Space**, created for her automatically.
-  2. **New space…** → `Project Alpha`. The URL becomes `/spaces/{id}`, the
-     selector switches to it, and the list is empty. Add a TODO.
-  3. In the private window, sign in as `bob` / `bob-password` once and leave
-     him signed in. Only people who have signed in at least once are in the
-     user directory, so this step is what makes him findable — there are no
-     invitation e-mails.
-  4. Back as alice: **Manage space…** → *Add a member*, type `bob`, pick
-     him, choose **Write**, add.
-  5. In Bob's window, reload. `Project Alpha` is now in his selector; he sees
-     Alice's TODO and can edit it and add his own.
-  6. In Alice's window, reload. Bob's TODO is there. Changes are not pushed —
-     the version check makes staleness safe, not invisible.
-  7. **Manage space…** → change Bob to **Read**. After his next reload the
-     list is marked *Read-only* and the editing controls are gone; a write he
-     had already started answers `403`. Remove him, and `Project Alpha`
-     disappears from his selector and answers `404` on every route.
-- **Dependencies.** Link two TODOs; the dependent cannot start until its
-  prerequisite is completed, and a cycle is rejected.
-- **Recurrence.** Create a TODO with Repeat enabled and complete it; the next
-  occurrence appears.
-- **Trash.** Delete a TODO, open the Trash tab, restore it.
-- **Concurrency.** Open Manage on one TODO in two tabs — or in Alice's and
-  Bob's windows on a shared TODO — and save in both; the second reports a
-  stale version and offers Reload. Concurrency is per TODO, so two people
-  editing different TODOs in the same Space never collide.
-- **Assistant.** Configure a model (next section), then ask the Assistant
-  panel to, say, complete everything due this week. Destructive actions come
-  back as a proposal to confirm first.
+1. **Alice signs in.** The selector at the top of the list shows **My Space**,
+   created for her automatically. **New space…** → `Project Alpha`; the URL
+   becomes `/spaces/{id}` and the list is empty.
+2. **Create TODO A**, then **TODO B**. On B, **Manage** → *Prerequisites* →
+   search for A, pick it, **Add**. B now carries a **Blocked** badge, and in
+   its status selector *In progress* and *Completed* are disabled. (The API
+   refuses the same transition with `409` if it is sent anyway, for instance
+   from Swagger. Adding A → B as well is rejected as a cycle.)
+3. **Complete A.** The list refreshes; B's badge is gone and it can start.
+4. **Recurrence.** Create a TODO with *Repeat this TODO* enabled and complete
+   it; the next occurrence appears, in the same MongoDB transaction as the
+   completion.
+5. **Bob signs in once** in the private window and stays signed in. Only
+   people who have signed in are in the user directory — there are no
+   invitation e-mails.
+6. **Share with Bob.** As Alice: **Manage space…** → *Add a member* → `bob` →
+   **Write** → add. Bob reloads and picks `Project Alpha` in his selector: he
+   sees Alice's TODOs and can edit them and add his own.
+7. **Concurrent edit.** Both open **Manage** on the same TODO and both save.
+   The first save wins; the second reports a stale version (`409`) and offers
+   **Reload latest version** rather than overwriting. Concurrency is per TODO,
+   so edits to different TODOs in the same Space never collide.
+8. **Downgrade Bob to Read.** After his next reload the list is marked
+   *Read-only* and every editing control is gone; a write he had already
+   started answers `403`.
+9. **Remove Bob.** `Project Alpha` disappears from his selector and answers
+   `404` on every route.
+10. **Trash.** Delete a TODO, open the **Trash** tab, restore it.
+11. **Blocked/Unblocked filter.** In the filter panel set *Dependencies* to
+    **Blocked** or **Unblocked**; combine it with status, priority, due-date
+    range, search and any sort field.
+12. **Assistant** (optional; configure a model in the next section). Ask the
+    panel to, say, complete everything due this week. Destructive actions
+    come back as a proposal to confirm first, and a Read member's writes are
+    refused.
+13. **API and CI.** Swagger UI at `https://localhost:7238/swagger`; the
+    [GitHub Actions workflow](.github/workflows/ci.yml) runs formatting, build,
+    the .NET suites with coverage thresholds, the client lint/unit/build, the
+    browser suite against Keycloak, and a Docker image smoke test.
 
 ### AI assistant with a local model
 
@@ -252,7 +266,9 @@ test:
 | Two writers at one version: one wins, one is told | `TodoApiTests.ConcurrentWritesWithSameVersionReturnOneSuccessAndOneConflict` |
 | A completed recurring TODO leaves exactly one successor | `TodoApiTests.CompletingRecurringTodoCreatesExactlyOneNextOccurrence` |
 | …and none at all if the successor cannot be written | `TodoApiTests.FailedNextOccurrenceInsertionRollsBackCompletion` |
-| A prerequisite still in use cannot be deleted | `TodoApiTests.ActivePrerequisiteCannotBeDeletedAndMutationsRejectStaleVersions` |
+| A blocked TODO answers `409` to In progress/Completed, and the Blocked/Unblocked filter tracks it, until its prerequisite completes | `TodoApiTests.BlockedStatusTransitionsSucceedAfterPrerequisiteCompletes` |
+| Direct and transitive dependency cycles are rejected | `TodoApiTests.DirectAndMultiLevelDependencyCyclesAreRejected` |
+| A prerequisite still in use cannot be deleted, and a stale version is rejected | `TodoApiTests.ActivePrerequisiteCannotBeDeletedAndMutationsRejectStaleVersions` |
 | The assistant refuses a Space you cannot see, before the model | `AssistantTurnApiTests.ATurnInASpaceTheUserCannotSeeIsRefusedBeforeTheModel` |
 | Two people on one list, at the level the owner set | `e2e/sharing.spec.ts` |
 | A Space switch changes which TODOs exist, and survives reload | `e2e/spaces.spec.ts` |

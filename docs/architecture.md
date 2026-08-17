@@ -267,6 +267,15 @@ and is the only one authorization consults. `CreatedByUserId` records who wrote
 it, so a shared list can show "created by Bob", and is never read by a filter or
 a rule; it is audit data.
 
+The two aggregates are also two concurrency boundaries. `Space.Version` covers
+the Space's own state — its name and access list — and is matched on a rename
+or membership change exactly as `Todo.Version` is matched on a TODO write. A
+TODO write never touches the Space document, so members editing different TODOs
+never contend, and only two Owners editing the same access list at once are
+settled by the Space's version. TODOs are separate documents rather than an
+embedded array for the same reason: an embedded list would grow the Space
+without bound and make every unrelated TODO write contend on one document.
+
 ```text
 Keycloak
   -> authenticated user (ICurrentUser)
@@ -659,8 +668,9 @@ was resolved from. The browser retries a status batch once, silently, with the
 versions that probe returns, and only when every selected identifier still
 resolves; deletion is never retried and always returns to the user. The
 assistant sends the same commands and carries its own copy of that policy; see
-the assistant section below, and "Two conflict policies" in the decision log
-for why the two are not consolidated.
+the assistant section below, and "Two conflict policies" in
+[decision-log-detailed.md](decision-log-detailed.md) for why the two are not
+consolidated.
 
 ## Assistant
 

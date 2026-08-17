@@ -179,7 +179,7 @@ The list route cannot answer this. Its scope defaults to Active, so a TODO that 
 
 The read is found-only. Identifiers that no longer resolve are absent from the response rather than failing it, which is the opposite of the batch loader, where a missing identifier fails the whole request as 404. The two differ because their jobs differ: a write must refuse to act on a selection it cannot fully honour, while a probe exists precisely to report what is no longer there.
 
-Soft-deleted TODOs still resolve. The trash lists them and a selection there is restorable, so hiding them would leave a conflict in that scope permanently unrepairable — the probe would report every selected TODO as vanished. Only what is purged, or owned by someone else, is absent. `deletedAt` on each item tells the caller which state it is in.
+Soft-deleted TODOs still resolve. The trash lists them and a selection there is restorable, so hiding them would leave a conflict in that scope permanently unrepairable — the probe would report every selected TODO as vanished. Only what is purged, or outside the bound Space, is absent. `deletedAt` on each item tells the caller which state it is in.
 
 ## Restoring in bulk
 
@@ -637,7 +637,7 @@ application in the realm there is nowhere else for a sign-out to start.
 Cookie authentication reintroduces cross-site request forgery, so state-changing
 requests carry an antiforgery token in a request header, validated by a global
 filter. Per-endpoint attributes were rejected for the same reason as per-handler
-ownership filters: an unprotected mutation should require a deliberate opt-out
+Space filters: an unprotected mutation should require a deliberate opt-out
 rather than a remembered opt-in.
 
 Antiforgery tokens are bound to the authenticated identity, so a token obtained
