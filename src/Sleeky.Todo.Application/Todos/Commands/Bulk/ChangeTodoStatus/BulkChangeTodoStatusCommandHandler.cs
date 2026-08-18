@@ -60,7 +60,9 @@ public sealed class BulkChangeTodoStatusCommandHandler
             cancellationToken);
 
         List<TodoItem> updates = ApplyStatusChange(todos, request.Status);
-        List<TodoItem> inserts = CreateRecurringSuccessors(updates);
+        List<TodoItem> inserts = await CreateMissingRecurringSuccessorsAsync(
+            updates,
+            cancellationToken);
         await BulkTodoBatch.SaveAsync(
             todoRepository,
             transactionExecutor,
@@ -75,7 +77,7 @@ public sealed class BulkChangeTodoStatusCommandHandler
             updates.Count,
             inserts.Count);
 
-        return BulkTodoResult.FromEntities(todos, written: updates);
+        return BulkTodoResult.FromEntities(todos, written: updates, inserted: inserts);
     }
 
     /// <summary>
@@ -96,6 +98,19 @@ public sealed class BulkChangeTodoStatusCommandHandler
     private static DomainException BlockedTransition(TodoStatus status)
     {
         return new DomainException($"A blocked TODO cannot move to {status}.");
+    }
+
+    /// <summary>
+    /// The position the successor of <paramref name="completion"/> would take.
+    /// A completion without series context is answered with an empty
+    /// position, which no stored occurrence matches, so the factory is left to
+    /// refuse it with the reason.
+    /// </summary>
+    private static TodoSeriesOccurrence NextOccurrenceOf(TodoCompletion completion)
+    {
+        return new TodoSeriesOccurrence(
+            completion.SeriesId ?? Guid.Empty,
+            (completion.OccurrenceNumber ?? 0) + 1);
     }
 
     /// <summary>
@@ -190,22 +205,54 @@ public sealed class BulkChangeTodoStatusCommandHandler
     }
 
     /// <summary>
-    /// One successor per recurring completion; every other update inserts
-    /// nothing.
+    /// One successor per recurring completion whose next occurrence does not
+    /// exist yet; every other update inserts nothing.
     /// </summary>
-    private List<TodoItem> CreateRecurringSuccessors(IReadOnlyCollection<TodoItem> updates)
+    /// <remarks>
+    /// A reopened occurrence completed again already has its successor from
+    /// the first time round, so it is completed without one rather than
+    /// colliding with the unique series index — the same rule the single-item
+    /// command holds. One read answers it for the whole batch.
+    /// </remarks>
+    private async Task<List<TodoItem>> CreateMissingRecurringSuccessorsAsync(
+        IReadOnlyCollection<TodoItem> updates,
+        CancellationToken cancellationToken)
     {
-        List<TodoItem> inserts = new List<TodoItem>();
-
-        foreach (TodoItem todoItem in updates)
+        List<TodoCompletion> recurringCompletions = updates
+            .Select(todoItem => todoItem.Completion)
+            .OfType<TodoCompletion>()
+            .Where(completion => completion.Recurrence is not null)
+            .ToList();
+        if (recurringCompletions.Count == 0)
         {
-            TodoCompletion? completion = todoItem.Completion;
-            if (completion?.Recurrence is not null)
-            {
-                inserts.Add(recurringOccurrenceFactory.CreateNext(completion));
-            }
+            return [];
         }
 
-        return inserts;
+        HashSet<TodoSeriesOccurrence> existing = await LoadExistingNextOccurrencesAsync(
+            recurringCompletions,
+            cancellationToken);
+
+        return recurringCompletions
+            .Where(completion => !existing.Contains(NextOccurrenceOf(completion)))
+            .Select(recurringOccurrenceFactory.CreateNext)
+            .ToList();
+    }
+
+    private async Task<HashSet<TodoSeriesOccurrence>> LoadExistingNextOccurrencesAsync(
+        IReadOnlyCollection<TodoCompletion> recurringCompletions,
+        CancellationToken cancellationToken)
+    {
+        TodoSeriesOccurrence[] nextOccurrences = recurringCompletions
+            .Where(completion => completion.SeriesId is not null
+                && completion.OccurrenceNumber is not null)
+            .Select(NextOccurrenceOf)
+            .Distinct()
+            .ToArray();
+        IReadOnlyCollection<TodoSeriesOccurrence> existing =
+            await todoRepository.GetExistingSeriesOccurrencesAsync(
+                nextOccurrences,
+                cancellationToken);
+
+        return existing.ToHashSet();
     }
 }

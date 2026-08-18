@@ -435,6 +435,13 @@ public sealed class TodoApiTests
         repeated.GetProperty("nextOccurrenceId").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    /// <summary>
+    /// The successor's position is taken by an insert another transaction has
+    /// not committed yet. The completion's own read cannot see it, so it goes
+    /// ahead and inserts; the unique series index refuses inside the
+    /// transaction, and the completion is rolled back with it — the second
+    /// wall doing the job the first cannot.
+    /// </summary>
     [TestMethod]
     public async Task FailedNextOccurrenceInsertionRollsBackCompletion()
     {
@@ -453,12 +460,16 @@ public sealed class TodoApiTests
             .FirstAsync();
         duplicateOccurrence["_id"] = StandardUuid(Guid.NewGuid());
         duplicateOccurrence["occurrenceNumber"] = 2;
-        await collection.InsertOneAsync(duplicateOccurrence);
+        using IClientSessionHandle otherWriter = await collection.Database.Client
+            .StartSessionAsync();
+        otherWriter.StartTransaction();
+        await collection.InsertOneAsync(otherWriter, duplicateOccurrence);
 
         HttpResponseMessage completion = await ChangeStatusAsync(
             recurringId,
             TodoStatus.Completed,
             version: 1);
+        await otherWriter.AbortTransactionAsync();
         HttpResponseMessage currentResponse = await client.GetAsync(
             $"{Todos}/{recurringId}");
         JsonElement current = await ReadJsonAsync(currentResponse);
@@ -470,7 +481,7 @@ public sealed class TodoApiTests
         current.GetProperty("status").GetInt32()
             .Should().Be((int)TodoStatus.Open);
         current.GetProperty("version").GetInt64().Should().Be(1);
-        seriesCount.Should().Be(2);
+        seriesCount.Should().Be(1);
     }
 
     [TestMethod]
@@ -500,6 +511,50 @@ public sealed class TodoApiTests
 
         responses.Select(response => response.StatusCode).Should().BeEquivalentTo(
             new[] { HttpStatusCode.OK, HttpStatusCode.Conflict });
+        seriesCount.Should().Be(2);
+    }
+
+    /// <summary>
+    /// The successor of the first completion is still there when the reopened
+    /// occurrence is completed again, so the second completion writes only the
+    /// completion — a 200 with no new occurrence, not a collision on the
+    /// unique series index reported as a concurrency conflict.
+    /// </summary>
+    [TestMethod]
+    public async Task ReopeningAndRecompletingARecurringTodoLeavesOneSuccessor()
+    {
+        (_, JsonElement recurring) = await CreateTodoAsync(
+            new RecurrenceRequest
+            {
+                Type = RecurrenceType.Monthly,
+                Interval = 1,
+            });
+        string recurringId = GetTodoId(recurring);
+        string seriesId = recurring.GetProperty("seriesId").GetString()
+            ?? throw new InvalidOperationException("A recurring TODO requires a series ID.");
+        HttpResponseMessage firstCompletion = await ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 1);
+        firstCompletion.StatusCode.Should().Be(HttpStatusCode.OK);
+        HttpResponseMessage reopened = await ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Open,
+            version: 2);
+        reopened.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        HttpResponseMessage secondCompletion = await ChangeStatusAsync(
+            recurringId,
+            TodoStatus.Completed,
+            version: 3);
+        JsonElement completed = await ReadJsonAsync(secondCompletion);
+        long seriesCount = await GetTodoCollection().CountDocumentsAsync(
+            new BsonDocument("seriesId", StandardUuid(seriesId)));
+
+        secondCompletion.StatusCode.Should().Be(HttpStatusCode.OK);
+        completed.GetProperty("status").GetInt32().Should().Be((int)TodoStatus.Completed);
+        completed.GetProperty("version").GetInt64().Should().Be(4);
+        completed.GetProperty("nextOccurrenceId").ValueKind.Should().Be(JsonValueKind.Null);
         seriesCount.Should().Be(2);
     }
 

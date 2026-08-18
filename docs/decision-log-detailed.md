@@ -662,14 +662,16 @@ The two are wired differently on purpose. The assistant limit is a named
 policy attached to the one action it protects, so it is readable from the
 endpoint. The mutation limit is the global limiter with a predicate: it
 partitions to no limiter for `GET`, `HEAD`, and `OPTIONS`, for anonymous
-requests, and for anything under `/api/assistant`. Reads are left alone
+requests, and for the turn route `/api/assistant/turns`. Reads are left alone
 because they hold nothing past the response and paging a long list is the one
 thing a well-behaved client does in a tight loop. Anonymous callers get no
 limiter rather than a shared bucket, because authorization has already refused
 them by the time the limiter runs — the middleware sits after it — and one
 shared partition for everything unauthenticated would let any caller exhaust it
-for the rest. The assistant path is excluded so the limit a user actually hits
-is one number rather than the interaction of two.
+for the rest. The turn route is excluded so the limit a user actually hits is
+one number rather than the interaction of two; the assistant's settings routes
+carry no policy of their own — one of them opens an outbound connection to a
+host the user names — so they stay inside the window like any other mutation.
 
 Queue length is zero on both. A caller waiting for a permit is holding open the
 connection the limit exists to protect, so refusing at once says the same thing

@@ -180,6 +180,71 @@ public sealed class ChangeTodoStatusCommandHandlerTests
         logger.Entries.Should().ContainSingle(candidate => candidate.EventId == 1108);
     }
 
+    /// <summary>
+    /// A reopened occurrence completed again already has its successor from
+    /// the first completion. It is completed with a single write and reports
+    /// no new occurrence, rather than colliding with the unique series index.
+    /// </summary>
+    [TestMethod]
+    public async Task ARecurringCompletionWhoseSuccessorExistsWritesOnlyTheCompletion()
+    {
+        RecurrenceSchedule recurrence = RecurrenceSchedule.Create(
+            RecurrenceType.Monthly,
+            1,
+            null,
+            TestTodoFactory.DueDate);
+        Guid seriesId = TestTodoFactory.CreateId("series-1");
+        TodoItem todo = TodoItem.Create(
+            TestTodoFactory.CreateId("todo-1"),
+            TestTodoFactory.SpaceId,
+            TestTodoFactory.CreatedByUserId,
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            TestTodoFactory.Timestamp,
+            recurrence,
+            seriesId,
+            1);
+        ITodoRepository repository = Substitute.For<ITodoRepository>();
+        ITodoDependencyEvaluator evaluator = Substitute.For<ITodoDependencyEvaluator>();
+        IClock clock = Substitute.For<IClock>();
+        CompletingTransactionExecutor transactionExecutor = new CompletingTransactionExecutor();
+        RecordingLogger logger = new RecordingLogger(() => transactionExecutor.Completed);
+        clock.UtcNow.Returns(TestTodoFactory.Timestamp.AddDays(1));
+        repository.GetByIdAsync(todo.Id, false, Arg.Any<CancellationToken>())
+            .Returns(todo);
+        repository.GetExistingSeriesOccurrencesAsync(
+                Arg.Is<IReadOnlyCollection<TodoSeriesOccurrence>>(occurrences =>
+                    occurrences.Single() == new TodoSeriesOccurrence(seriesId, 2)),
+                Arg.Any<CancellationToken>())
+            .Returns([new TodoSeriesOccurrence(seriesId, 2)]);
+        evaluator.EvaluateAsync(
+                Arg.Any<IEnumerable<Guid>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new TodoDependencyState(0));
+        repository.UpdateAsync(todo, Arg.Any<CancellationToken>())
+            .Returns(_ => TestTodoFactory.WithVersion(todo, 2));
+        ChangeTodoStatusCommandHandler handler = new ChangeTodoStatusCommandHandler(
+            repository,
+            evaluator,
+            clock,
+            transactionExecutor,
+            new RecurringOccurrenceFactory(new RecurrenceCalculator()),
+            logger);
+
+        TodoDto result = await handler.Handle(
+            new ChangeTodoStatusCommand(TestTodoFactory.SpaceId, todo.Id, TodoStatus.Completed, 1),
+            CancellationToken.None);
+
+        result.Status.Should().Be(TodoStatus.Completed);
+        result.NextOccurrenceId.Should().BeNull();
+        transactionExecutor.Completed.Should().BeFalse();
+        await repository.DidNotReceiveWithAnyArgs().AddAsync(default!, default);
+        logger.Entries.Should().NotContain(candidate => candidate.EventId == 1101);
+        logger.Entries.Should().ContainSingle(candidate => candidate.EventId == 1113);
+    }
+
     private static TodoItem CreateTodoWithDependency()
     {
         TodoItem todo = TestTodoFactory.Create();

@@ -18,7 +18,12 @@ public static class RateLimitingServiceCollectionExtensions
     /// </summary>
     public const string AssistantTurnsPolicy = "assistant-turns";
 
-    private const string AssistantPathPrefix = "/api/assistant";
+    /// <summary>
+    /// The one route the policy above covers. Only it is left out of the
+    /// mutation window; the assistant's settings routes are ordinary mutations
+    /// and stay inside it.
+    /// </summary>
+    private const string AssistantTurnsPath = "/api/assistant/turns";
 
     /// <summary>
     /// The partition every unlimited request shares. Its value is never
@@ -83,10 +88,10 @@ public static class RateLimitingServiceCollectionExtensions
             return RateLimitPartition.GetNoLimiter(UnlimitedPartition);
         }
 
-        // The assistant carries its own policy. Counting its turns here as well
-        // would make the limit a user actually hits the interaction of two
-        // numbers, and neither of them would describe it.
-        if (context.Request.Path.StartsWithSegments(AssistantPathPrefix))
+        // A turn carries its own policy. Counting it here as well would make
+        // the limit a user actually hits the interaction of two numbers, and
+        // neither of them would describe it.
+        if (context.Request.Path.Equals(AssistantTurnsPath, StringComparison.OrdinalIgnoreCase))
         {
             return RateLimitPartition.GetNoLimiter(UnlimitedPartition);
         }

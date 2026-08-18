@@ -204,6 +204,39 @@ public sealed class BulkChangeTodoStatusCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// A reopened occurrence completed again already has its successor. The
+    /// batch completes it without inserting a second one, and one read answers
+    /// that for every recurring completion in the batch.
+    /// </summary>
+    [TestMethod]
+    public async Task ARecurringCompletionWhoseSuccessorExistsInsertsNothing()
+    {
+        TodoItem reopened = CreateRecurring("todo-1", "series-1");
+        TodoItem fresh = CreateRecurring("todo-2", "series-2");
+        StageLoad(reopened, fresh);
+        repository.GetExistingSeriesOccurrencesAsync(
+                Arg.Is<IReadOnlyCollection<TodoSeriesOccurrence>>(occurrences =>
+                    occurrences.Count == 2),
+                Arg.Any<CancellationToken>())
+            .Returns([new TodoSeriesOccurrence(reopened.SeriesId!.Value, 2)]);
+
+        BulkTodoResult result = await HandleAsync(
+            TodoStatus.Completed,
+            Select(reopened, fresh));
+
+        capturedUpdates.Should().HaveCount(2);
+        capturedInserts.Should().ContainSingle()
+            .Which.SeriesId.Should().Be(fresh.SeriesId);
+        result.Items.Should().OnlyContain(item => item.Status == TodoStatus.Completed);
+        result.Items.Single(item => item.Id == reopened.Id).NextOccurrenceId.Should().BeNull();
+        result.Items.Single(item => item.Id == fresh.Id).NextOccurrenceId
+            .Should().Be(capturedInserts!.Single().Id);
+        await repository.Received(1).GetExistingSeriesOccurrencesAsync(
+            Arg.Any<IReadOnlyCollection<TodoSeriesOccurrence>>(),
+            Arg.Any<CancellationToken>());
+    }
+
     [TestMethod]
     public async Task ArchivingIgnoresDependencyState()
     {

@@ -2,6 +2,7 @@ using FluentValidation;
 
 using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 
@@ -69,7 +70,10 @@ public sealed class CreateTodoCommandValidator : AbstractValidator<CreateTodoCom
         RuleFor(command => command.RecurrenceInterval)
             .NotNull()
             .GreaterThan(0)
-            .WithMessage("The recurrence interval must be positive.");
+            .WithMessage("The recurrence interval must be positive.")
+            .LessThanOrEqualTo(RecurrenceSchedule.MaximumInterval)
+            .WithMessage(
+                $"The recurrence interval must not exceed {RecurrenceSchedule.MaximumInterval}.");
 
         RuleFor(command => command.RecurrenceUnit!.Value)
             .IsInEnum()

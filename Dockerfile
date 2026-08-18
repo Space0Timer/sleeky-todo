@@ -44,10 +44,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=api /app/publish ./
 
-# The client ships in the same image so that it can later be served from the
-# same origin as the API, which gives the session cookie a single origin to
-# belong to. The host still needs static-file and SPA fallback configuration
-# before these files are reachable; until then they are inert.
+# The client ships in the same image and is served from the same origin as the
+# API, which gives the session cookie a single origin to belong to. The host
+# serves this directory as static files with an SPA fallback, and the image
+# smoke test in CI asserts the client is reachable.
 COPY --from=web /web/dist ./wwwroot
 
 # No HTTPS port is configured because TLS is terminated ahead of this

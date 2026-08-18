@@ -158,6 +158,64 @@ public sealed class TodoRepositoryTests
     }
 
     /// <summary>
+    /// The read answers whether an insert at a series position would collide,
+    /// so it sees what the unique series index sees: soft-deleted occurrences
+    /// count, and another Space's do not.
+    /// </summary>
+    [TestMethod]
+    public async Task ExistingSeriesOccurrencesIncludeDeletedOnesAndStayInTheSpace()
+    {
+        TodoItem first = CreateRecurringTodo("occurrence-1");
+        TodoItem second = TodoItem.Create(
+            Id("occurrence-2"),
+            SpaceId,
+            CreatedByUserId,
+            "Submit report",
+            null,
+            new DateOnly(2026, 9, 30),
+            TodoPriority.High,
+            Timestamp,
+            first.Recurrence,
+            Id("series-1"),
+            2);
+        TodoItem elsewhere = TodoItem.Create(
+            Id("occurrence-other"),
+            OtherSpaceId,
+            CreatedByUserId,
+            "Submit report",
+            null,
+            new DateOnly(2026, 8, 31),
+            TodoPriority.High,
+            Timestamp,
+            first.Recurrence,
+            Id("series-2"),
+            1);
+        await repository.AddAsync(first);
+        await repository.AddAsync(second);
+        await otherSpaceRepository.AddAsync(elsewhere);
+        second.SoftDelete(Timestamp.AddHours(1));
+        await repository.SoftDeleteAsync(second);
+
+        IReadOnlyCollection<TodoSeriesOccurrence> existing =
+            await repository.GetExistingSeriesOccurrencesAsync(
+            [
+                new TodoSeriesOccurrence(Id("series-1"), 1),
+                new TodoSeriesOccurrence(Id("series-1"), 2),
+                new TodoSeriesOccurrence(Id("series-1"), 3),
+                new TodoSeriesOccurrence(Id("series-2"), 1),
+            ]);
+        IReadOnlyCollection<TodoSeriesOccurrence> none =
+            await repository.GetExistingSeriesOccurrencesAsync([]);
+
+        existing.Should().BeEquivalentTo(
+        [
+            new TodoSeriesOccurrence(Id("series-1"), 1),
+            new TodoSeriesOccurrence(Id("series-1"), 2),
+        ]);
+        none.Should().BeEmpty();
+    }
+
+    /// <summary>
     /// Reads project the search tokens away, because the entity recomputes them
     /// and nothing reading a TODO back has a use for them. This guards the risk
     /// that creates: a document loaded without its tokens must not be written

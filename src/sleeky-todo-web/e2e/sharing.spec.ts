@@ -47,7 +47,7 @@ test('two people share one list, at the level the owner sets', async ({ browser 
     await signIn(alice, 'alice')
     await resetUserData(alice)
     const alphaId = await createSpaceThroughUi(alice, sharedSpaceName)
-    await createTodo(alice, 'Draft the brief')
+    await createTodo(alice, 'Draft the agenda')
 
     // Alice shares it.
     await openSpaceSettings(alice)
@@ -64,7 +64,7 @@ test('two people share one list, at the level the owner sets', async ({ browser 
     await expectSignedIn(bob)
     await switchToSpace(bob, sharedSpaceName)
     expect(await currentSpaceId(bob)).toBe(alphaId)
-    await expect(todoCard(bob, 'Draft the brief')).toHaveCount(1)
+    await expect(todoCard(bob, 'Draft the agenda')).toHaveCount(1)
     await createTodo(bob, 'Book the room')
 
     // Alice sees what Bob added, once she asks for the page again.
@@ -85,7 +85,7 @@ test('two people share one list, at the level the owner sets', async ({ browser 
     await expectActiveSpace(bob, sharedSpaceName)
     await expect(bob.getByTestId('space-permission')).toContainText('Read-only')
     await expect(createForm(bob)).toHaveCount(0)
-    await expect(todoCard(bob, 'Draft the brief')).toHaveCount(1)
+    await expect(todoCard(bob, 'Draft the agenda')).toHaveCount(1)
 
     // A Read member still sees who is in the Space, and none of the controls.
     await openSpaceSettings(bob)
@@ -106,7 +106,7 @@ test('two people share one list, at the level the owner sets', async ({ browser 
     await expectSignedIn(bob)
     await expect(bob.getByText(unavailableNotice)).toBeVisible()
     await expectActiveSpace(bob, 'My Space')
-    await expect(todoCard(bob, 'Draft the brief')).toHaveCount(0)
+    await expect(todoCard(bob, 'Draft the agenda')).toHaveCount(0)
   } finally {
     await aliceContext.close()
     await bobContext.close()

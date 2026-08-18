@@ -5,6 +5,7 @@ using FluentValidation.Results;
 using Sleeky.Todo.Application.Todos.Commands.CreateTodo;
 using Sleeky.Todo.Application.Todos.Validation;
 using Sleeky.Todo.Domain.Enums;
+using Sleeky.Todo.Domain.ValueObjects;
 
 namespace Sleeky.Todo.Application.Tests.Todos.Commands.CreateTodo;
 
@@ -145,11 +146,23 @@ public sealed class CreateTodoCommandValidatorTests
             RecurrenceType.Weekly,
             1,
             RecurrenceUnit.Months);
+        CreateTodoCommand oversizedInterval = new CreateTodoCommand(
+            TestTodoFactory.SpaceId,
+            "Submit report",
+            null,
+            TestTodoFactory.DueDate,
+            TodoPriority.High,
+            RecurrenceType.Custom,
+            RecurrenceSchedule.MaximumInterval + 1,
+            RecurrenceUnit.Days);
 
         validator.Validate(missingUnit).IsValid.Should().BeFalse();
         validator.Validate(zeroInterval).IsValid.Should().BeFalse();
         validator.Validate(nonStandardInterval).IsValid.Should().BeFalse();
         validator.Validate(mismatchedUnit).IsValid.Should().BeFalse();
+        validator.Validate(oversizedInterval).Errors.Should().ContainSingle()
+            .Which.ErrorMessage.Should().Be(
+                $"The recurrence interval must not exceed {RecurrenceSchedule.MaximumInterval}.");
     }
 
     private static CreateTodoCommand CreateCommand(

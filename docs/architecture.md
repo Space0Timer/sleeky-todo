@@ -593,6 +593,17 @@ Completing a *non-recurring* TODO records a completion too, but writes only the
 update, so it takes the single-write path like every other status change rather
 than opening a transaction it does not need.
 
+So does completing a reopened occurrence again. Its successor was created the
+first time round and may already have been worked on, so before inserting one
+the handler asks the repository whether the series already holds the next
+position — soft-deleted occupants included, since the unique index counts them
+too — and, when it does, writes only the completion and reports no new
+occurrence. The bulk path asks the same question once for the whole batch. The
+read runs outside the transaction, so it cannot see a successor another
+transaction has inserted but not committed; that case still reaches the unique
+index inside the transaction, which is what `FailedNextOccurrenceInsertionRollsBackCompletion`
+pins.
+
 `ITransactionExecutor` takes the work as a lambda and runs it as one atomic
 unit, committing when it returns and aborting when it throws. It is deliberately
 not a unit of work: nothing is tracked, deferred, or coordinated, and repository
@@ -614,8 +625,14 @@ partial application is safe and self-heals on the next start.
 
 The recurrence calculator preserves a stored monthly anchor rather than adding
 months to a previously clamped date. Thus January 31 becomes February's final
-day and then March 31. New occurrences copy descriptive fields, priority, and
-the schedule, but deliberately start with no dependency IDs.
+day and then March 31. The anchor is fixed when the series is created and is
+not moved by editing an occurrence's due date: the edit moves that occurrence,
+and its successor falls in the month after the edited date, on the series'
+anchor day. New occurrences copy descriptive fields, priority, and the
+schedule, but deliberately start with no dependency IDs. A custom interval is
+capped at 365 of its unit, and a next occurrence that would fall past the last
+representable date is refused as a domain rule rather than failing as
+arithmetic.
 
 ## Bulk status changes and deletion
 
@@ -796,7 +813,14 @@ blocked semantics for query responses and filtering.
 
 All dependency and status writes retain the source TODO's expected version in
 the repository filter. A graph check is therefore followed by the same atomic
-optimistic write used by the CRUD commands.
+optimistic write used by the CRUD commands. The version protects the source
+document, not the graph: two members adding `A → B` and `B → A` at the same
+instant each pass a cycle check that cannot see the other's edge, and both
+writes land. That window is accepted for the same reason as the membership one
+above — closing it needs a Space-wide lock for every dependency write — and its
+outcome is visible and repairable: both TODOs read as blocked until either edge
+is removed. The cycle detector walks through soft-deleted nodes, since a TODO in
+the trash keeps its edges and can be restored.
 
 ## HTTP and error boundary
 
@@ -821,8 +845,9 @@ and its request log name the same caller. Assistant turns are held to a
 per-user concurrency limit applied to that one action by name; every other
 mutation — anything but `GET`, `HEAD`, and `OPTIONS` — passes through a
 per-user fixed window applied globally, which skips anonymous requests
-(authorization has already answered them) and the assistant's own routes, so
-the two limits never compound on one request. Reads are not counted. Queue
+(authorization has already answered them) and the assistant turn route, so
+the two limits never compound on one request; the assistant's settings routes
+are ordinary mutations and stay inside the window. Reads are not counted. Queue
 length is zero on both, because a caller waiting for a permit is holding the
 connection the limit exists to protect. The `RateLimiting` section sets the
 numbers and can turn the whole thing off.

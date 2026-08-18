@@ -5,6 +5,18 @@ namespace Sleeky.Todo.Domain.ValueObjects;
 
 public sealed record RecurrenceSchedule
 {
+    /// <summary>
+    /// The largest interval a custom schedule may carry, in any unit: a year of
+    /// days, seven years of weeks, thirty years of months.
+    /// </summary>
+    /// <remarks>
+    /// Without a ceiling an interval in the millions is accepted at creation
+    /// and only fails when the successor's date is calculated, which is inside
+    /// the completion — every attempt to complete such a TODO would then fail,
+    /// and not as a rule but as an arithmetic error.
+    /// </remarks>
+    public const int MaximumInterval = 365;
+
     private RecurrenceSchedule(
         RecurrenceType type,
         int interval,
@@ -36,10 +48,7 @@ public sealed record RecurrenceSchedule
             throw new DomainException("A valid recurrence type is required.");
         }
 
-        if (interval <= 0)
-        {
-            throw new DomainException("The recurrence interval must be positive.");
-        }
+        EnsureIntervalInRange(interval);
 
         RecurrenceUnit effectiveUnit = type switch
         {
@@ -82,10 +91,7 @@ public sealed record RecurrenceSchedule
             throw new DomainException("A valid recurrence schedule is required.");
         }
 
-        if (interval <= 0)
-        {
-            throw new DomainException("The recurrence interval must be positive.");
-        }
+        EnsureIntervalInRange(interval);
 
         if (type != RecurrenceType.Custom && interval != 1)
         {
@@ -120,5 +126,19 @@ public sealed record RecurrenceSchedule
         }
 
         return new RecurrenceSchedule(type, interval, unit, anchorDay);
+    }
+
+    private static void EnsureIntervalInRange(int interval)
+    {
+        if (interval <= 0)
+        {
+            throw new DomainException("The recurrence interval must be positive.");
+        }
+
+        if (interval > MaximumInterval)
+        {
+            throw new DomainException(
+                $"The recurrence interval must not exceed {MaximumInterval}.");
+        }
     }
 }
