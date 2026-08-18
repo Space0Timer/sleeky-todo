@@ -22,8 +22,8 @@ independent scaling or ownership requirement justifies them.
 
 HTTP controllers — and the assistant's tools — send commands and queries
 through MediatR. Each request has a single handler, and cross-cutting request
-logging, validation, and domain-exception translation run as pipeline
-behaviors. Commands and queries share one MongoDB data model;
+logging, validation, Space access, and domain-exception translation run as
+pipeline behaviors. Commands and queries share one MongoDB data model;
 CQRS here separates use-case code rather than introducing separate read and
 write databases.
 
@@ -390,7 +390,10 @@ no-op Completed-to-Completed request records nothing. The status handler reads
 that property and, when it carries a recurrence, inserts the next occurrence
 with copied name, description, priority, recurrence, and series data, but no
 dependencies, inside the MongoDB session transaction. A failed insert aborts
-the completed update.
+the completed update. A reopened occurrence completed a second time inserts
+nothing when the series already holds the next position — its successor was
+created the first time round and may since have been worked on — and writes
+only the completion.
 
 This began as a domain event behind a hand-written dispatcher, and a MediatR
 notification was tried in its place; both were removed, and then so was the
