@@ -106,7 +106,8 @@ dotnet run --project src/Sleeky.Todo.Api --launch-profile https
 cd src/sleeky-todo-web && corepack yarn install && corepack yarn dev
 ```
 
-Open `http://localhost:5173` and sign in as `alice` / `alice-password`.
+Open `http://localhost:5173` and sign in as `alice` / `alice-password`. The
+walkthrough below needs a second user too: `bob` / `bob-password`.
 
 ### User journey
 
