@@ -36,7 +36,7 @@ flowchart TB
         repo["TodoRepository · SpaceRepository<br/>Space-scoped filters · version-matched replace"]
         reader["MongoTodoListReader<br/>aggregation · blocked state · keyset cursor · search hint"]
         tx["MongoTransactionExecutor<br/>scoped session context"]
-        startup["Index initializers<br/>TODO · Space"]
+        startup["Index initializers<br/>TODO · user · Space"]
     end
 
     mongo[("MongoDB 8 replica set<br/>todoItems · spaces · users · assistantSettings")]
@@ -634,12 +634,13 @@ capped at 365 of its unit, and a next occurrence that would fall past the last
 representable date is refused as a domain rule rather than failing as
 arithmetic.
 
-## Bulk status changes and deletion
+## Bulk status changes, deletion, and restoration
 
-`PUT /api/spaces/{spaceId}/todos/status` and
-`DELETE /api/spaces/{spaceId}/todos` mirror their single-item counterparts at
-collection level, so the target status stays the discriminator rather than
-becoming a separate action name. A request carries up to 100 unique
+`PUT /api/spaces/{spaceId}/todos/status`,
+`DELETE /api/spaces/{spaceId}/todos`, and
+`POST /api/spaces/{spaceId}/todos/restore` mirror their single-item
+counterparts at collection level, so the target status stays the discriminator
+rather than becoming a separate action name. A request carries up to 100 unique
 selections, each with the version the client last read.
 
 ```text
@@ -664,7 +665,11 @@ together; only dependencies outside the batch are loaded, in one query. Deletion
 inverts the relationship: one query finds active, non-archived dependents that
 point at the selection and are not themselves selected, so deleting a
 prerequisite together with its dependent is allowed while deleting the
-prerequisite alone is not.
+prerequisite alone is not. Restoration is the one batch whose selection is
+deleted by definition: it loads deleted documents and its write asserts each
+is still deleted, exactly as the single-item restore does, so a TODO someone
+else already restored fails the batch rather than being written over. It has
+no dependency gate, because a restored TODO blocks nothing.
 
 Recurring completions build their next occurrences through the same
 `IRecurringOccurrenceFactory` the single-item path uses, and the successors
@@ -907,8 +912,8 @@ class and event shape remain explicit without provider-specific APIs.
 Each layer exposes a dependency-injection extension. API startup composes those
 extensions, while Infrastructure validates MongoDB settings, registers the
 repositories and health check, and runs its schema bootstrap through hosted
-services that initialize the TODO and Space indexes. This keeps `Program.cs`
-limited to composition and application startup.
+services that initialize the TODO, user, and Space indexes. This keeps
+`Program.cs` limited to composition and application startup.
 
 `AddAssistant` binds provider options without validating them on start: an
 application-level API key is optional, and a deployment where every user brings

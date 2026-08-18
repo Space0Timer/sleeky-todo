@@ -18,7 +18,8 @@ rejected are in [decision-log-detailed.md](decision-log-detailed.md).
   the request path: server-side filtering and sorting, Space-leading indexes,
   projections, and deterministic keyset (cursor) pagination.
 - **Recurrence.** Completing a recurring TODO creates its next occurrence
-  automatically; completion and successor creation are atomic.
+  automatically — once, so a reopened occurrence completed again does not
+  create a second; completion and successor creation are atomic.
 - **Dependencies.** A TODO may depend on several others and cannot move to In
   Progress (or Completed) until every dependency is Completed; missing,
   deleted, or archived dependencies count as incomplete, and cycles are
