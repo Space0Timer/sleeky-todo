@@ -1,16 +1,21 @@
 name: CI
 
 on:
-  # No push trigger. A pull_request run already builds the merge of the branch
-  # with develop, so running the same suite again after the merge pays twice
-  # for one answer.
+  # A pull_request run builds the branch merged with develop; this one answers
+  # for the commit that landed, so develop carries a result of its own — after
+  # a merge, and after a change that reached it without a pull request.
+  push:
+    branches: [develop]
+    # A change to prose cannot break the build, and the workflow and scripts
+    # are not in this list, so a change to CI itself still runs.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
     branches: [develop]
     # ready_for_review starts the run a draft skipped; without it, marking a
     # pull request ready would need an empty commit to get an answer.
     types: [opened, synchronize, reopened, ready_for_review]
-    # A change to prose cannot break the build, and the workflow and scripts
-    # are not in this list, so a change to CI itself still runs.
     paths-ignore:
       - "**/*.md"
       - "docs/**"
